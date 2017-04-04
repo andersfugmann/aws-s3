@@ -1,4 +1,0 @@
-FLG -thread -w @A-3-4-29-39-41-42-44-45-58
-S src
-B _build
-PKG core async async_extra async_find unix base64 str oUnit cohttp cohttp.async inifiles cryptokit nocrypto yojson ppx_deriving_yojson

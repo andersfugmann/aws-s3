@@ -4,19 +4,19 @@ USE_OCAMLFIND = true
 NATIVE_ENABLED = true
 
 OCAMLFLAGS = -thread -g -w @A-3-4-29-39-41-42-44-45-58 -bin-annot
-OCAMLPACKS[] = core async async_extra async_find unix base64 str oUnit cohttp cohttp.async inifiles cryptokit nocrypto yojson ppx_deriving_yojson
+OCAMLPACKS[] = core async async_extra async_find unix base64 str oUnit cohttp cohttp.async inifiles cryptokit nocrypto yojson ppx_deriving_yojson xml-light
 
 mkdir -p _build
 vmount(-l, src, _build)
 
 .SUBDIRS: _build
 
-    OCamlProgram(awscli, awscli s3)
-    .DEFAULT: awscli
+    OCamlProgram(aws, aws s3)
+    .DEFAULT: aws
 
 .PHONY: clean dep install distclean unit-test integration-test
 clean:
-    $(RM) -r _build    OMake*.omc
+    $(RM) -r _build OMake*.omc
     $(RM) $(find . -name \*~)
     $(RM) -r .omake*
 

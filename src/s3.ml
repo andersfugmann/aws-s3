@@ -151,16 +151,23 @@ module Compat = struct
     *)
     Uri.query uri
     |> List.sort ~cmp:ksrt
+    |> List.map ~f:(function (k, []) -> (k, [ "" ]) | x -> x)
     |> List.map
-      ~f:(fun (k,v) -> (k, match v with [] -> [""] | x -> x))
-    |> (fun s -> Uri.encoded_of_query s)
-
+      ~f:(fun (k, vs) -> List.map vs ~f:(fun v -> sprintf "%s=%s"
+                                            (Uri.pct_encode ~component:`Userinfo k)
+                                            (Uri.pct_encode ~component:`Userinfo v)))
+    |> List.concat
+    |> String.concat ~sep:"&"
+      (*
+    |> List.map ~f:(function (k, []) -> k, [ "" ] | x -> x)
+    |> (fun s -> Uri.encoded_of_query s) (* Need to url-encode the parameters? *)
+*)
   let format_time t =
     (* Core.Std.Time doesn't have a format function that takes a timezone *)
     let d, s = Time.to_date_ofday ~zone:Time.Zone.utc t in
     let open Core.Span.Parts in
     let {hr; min; sec; _} = Time.Ofday.to_parts s in
-    Printf.sprintf "%sT%.2d%.2d%.2dZ"
+    sprintf "%sT%.2d%.2d%.2dZ"
       (Date.to_string_iso8601_basic d) hr min sec
 
   let hexa = "0123456789abcdef"
@@ -287,7 +294,7 @@ module Auth = struct
                          |> List.map ~f:fst
                          |> String.concat ~sep:";"
     in
-    let canonical_req = Printf.sprintf "%s\n%s\n%s\n%s\n%s\n%s"
+    let canonical_req = sprintf "%s\n%s\n%s\n%s\n%s\n%s"
         http_method canoncical_uri canonical_query canonical_headers signed_headers hashed_payload
     in
     (canonical_req, signed_headers)
@@ -300,12 +307,12 @@ module Auth = struct
       | Some t -> Compat.format_time t
     in
     let (scope_date, scope_region) = scope in
-    let scope_str = Printf.sprintf "%s/%s/s3/aws4_request"
+    let scope_str = sprintf "%s/%s/s3/aws4_request"
         (Date.to_string_iso8601_basic scope_date)
         (string_of_region scope_region)
     in
     let hashed_req = digest canonical_request in
-    Printf.sprintf "AWS4-HMAC-SHA256\n%s\n%s\n%s" time_str scope_str hashed_req
+    sprintf "AWS4-HMAC-SHA256\n%s\n%s\n%s" time_str scope_str hashed_req
 
   let make_signing_key ?date ~region ~secret_access_key =
     let date' = match date with
@@ -325,13 +332,13 @@ module Auth = struct
     let (canonical_request, signed_headers) = canonical_request hashed_payload request in
     let string_to_sign = string_to_sign ~time:time ~scope:(date, region) canonical_request in
     let signing_key = make_signing_key ~date ~region ~secret_access_key:aws_secret_key in
-    let creds = Printf.sprintf "%s/%s/%s/s3/aws4_request"
+    let creds = sprintf "%s/%s/%s/s3/aws4_request"
         aws_access_key (Date.to_string_iso8601_basic date)
         (string_of_region region)
     in
     let signature = mac signing_key string_to_sign in
 
-    let auth_header = Printf.sprintf
+    let auth_header = sprintf
         "AWS4-HMAC-SHA256 Credential=%s,SignedHeaders=%s,Signature=%s"
         creds signed_headers (Compat.cstruct_to_hex_string signature)
     in
@@ -359,10 +366,15 @@ let gzip_data ?level data =
   write32 buffer len;
   Buffer.contents buffer
 
-let make_request ?body ?(region=`Us_east_1) ?(credentials:Credentials.t option) ?content_type ?content_encoding ?acl ?cache_control ~meth ~path () =
+let make_request ?body ?(region=`Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
   let host_str = region_host_string region in
-  let uri = Printf.sprintf "https://%s/%s" host_str path
-            |> Uri.of_string in
+  let uri = Uri.make
+      ~scheme:"https"
+      ~host:host_str
+      ~path
+      ~query:(List.map ~f:(fun (k,v) -> k, [v]) query)
+      ()
+  in
   let time = Time.now () in
   (* If PUT add content length *)
   let content_length = match meth with
@@ -371,16 +383,10 @@ let make_request ?body ?(region=`Us_east_1) ?(credentials:Credentials.t option) 
       Some ("Content-Length", Int.to_string length)
     | _ -> None
   in
-  let host             = Some ("Host", host_str) in
-  let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
-  let content_encoding = Option.map ~f:(fun ct -> ("Content-Encoding", ct)) content_encoding in
-  let cache_control    = Option.map ~f:(fun cc -> ("Cache-Control", cc)) cache_control in
-  let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
-
+  let host = "Host", host_str in
   let (amz_headers, hashed_payload) = Auth.make_amz_headers ?credentials time ?body in
   let headers =
-    List.filter_opt [ host; content_length; content_type;
-                      content_encoding; cache_control; acl ] @ amz_headers
+    host :: (List.filter_opt [ content_length ]) @ headers @ amz_headers
   in
 
   let request = Request.make ~meth
@@ -415,9 +421,14 @@ let put ?(retries = 12) ?credentials ?(region=`Us_east_1) ?content_type ?(gzip=f
   in
   let rec cmd count =
     let open Async.Std in
-    make_request ?credentials ~region
-      ?content_type ?content_encoding ?acl ?cache_control
-      ~meth:`PUT ~path ~body () >>= fun (resp, body) ->
+    let headers =
+      let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
+      let content_encoding = Option.map ~f:(fun ct -> ("Content-Encoding", ct)) content_encoding in
+      let cache_control    = Option.map ~f:(fun cc -> ("Cache-Control", cc)) cache_control in
+      let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
+      Core.Std.List.filter_opt [ content_type; content_encoding; cache_control; acl ]
+    in
+    make_request ?credentials ~region ~headers ~meth:`PUT ~path ~body ~query: [] () >>= fun (resp, body) ->
     let status = Cohttp.Response.status resp in
     match status, Code.code_of_status status with
     | #Code.success_status, _ ->
@@ -437,12 +448,58 @@ let put ?(retries = 12) ?credentials ?(region=`Us_east_1) ?content_type ?(gzip=f
 (* Default sleep upto 400 seconds *)
 let get ?(retries = 12) ?credentials ?(region=`Us_east_1) ~path () =
   let rec cmd count =
-    make_request ?credentials ~region ~meth:`GET ~path () >>= fun (resp, body) ->
+    make_request ?credentials ~region ~headers:[] ~meth:`GET ~path ~query:[] () >>= fun (resp, body) ->
     let status = Cohttp.Response.status resp in
     match status, Code.code_of_status status with
     | #Code.success_status, _ ->
         Body.to_string body >>= fun body ->
         return (Ok body)
+    | _, ((500 | 503) as code) when count < retries ->
+        (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
+        let delay = ((2.0 ** float count) *. 100.) in
+        Log.Global.info "Get %s was rate limited (%d). Sleeping %f ms" path code delay;
+        after (Time.Span.of_ms delay) >>= fun () ->
+        cmd (count + 1)
+    | _ ->
+        Body.to_string body >>= fun body ->
+        return (Or_error.errorf "Failed to get s3://%s. Error was: %s" path body)
+  in
+  Deferred.Or_error.try_with_join (fun () -> cmd 0)
+
+(* Find node *)
+let rec get_value_exn name = function
+  | [] -> raise Not_found
+  | Xml.Element (n, _, [ Xml.PCData v ]) :: _ when n = name -> v
+  | _ :: xs -> get_value_exn name xs
+
+let rec get_value name = function
+  | [] -> None
+  | Xml.Element (n, _, [ Xml.PCData v ]) :: _ when n = name -> Some v
+  | _ :: xs -> get_value name xs
+
+(* Default sleep upto 400 seconds *)
+let ls ?(retries = 12) ?credentials ?(region=`Us_east_1) ?continuation_token ~path () =
+  let query =
+    let q = [("list-type", "2")] in
+
+    Option.value_map ~default:q ~f:(fun ct -> ("continuation-token", ct) :: q) continuation_token
+  in
+  let rec cmd count =
+    make_request ?credentials ~region ~headers:[] ~meth:`GET ~path ~query () >>= fun (resp, body) ->
+    let status = Cohttp.Response.status resp in
+    match status, Code.code_of_status status with
+    | #Code.success_status, _ ->
+        Body.to_string body >>= fun body ->
+        (* Parse the xml result *)
+        let xml = Xml.parse_string body |> Xml.children in
+        let elements =
+          xml
+          |> List.filter_map ~f:( function Xml.Element ("Contents", _, v) -> Some v | _ -> None )
+          |> List.map ~f:( fun xml -> (get_value_exn "Key" xml,
+                                       get_value_exn "Size" xml |> int_of_string) )
+        in
+        let ct = get_value "NextContinuationToken" xml in
+        return (Ok (elements, ct))
     | _, ((500 | 503) as code) when count < retries ->
         (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
         let delay = ((2.0 ** float count) *. 100.) in

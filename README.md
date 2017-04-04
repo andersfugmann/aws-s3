@@ -8,7 +8,7 @@ The library uses cohttp and async for threading.
 The library supports
 * Fetching credentials
 * Copying file from and to s3
+* List files in S3
 
 In progress
-* List files in S3
 * Delete objects in S3
