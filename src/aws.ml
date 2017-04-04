@@ -36,6 +36,17 @@ let cp profile src dst () =
       Log.Global.error "Could not put file: Error is: %s" (Error.to_string_hum e);
       return ()
 
+let rm profile path () =
+  S3.Credentials.get_credentials profile >>= fun credentials ->
+  let credentials = Or_error.ok_exn credentials in
+  S3.delete ~credentials ~path () >>= function
+    | Ok () -> return ()
+    | Error e ->
+      Log.Global.error "Could not delete file: Error is: %s" (Error.to_string_hum e);
+      return ()
+
+
+
 let ls profile bucket () =
   let rec ls_all ?continuation_token credentials bucket =
     let open Deferred.Or_error in
@@ -58,22 +69,35 @@ let ls profile bucket () =
       Log.Global.error "Get error: %s" (Error.to_string_hum e);
       return ()
 
-
 let () =
+  let profile_flag = Command.Spec.(flag "profile" (optional string) ~doc:"profile") in
+
   let cp =
     Command.async
       ~summary:"Copy files to/from S3"
       Command.Spec.(empty
+                    +> profile_flag
                     +> anon ("src" %: string)
                     +> anon ("dst" %: string)
-                   ) (cp None)
+                   ) cp
+  in
+  let rm =
+    Command.async
+      ~summary:"Delete file in S3"
+      Command.Spec.(empty
+                    +> profile_flag
+                    +> anon ("path" %: string)
+                   ) rm
   in
   let ls =
     Command.async
       ~summary:"List files in S3"
       Command.Spec.(empty
+                    +> profile_flag
                     +> anon ("bucket" %: string)
-                   ) (ls None)
+                    ) ls
   in
-  let command = Command.group ~summary:"cp|ls" [ "cp", cp; "ls", ls ] in
+  let s3_command = Command.group ~summary:"S3 command" [ "cp", cp; "rm", rm; "ls", ls ] in
+  let command = Command.group ~summary:"Aws s3 command line utility" [ "s3", s3_command ] in
+
   Command.run command

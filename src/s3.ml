@@ -147,21 +147,21 @@ module Compat = struct
   let encode_query_string uri =
     (* Sort and encode query string.
        Note that AWS wants null keys to have '=' for all keys.
-       URI.encoded_of_query encodes [""] as ?a=, and [] as ?a.
+       Also it seems that amazon is not following standard rules for argument url encoding, but require that
+       '+' is pct encoded as '%2B'.
     *)
     Uri.query uri
     |> List.sort ~cmp:ksrt
     |> List.map ~f:(function (k, []) -> (k, [ "" ]) | x -> x)
-    |> List.map
-      ~f:(fun (k, vs) -> List.map vs ~f:(fun v -> sprintf "%s=%s"
-                                            (Uri.pct_encode ~component:`Userinfo k)
-                                            (Uri.pct_encode ~component:`Userinfo v)))
+    |> List.map ~f:(fun (k, vs) ->
+        List.map vs ~f:(fun v ->
+            sprintf "%s=%s" (Uri.pct_encode ~component:`Userinfo k)
+              (Uri.pct_encode ~component:`Userinfo v)
+          )
+      )
     |> List.concat
     |> String.concat ~sep:"&"
-      (*
-    |> List.map ~f:(function (k, []) -> k, [ "" ] | x -> x)
-    |> (fun s -> Uri.encoded_of_query s) (* Need to url-encode the parameters? *)
-*)
+
   let format_time t =
     (* Core.Std.Time doesn't have a format function that takes a timezone *)
     let d, s = Time.to_date_ofday ~zone:Time.Zone.utc t in
@@ -409,6 +409,7 @@ let make_request ?body ?(region=`Us_east_1) ?(credentials:Credentials.t option) 
               ~body:(Option.value_map ~f:(Body.of_string) ~default:`Empty body)
               request
   | `GET -> Cohttp_async.Client.request request
+  | `DELETE -> Cohttp_async.Client.request request
   | _ -> failwith "not possible right now"
 
 (* Default sleep upto 400 seconds *)
@@ -466,12 +467,33 @@ let get ?(retries = 12) ?credentials ?(region=`Us_east_1) ~path () =
   in
   Deferred.Or_error.try_with_join (fun () -> cmd 0)
 
-(* Find node *)
+(* Default sleep upto 400 seconds *)
+let delete ?(retries = 12) ?credentials ?(region=`Us_east_1) ~path () =
+  let rec cmd count =
+    make_request ?credentials ~region ~headers:[] ~meth:`DELETE ~path ~query:[] () >>= fun (resp, body) ->
+    let status = Cohttp.Response.status resp in
+    match status, Code.code_of_status status with
+    | #Code.success_status, _ ->
+        return (Ok ())
+    | _, ((500 | 503) as code) when count < retries ->
+        (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
+        let delay = ((2.0 ** float count) *. 100.) in
+        Log.Global.info "Put %s was rate limited (%d). Sleeping %f ms" path code delay;
+        after (Time.Span.of_ms delay) >>= fun () ->
+        cmd (count + 1)
+    | _ ->
+        Body.to_string body >>= fun body ->
+        return (Or_error.errorf "Failed to delete s3://%s. Error was: %s" path body)
+  in
+  Deferred.Or_error.try_with_join (fun () -> cmd 0)
+
+(** Find XML node *)
 let rec get_value_exn name = function
   | [] -> raise Not_found
   | Xml.Element (n, _, [ Xml.PCData v ]) :: _ when n = name -> v
   | _ :: xs -> get_value_exn name xs
 
+(** Find XML node *)
 let rec get_value name = function
   | [] -> None
   | Xml.Element (n, _, [ Xml.PCData v ]) :: _ when n = name -> Some v
@@ -508,7 +530,7 @@ let ls ?(retries = 12) ?credentials ?(region=`Us_east_1) ?continuation_token ~pa
         cmd (count + 1)
     | _ ->
         Body.to_string body >>= fun body ->
-        return (Or_error.errorf "Failed to get s3://%s. Error was: %s" path body)
+        return (Or_error.errorf "Failed to ls s3://%s. Error was: %s" path body)
   in
   Deferred.Or_error.try_with_join (fun () -> cmd 0)
 
