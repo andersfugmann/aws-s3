@@ -48,25 +48,24 @@ let rm profile path () =
 
 
 let ls profile bucket () =
-  let rec ls_all ?continuation_token credentials bucket =
+  let rec ls_all (result, cont) =
     let open Deferred.Or_error in
-    S3.ls ?continuation_token ~credentials ~path:bucket () >>= fun (elements, ct) ->
 
-    Core.Std.List.iter ~f:(fun (objekt, size) -> printf "%d\t%s\n" size objekt) elements;
+    Core.Std.List.iter ~f:(fun { S3.objekt; size } -> printf "%d\t%s\n" size objekt) result;
 
-    match ct with
-    | Some continuation_token ->
-        ls_all ~continuation_token credentials bucket
-    | None ->
-        return ()
+    match cont with
+    | S3.More continuation -> continuation () >>= ls_all
+    | S3.Done -> return ()
   in
   S3.Credentials.get_credentials profile >>= fun credentials ->
   let credentials = Or_error.ok_exn credentials in
   (* nb client does not support redirects or preflight 100 *)
-  ls_all credentials bucket >>= function
+  let open Deferred.Or_error in
+  let res = S3.ls ~credentials ~path:bucket () >>= fun x -> ls_all x in
+  let open Async.Std in
+  res >>= function
   | Ok () -> return ()
-  | Error e ->
-      Log.Global.error "Get error: %s" (Error.to_string_hum e);
+  | Error e -> Log.Global.error "Error doing ls: Error is: %s" (Error.to_string_hum e);
       return ()
 
 let () =

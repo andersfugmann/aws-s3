@@ -478,12 +478,41 @@ let delete ?(retries = 12) ?credentials ?(region=`Us_east_1) ~path () =
     | _, ((500 | 503) as code) when count < retries ->
         (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
         let delay = ((2.0 ** float count) *. 100.) in
-        Log.Global.info "Put %s was rate limited (%d). Sleeping %f ms" path code delay;
+        Log.Global.info "Delete %s was rate limited (%d). Sleeping %f ms" path code delay;
         after (Time.Span.of_ms delay) >>= fun () ->
         cmd (count + 1)
     | _ ->
         Body.to_string body >>= fun body ->
         return (Or_error.errorf "Failed to delete s3://%s. Error was: %s" path body)
+  in
+  Deferred.Or_error.try_with_join (fun () -> cmd 0)
+
+let delete_multi ?(retries = 12) ?credentials ?(region=`Us_east_1) ~bucket objects () =
+  let body =
+    Xml.Element
+      ("Delete", [],
+       List.map objects ~f:(fun path -> Xml.Element ("Object", [], [ Xml.Element ("Key", [], [ Xml.PCData path ]) ])))
+    |> Xml.to_string
+  in
+  let headers = [ "Content-MD5", B64.encode (Digest.string body) ] in
+  let rec cmd count =
+    make_request ?credentials ~region ~headers ~meth:`POST ~query:["delete", ""] ~path:bucket () >>= fun (resp, body) ->
+    let status = Cohttp.Response.status resp in
+    match status, Code.code_of_status status with
+    | #Code.success_status, _ ->
+        (* Decode the body, and return deleted objects *)
+
+
+        return (Ok ())
+    | _, ((500 | 503) as code) when count < retries ->
+        (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
+        let delay = ((2.0 ** float count) *. 100.) in
+        Log.Global.info "Multi delete on bucket '%s' was rate limited (%d). Sleeping %f ms" bucket code delay;
+        after (Time.Span.of_ms delay) >>= fun () ->
+        cmd (count + 1)
+    | _ ->
+        Body.to_string body >>= fun body ->
+        return (Or_error.errorf "Failed to multi delete from bucket '%s'. Error was: %s" bucket body)
   in
   Deferred.Or_error.try_with_join (fun () -> cmd 0)
 
@@ -500,10 +529,16 @@ let rec get_value name = function
   | _ :: xs -> get_value name xs
 
 (* Default sleep upto 400 seconds *)
-let ls ?(retries = 12) ?credentials ?(region=`Us_east_1) ?continuation_token ~path () =
+type entry = { objekt: string;
+                size: int;
+             }
+
+type ls_result = (entry list * ls_cont) Deferred.Or_error.t
+and ls_cont = More of (unit -> ls_result) | Done
+
+let rec ls ?(retries = 12) ?credentials ?(region=`Us_east_1) ?continuation_token ~path () : ls_result =
   let query =
     let q = [("list-type", "2")] in
-
     Option.value_map ~default:q ~f:(fun ct -> ("continuation-token", ct) :: q) continuation_token
   in
   let rec cmd count =
@@ -517,11 +552,14 @@ let ls ?(retries = 12) ?credentials ?(region=`Us_east_1) ?continuation_token ~pa
         let elements =
           xml
           |> List.filter_map ~f:( function Xml.Element ("Contents", _, v) -> Some v | _ -> None )
-          |> List.map ~f:( fun xml -> (get_value_exn "Key" xml,
-                                       get_value_exn "Size" xml |> int_of_string) )
+          |> List.map ~f:( fun xml -> { objekt = get_value_exn "Key" xml;
+                                        size = get_value_exn "Size" xml |> int_of_string} )
         in
-        let ct = get_value "NextContinuationToken" xml in
-        return (Ok (elements, ct))
+        let continuation = match get_value "NextContinuationToken" xml with
+          | Some ct -> More (ls ~retries ?credentials ~region ~continuation_token:ct ~path)
+          | None -> Done
+        in
+        return (Ok (elements, continuation))
     | _, ((500 | 503) as code) when count < retries ->
         (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
         let delay = ((2.0 ** float count) *. 100.) in
