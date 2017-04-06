@@ -11,7 +11,7 @@ vmount(-l, src, _build)
 
 .SUBDIRS: _build
 
-    OCamlProgram(aws, aws s3)
+    OCamlProgram(aws, aws s3 credentials)
     .DEFAULT: aws
 
 .PHONY: clean dep install distclean unit-test integration-test

@@ -16,7 +16,7 @@ let determine_paths src dst =
   | (true, true) -> failwith "Does not support copying from s3 to s3"
 
 let cp profile src dst () =
-  S3.Credentials.get_credentials profile >>= fun credentials ->
+  Credentials.get_credentials profile >>= fun credentials ->
   let credentials = Or_error.ok_exn credentials in
   (* nb client does not support redirects or preflight 100 *)
   match determine_paths src dst with
@@ -37,7 +37,7 @@ let cp profile src dst () =
       return ()
 
 let rm profile path () =
-  S3.Credentials.get_credentials profile >>= fun credentials ->
+  Credentials.get_credentials profile >>= fun credentials ->
   let credentials = Or_error.ok_exn credentials in
   S3.delete ~credentials ~path () >>= function
     | Ok () -> return ()
@@ -57,7 +57,7 @@ let ls profile bucket () =
     | S3.More continuation -> continuation () >>= ls_all
     | S3.Done -> return ()
   in
-  S3.Credentials.get_credentials profile >>= fun credentials ->
+  Credentials.get_credentials profile >>= fun credentials ->
   let credentials = Or_error.ok_exn credentials in
   (* nb client does not support redirects or preflight 100 *)
   let open Deferred.Or_error in
