@@ -3,3 +3,4 @@ _build
 *~
 .omakedb*
 .merlin
+src/.merlin

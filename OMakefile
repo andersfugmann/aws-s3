@@ -3,15 +3,26 @@
 USE_OCAMLFIND = true
 NATIVE_ENABLED = true
 
+LIBNAME = S3_aws
+
 OCAMLFLAGS = -thread -g -w @A-4-39-41-44-45-58 -bin-annot
 OCAMLPACKS[] = core async async_extra async_find unix base64 str oUnit cohttp cohttp.async inifiles cryptokit nocrypto yojson ppx_deriving_yojson xml-light
 
-mkdir -p _build
-vmount(-l, src, _build)
+mkdir -p _build/lib
+mkdir -p _build/test
+vmount(-l, src, _build/lib)
+vmount(-l, test, _build)
+
+.SUBDIRS: _build/lib
+  OCAMLFLAGS += -for-pack $(LIBNAME)
 
 .SUBDIRS: _build
+  section:
+    OCamlPackage($(LIBNAME), lib/s3 lib/credentials)
+    .DEFAULT: $(LIBNAME).cmx
 
-    OCamlProgram(aws, aws s3 credentials)
+  section:
+    OCamlProgram(aws, aws $(LIBNAME))
     .DEFAULT: aws
 
 .PHONY: clean dep install distclean unit-test integration-test
@@ -19,7 +30,7 @@ clean:
     $(RM) -r _build OMake*.omc
     $(RM) $(find . -name \*~)
     $(RM) -r .omake*
-
+    $(RM) .merlin src/.merlin
 dep:
     opam install -y $(filter-out unix str inifiles cohttp.async, $(OCAMLPACKS)) ocaml-inifiles
 
@@ -29,11 +40,17 @@ integration-test: _build/integration-tests
 unit-test: _build/unit-tests
     _build/unit-tests -runner sequential
 
-.BUILD_BEGIN: .merlin
+.BUILD_BEGIN: .merlin src/.merlin
 .merlin: OMakefile
     echo "FLG $(filter-out -O3 -bin-annot -g,$(OCAMLFLAGS))" > $@
-    echo "S src" >> $@
+    echo "S test" >> $@
     echo "B _build" >> $@
+    echo PKG $(OCAMLPACKS) >> $@
+
+src/.merlin: OMakefile
+    echo "FLG $(filter-out -O3 -bin-annot -g,$(OCAMLFLAGS))" > $@
+    echo "S src" >> $@
+    echo "B _build/lib" >> $@
     echo PKG $(OCAMLPACKS) >> $@
 
 distclean: clean

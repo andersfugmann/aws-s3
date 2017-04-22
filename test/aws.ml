@@ -1,10 +1,11 @@
 open Core.Std
 open Async.Std
+open S3_aws
 
 type s3path = {bucket : string; objekt : string}
 
 type cmd =
-    S3toLocal of string * string
+  | S3toLocal of string * string
   | LocaltoS3 of string * string
 
 let determine_paths src dst =
@@ -44,8 +45,6 @@ let rm profile path () =
     | Error e ->
       Log.Global.error "Could not delete file: Error is: %s" (Error.to_string_hum e);
       return ()
-
-
 
 let ls profile bucket () =
   let rec ls_all (result, cont) =
