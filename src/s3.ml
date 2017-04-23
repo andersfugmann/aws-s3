@@ -23,7 +23,6 @@ open Cohttp_async
 
 let ksrt = fun (k,_) (k',_) -> String.compare k k'
 
-
 module Compat = struct
   (** Things we need to make this happen that, ideally, we'd like other
      libraries to provide and that are orthogonal to the example here *)
