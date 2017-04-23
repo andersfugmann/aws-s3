@@ -1,0 +1,6 @@
+version = "0.9"
+description = "Aws s3 client library"
+requires = "core async oUnit cohttp cohttp.async inifiles cryptokit nocrypto yojson ppx_deriving_yojson xml-light"
+
+archive(native) = "Aws_s3.cmx"
+archive(byte) = "Aws_s3.cmo"

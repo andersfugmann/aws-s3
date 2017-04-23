@@ -1,6 +1,6 @@
 open Core.Std
 open Async.Std
-open S3_aws
+open Aws_s3
 
 type s3path = {bucket : string; objekt : string}
 

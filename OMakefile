@@ -2,11 +2,12 @@
 
 USE_OCAMLFIND = true
 NATIVE_ENABLED = true
+BYTE_ENABLED = true
 
-LIBNAME = S3_aws
+LIBNAME = Aws_s3
 
 OFLAGS = -thread -g -w @A-4-39-41-44-45-58 -bin-annot
-OCAMLPACKS[] = core async async_extra async_find unix base64 str oUnit cohttp cohttp.async inifiles cryptokit nocrypto yojson ppx_deriving_yojson xml-light
+OCAMLPACKS[] = core async oUnit cohttp cohttp.async inifiles cryptokit nocrypto yojson ppx_deriving_yojson xml-light
 
 mkdir -p _build
 mkdir -p _build
@@ -24,12 +25,22 @@ vmount(-l, src, _build)
     OCamlProgram(aws, aws $(LIBNAME))
     .DEFAULT: aws
 
-.PHONY: clean dep install distclean unit-test integration-test
+  .PHONY: uninstall install
+  uninstall:
+    -ocamlfind remove $(lowercase $(LIBNAME))
+
+  LIBFILES = $(addsuffixes .cmi .cmo .cmt .cmx .o, $(LIBNAME))
+  install: uninstall $(LIBFILES)
+    ocamlfind install $(lowercase $(LIBNAME)) $(LIBFILES) ../META
+
+
+.PHONY: clean dep distclean unit-test integration-test
 clean:
     $(RM) -r _build OMake*.omc
     $(RM) $(find . -name \*~)
     $(RM) -r .omake*
     $(RM) .merlin src/.merlin
+
 dep:
     opam install -y $(filter-out unix str inifiles cohttp.async, $(OCAMLPACKS)) ocaml-inifiles
 
@@ -45,6 +56,5 @@ unit-test: _build/unit-tests
     echo "S src" >> $@
     echo "B _build" >> $@
     echo PKG $(OCAMLPACKS) >> $@
-
 
 distclean: clean
