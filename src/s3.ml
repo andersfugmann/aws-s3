@@ -113,18 +113,6 @@ type region = [
   | `Us_west_2      (* US West (Oregon) *)
 ]
 
-let region_of_string = function
-  | "ap-northeast-1" -> `Ap_northeast_1
-  | "ap-southeast-1" -> `Ap_southeast_1
-  | "ap-southeast-2"-> `Ap_southeast_2
-  | "eu-central-1" -> `Eu_central_1
-  | "eu-west-1" -> `Eu_west_1
-  | "sa-east-1" -> `Sa_east_1
-  | "us-east-1" -> `Us_east_1
-  | "us-west-1" -> `Us_west_1
-  | "us-west-2" -> `Us_west_2
-  | s -> raise (Invalid_argument ("region_of_string: " ^ s))
-
 let string_of_region = function
   | `Ap_northeast_1 -> "ap-northeast-1"
   | `Ap_southeast_1 -> "ap-southeast-1"
@@ -137,15 +125,8 @@ let string_of_region = function
   | `Us_west_2 -> "us-west-2"
 
 let region_host_string = function
-  | `Ap_northeast_1 -> "s3-ap-northeast-1.amazonaws.com"
-  | `Ap_southeast_1 -> "s3-ap-southeast-1.amazonaws.com"
-  | `Ap_southeast_2 -> "s3-ap-southeast-2.amazonaws.com"
-  | `Eu_central_1 -> "s3-eu-central-1.amazonaws.com"
-  | `Eu_west_1 -> "s3-eu-west-1.amazonaws.com"
-  | `Sa_east_1 -> "s3-sa-east-1.amazonaws.com"
   | `Us_east_1 -> "s3.amazonaws.com"
-  | `Us_west_1 -> "s3-us-west-1.amazonaws.com"
-  | `Us_west_2 -> "s3-us-west-2.amazonaws.com"
+  | region -> string_of_region region |> sprintf "s3-%s.amazonaws.com"
 
 module Auth = struct
   (** AWS S3 Authorization *)
@@ -491,19 +472,8 @@ module Test = struct
 
   open Async.Std
 
-  let assert_ok ~msg = function
-    | Ok r -> r
-    | Error e -> assert_failure (msg ^ ": " ^ (Core_kernel.Error.to_string_hum e))
-
   let gunzip data =
     Process.create ~prog:"gunzip" ~args:[ "--no-name"; "-" ] () >>= fun proc ->
-    let proc = Or_error.ok_exn proc in
-    (* Write to the process. *)
-    Writer.write (Process.stdin proc) data;
-    Process.collect_stdout_and_wait proc
-
-  let gzip ?(level=6) data =
-    Process.create ~prog:"gzip" ~args:[ sprintf "-%d" level; "--no-name"; "-" ] () >>= fun proc ->
     let proc = Or_error.ok_exn proc in
     (* Write to the process. *)
     Writer.write (Process.stdin proc) data;

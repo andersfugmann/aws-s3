@@ -15,11 +15,16 @@ type t = {
   expiration: time option [@key "Expiration"];
   } [@@deriving of_yojson { strict = false }]
 
-module Iam = struct
 
+let make_credentials ~access_key ~secret_key ?token ?expiration () =
+  { aws_access_key=access_key; aws_secret_key=secret_key; aws_token=token; expiration }
+
+
+module Iam = struct
+  let instance_data_host = "instance-data.ec2.internal"
   let get_role () =
     let inner () =
-      let uri = Uri.make ~host:"169.254.169.254" ~scheme:"http" ~path:"/latest/meta-data/iam/security-credentials/" () in
+      let uri = Uri.make ~host:instance_data_host ~scheme:"http" ~path:"/latest/meta-data/iam/security-credentials/" () in
       let request = Cohttp.Request.make ~meth:`GET uri in
       Cohttp_async.Client.request request >>= fun (response, body) ->
       match Cohttp.Response.status response with
@@ -32,10 +37,10 @@ module Iam = struct
     in
     Deferred.Or_error.try_with_join inner
 
-  let get_security_token role =
+  let get_credentials role =
     let inner () =
       let path = sprintf "/latest/meta-data/iam/security-credentials/%s" role in
-      let uri = Uri.make ~host:"169.254.169.254" ~scheme:"http" ~path () in
+      let uri = Uri.make ~host:instance_data_host ~scheme:"http" ~path () in
       let request = Cohttp.Request.make ~meth:`GET uri in
       Cohttp_async.Client.request request >>= fun (response, body) ->
       match Cohttp.Response.status response with
@@ -53,17 +58,13 @@ module Iam = struct
           return (Or_error.errorf "Failed to get credentials from %s. Response was: %s" (Uri.to_string uri) body)
     in
     Deferred.Or_error.try_with_join inner
-
 end
-
-let make_credentials ~access_key ~secret_key ?token ?expiration () =
-  { aws_access_key=access_key; aws_secret_key=secret_key; aws_token=token; expiration }
 
 module Local = struct
   let get_credentials ?(profile="default") () =
     let home = Sys.getenv "HOME" |> Option.value ~default:"." in
     let creds_file = sprintf "%s/.aws/credentials" home in
-    Deferred.Or_error.try_with ~name:__MODULE__ ~extract_exn:false @@
+    Deferred.Or_error.try_with ~name:creds_file ~extract_exn:false @@
     fun () ->
     let ini = new Inifiles.inifile creds_file in
     let access_key = ini#getval profile "aws_access_key_id" in
@@ -72,12 +73,6 @@ module Local = struct
 end
 
 module Helper = struct
-  (** Get credentials. If a profile is supplied the credentials is read from
-      ~/.aws/credetils
-
-      If not section is given, credetials is first read from section 'default',
-      and if not found the credentials is retrieved though looked up Iam aws credential system
-  *)
   let get_credentials ?profile () =
     match profile with
     | Some profile -> Local.get_credentials ~profile ()
@@ -86,6 +81,6 @@ module Helper = struct
         | Result.Ok c -> Deferred.Or_error.return c
         | Error _ ->
             Iam.get_role () >>=? fun role ->
-            Iam.get_security_token role
+            Iam.get_credentials role
       end
 end
