@@ -52,7 +52,7 @@ unit-test: _build/unit-tests
 
 .BUILD_BEGIN: .merlin
 .merlin: OMakefile
-    echo "FLG $(filter-out -O3 -bin-annot -g,$(OCAMLFLAGS))" > $@
+    echo "FLG $(filter-out -O3 -bin-annot -g,$(OFLAGS))" > $@
     echo "S src" >> $@
     echo "B _build" >> $@
     echo PKG $(OCAMLPACKS) >> $@
