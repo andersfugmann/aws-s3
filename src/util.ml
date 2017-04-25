@@ -353,7 +353,11 @@ let yojson_of_xml xml =
         (n, `Assoc elements)
   in
   `Assoc [inner xml]
-
+(*
+let rec xml_of_yojson = function
+  | `Assoc assoc ->
+      let result = List.map
+  *)
 
 module Test = struct
   open OUnit2

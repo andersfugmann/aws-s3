@@ -1,7 +1,7 @@
 open Async.Std
 open Core.Std
 
-module Ls_result : sig
+module Ls : sig
   type storage_class = Standard | Standard_ia | Reduced_redundancy | Glacier
   type contents = {
     storage_class : storage_class;
@@ -49,4 +49,4 @@ val ls :
   ?retries:int ->
   ?credentials:Credentials.t ->
   ?region:Util.region ->
-  ?continuation_token:string -> path:string -> unit -> Ls_result.result
+  ?continuation_token:string -> path:string -> unit -> Ls.result

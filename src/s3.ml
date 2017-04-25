@@ -22,7 +22,7 @@ open Async.Std
 open Cohttp
 open Cohttp_async
 
-module Ls_result = struct
+module Ls = struct
   type time = Time.t
   let time_of_yojson = function
     | `String s -> Pervasives.Ok (Time.of_string s)
@@ -54,14 +54,14 @@ module Ls_result = struct
     contents: contents list [@key "Contents"];
   } [@@deriving of_yojson { strict = false }]
 
-  type t = {
+  type response = {
     result: list_bucket_result [@key "ListBucketResult"];
   } [@@deriving of_yojson { strict = false }]
 
-  let of_xml s =
+  let response_of_xml s =
     Xml.parse_string s
                |> Util.yojson_of_xml
-               |> of_yojson
+               |> response_of_yojson
                |> function | R.Ok t -> t
                            | R.Error s -> failwith s
 
@@ -69,6 +69,51 @@ module Ls_result = struct
   and cont = More of (unit -> result) | Done
 
 end
+(*
+module Delete_multi = struct
+  type objekt = {
+    key: string [@key "Object"];
+    version_id: string option [@key "VersionId"]
+  } [@@deriving to_yojson { strict = false }]
+
+  type delete = {
+    quiet: bool [@key "Quiet"];
+    objects: objekt list [@key "Object"]
+  } [@@deriving to_yojson { strict = false }]
+
+  type request = {
+    delete: delete [@key "Delete"];
+  } [@@deriving to_yojson { strict = false }]
+
+
+  type deleted = {
+    key: string [@key "Key"];
+  } [@@deriving of_yojson { strict = false }]
+
+  type error = {
+    key: string [@key "Key"];
+    code : string [@key "Key"];
+    message : string [@key "Key"];
+  } [@@deriving of_yojson { strict = false }]
+
+  type delete_result = {
+    deleted: deleted list [@key "Deleted"] [@default []];
+    error: error list  [@key "Error"] [@default []];
+  } [@@deriving of_yojson { strict = false }]
+
+  type result = {
+    delete_result : delete_result [@key "DeleteResult"];
+  } [@@deriving of_yojson { strict = false }]
+
+  let result_of_xml s =
+    Xml.parse_string s
+    |> Util.yojson_of_xml
+    |> result_of_yojson
+    |> function | R.Ok t -> t
+                | R.Error s -> failwith s
+
+end
+*)
 
 (* Default sleep upto 400 seconds *)
 let put ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ?content_type ?(gzip=false) ?acl ?cache_control ~path data =
@@ -174,7 +219,7 @@ let delete_multi ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ~bucket o
   in
   Deferred.Or_error.try_with_join (fun () -> cmd 0)
 
-let rec ls ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ?continuation_token ~path () : Ls_result.result =
+let rec ls ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ?continuation_token ~path () : Ls.result =
   let query =
     let q = [("list-type", "2")] in
     Option.value_map ~default:q ~f:(fun ct -> ("continuation-token", ct) :: q) continuation_token
@@ -186,12 +231,12 @@ let rec ls ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ?continuation_t
     | #Code.success_status, _ ->
         Body.to_string body >>= fun body ->
         (* Parse the xml result *)
-        let result = Ls_result.of_xml body in
-        let continuation = match Ls_result.(result.result.next_continuation_token) with
-          | Some ct -> Ls_result.More (ls ~retries ?credentials ~region ~continuation_token:ct ~path)
-          | None -> Ls_result.Done
+        let result = Ls.response_of_xml body in
+        let continuation = match Ls.(result.result.next_continuation_token) with
+          | Some ct -> Ls.More (ls ~retries ?credentials ~region ~continuation_token:ct ~path)
+          | None -> Ls.Done
         in
-        return (Ok (Ls_result.(result.result.contents, continuation)))
+        return (Ok (Ls.(result.result.contents, continuation)))
     | _, ((500 | 503) as code) when count < retries ->
         (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
         let delay = ((2.0 ** float count) *. 100.) in
