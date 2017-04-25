@@ -16,7 +16,6 @@
  *
   }}}*)
 
-module R = Result
 open Core.Std
 open Async.Std
 open Cohttp
