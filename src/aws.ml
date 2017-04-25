@@ -50,11 +50,11 @@ let ls profile bucket () =
   let rec ls_all (result, cont) =
     let open Deferred.Or_error in
 
-    Core.Std.List.iter ~f:(fun { S3.objekt; size } -> printf "%d\t%s\n" size objekt) result;
+    Core.Std.List.iter ~f:(fun { S3.Ls_result.key; size; _ } -> printf "%d\t%s\n" size key) result;
 
     match cont with
-    | S3.More continuation -> continuation () >>= ls_all
-    | S3.Done -> return ()
+    | S3.Ls_result.More continuation -> continuation () >>= ls_all
+    | S3.Ls_result.Done -> return ()
   in
   Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
   let credentials = Or_error.ok_exn credentials in

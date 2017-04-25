@@ -1,54 +1,52 @@
-type region =
-    [ `Ap_northeast_1
-    | `Ap_southeast_1
-    | `Ap_southeast_2
-    | `Eu_central_1
-    | `Eu_west_1
-    | `Sa_east_1
-    | `Us_east_1
-    | `Us_west_1
-    | `Us_west_2 ]
+open Async.Std
+open Core.Std
 
-val gzip_data : ?level:int -> Core.Std.String.t -> string
+module Ls_result : sig
+  type storage_class = Standard | Standard_ia | Reduced_redundancy | Glacier
+  type contents = {
+    storage_class : storage_class;
+    size : int;
+    last_modified : Time.t;
+    key : string;
+    etag : string;
+  }
+
+  type result = (contents list * cont) Deferred.Or_error.t
+  and cont = More of (unit -> result) | Done
+
+end
 
 val put :
   ?retries:int ->
   ?credentials:Credentials.t ->
-  ?region:region ->
+  ?region:Util.region ->
   ?content_type:string ->
   ?gzip:bool ->
   ?acl:string ->
   ?cache_control:string ->
-  path:string -> Core.Std.String.t -> unit Async.Std.Deferred.Or_error.t
+  path:string -> String.t -> unit Deferred.Or_error.t
 
 val get :
   ?retries:int ->
   ?credentials:Credentials.t ->
-  ?region:region ->
-  path:string -> unit -> string Async.Std.Deferred.Or_error.t
+  ?region:Util.region ->
+  path:string -> unit -> string Deferred.Or_error.t
 
 val delete :
   ?retries:int ->
   ?credentials:Credentials.t ->
-  ?region:region ->
-  path:string -> unit -> unit Async.Std.Deferred.Or_error.t
+  ?region:Util.region ->
+  path:string -> unit -> unit Deferred.Or_error.t
 
 val delete_multi :
   ?retries:int ->
   ?credentials:Credentials.t ->
-  ?region:region ->
+  ?region:Util.region ->
   bucket:string ->
-  string Core.Std.List.t -> unit -> unit Async.Std.Deferred.Or_error.t
+  string List.t -> unit -> unit Deferred.Or_error.t
 
-type entry = { objekt : string; size : int; }
-type ls_result = (entry list * ls_cont) Async.Std.Deferred.Or_error.t
-and ls_cont = More of (unit -> ls_result) | Done
 val ls :
   ?retries:int ->
   ?credentials:Credentials.t ->
-  ?region:region ->
-  ?continuation_token:string -> path:string -> unit -> ls_result
-
-module Test : sig
-  val unit_test : OUnit2.test
-end
+  ?region:Util.region ->
+  ?continuation_token:string -> path:string -> unit -> Ls_result.result

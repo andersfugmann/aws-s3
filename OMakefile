@@ -7,7 +7,7 @@ BYTE_ENABLED = true
 LIBNAME = Aws_s3
 
 OFLAGS = -thread -g -w @A-4-39-41-44-45-58 -bin-annot
-OCAMLPACKS[] = core async oUnit cohttp cohttp.async inifiles cryptokit nocrypto yojson ppx_deriving_yojson xml-light
+OCAMLPACKS[] = core async oUnit cohttp cohttp.async inifiles cryptokit nocrypto yojson ppx_deriving_yojson xml-light str
 
 mkdir -p _build
 mkdir -p _build
@@ -18,7 +18,8 @@ vmount(-l, src, _build)
 
   section:
     OCAMLFLAGS = $(OFLAGS)
-    OCamlPackage($(LIBNAME), s3 credentials)
+    FILES[] = s3 credentials util
+    OCamlPackage($(LIBNAME), $(FILES))
 
   section:
     OCAMLFLAGS = $(OFLAGS)
