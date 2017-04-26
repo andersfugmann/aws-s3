@@ -16,6 +16,7 @@
  *
   }}}*)
 
+module R = Result
 open Core.Std
 open Async.Std
 open Cohttp
@@ -352,12 +353,32 @@ let yojson_of_xml xml =
         in
         (n, `Assoc elements)
   in
-  `Assoc [inner xml]
-(*
-let rec xml_of_yojson = function
-  | `Assoc assoc ->
-      let result = List.map
-  *)
+  inner xml
+
+let rec xml_of_yojson ((name : string), (value : Yojson.Safe.json)) : Xml.xml =
+  let v = match value with
+    | `Assoc s -> List.map ~f:xml_of_yojson s
+    | `List l -> List.map ~f:(fun e -> xml_of_yojson (name, e)) l
+    | `String s -> [ Xml.PCData s ]
+    | `Intlit s -> [ Xml.PCData s ]
+    | `Int i -> [ Xml.PCData (string_of_int i) ]
+    | `Float f -> [ Xml.PCData (string_of_float f) ]
+    | `Bool b -> [ Xml.PCData (string_of_bool b) ]
+    | `Null -> []
+    | `Tuple _
+    | `Variant _ -> failwith "Tuple and variant not supported"
+  in
+  Xml.Element (name, [], v )
+
+let decode ~name ~f s =
+  match Xml.parse_string s |> yojson_of_xml with
+  | n, v when n = name -> begin
+      match f v with
+      | R.Ok t -> t
+      | R.Error s -> failwith s
+    end
+  | v, _ -> failwith (sprintf "Found node '%s'. Expected '%s'" v name)
+
 
 module Test = struct
   open OUnit2

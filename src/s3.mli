@@ -11,9 +11,26 @@ module Ls : sig
     etag : string;
   }
 
-  type result = (contents list * cont) Deferred.Or_error.t
-  and cont = More of (unit -> result) | Done
+  type t = (contents list * cont) Deferred.Or_error.t
+  and cont = More of (unit -> t) | Done
+end
 
+module Delete_multi : sig
+  type objekt = { key : string; version_id : string option; }
+
+  type deleted = { key : string; version_id : string option; }
+  type error = {
+    key : string;
+    version_id : string option;
+    code : string;
+    message : string;
+  }
+  type result = {
+    delete_marker : bool;
+    delete_marker_version_id : string option;
+    deleted : deleted list;
+    error : error list;
+  }
 end
 
 val put :
@@ -43,10 +60,10 @@ val delete_multi :
   ?credentials:Credentials.t ->
   ?region:Util.region ->
   bucket:string ->
-  string List.t -> unit -> unit Deferred.Or_error.t
+  Delete_multi.objekt list -> unit -> Delete_multi.result Deferred.Or_error.t
 
 val ls :
   ?retries:int ->
   ?credentials:Credentials.t ->
   ?region:Util.region ->
-  ?continuation_token:string -> path:string -> unit -> Ls.result
+  ?continuation_token:string -> ?prefix:string -> bucket:string -> unit -> Ls.t

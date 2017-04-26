@@ -46,7 +46,7 @@ let rm profile path () =
       Log.Global.error "Could not delete file: Error is: %s" (Error.to_string_hum e);
       return ()
 
-let ls profile bucket () =
+let ls profile bucket prefix () =
   let rec ls_all (result, cont) =
     let open Deferred.Or_error in
 
@@ -60,7 +60,7 @@ let ls profile bucket () =
   let credentials = Or_error.ok_exn credentials in
   (* nb client does not support redirects or preflight 100 *)
   let open Deferred.Or_error in
-  let res = S3.ls ~credentials ~path:bucket () >>= fun x -> ls_all x in
+  let res = S3.ls ~credentials ?prefix ~bucket () >>= fun x -> ls_all x in
   let open Async.Std in
   res >>= function
   | Ok () -> return ()
@@ -84,7 +84,7 @@ let () =
       ~summary:"Delete file in S3"
       Command.Spec.(empty
                     +> profile_flag
-                    +> anon ("path" %: string)
+                    +> anon (* (sequence) *) ("path" %: string)
                    ) rm
   in
   let ls =
@@ -93,6 +93,7 @@ let () =
       Command.Spec.(empty
                     +> profile_flag
                     +> anon ("bucket" %: string)
+                    +> anon (maybe ("prefix" %: string))
                     ) ls
   in
   let s3_command = Command.group ~summary:"S3 command" [ "cp", cp; "rm", rm; "ls", ls ] in

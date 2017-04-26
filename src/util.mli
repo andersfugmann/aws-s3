@@ -1,3 +1,4 @@
+module R = Result
 open Core.Std
 open Async.Std
 open Cohttp
@@ -20,15 +21,20 @@ val make_request :
   ?body:String.t ->
   ?region:region ->
   ?credentials:Credentials.t ->
-  headers:(string * string) List.t ->
+  headers:(string * string) list ->
   meth:Code.meth ->
   path:string ->
-  query:(string * string) List.t ->
+  query:(string * string) list ->
   unit ->
   (Response.t * Body.t) Deferred.t
 
 val yojson_of_xml :
-  Xml.xml -> Yojson.Safe.json
+  Xml.xml -> string * Yojson.Safe.json
+
+val xml_of_yojson :
+  string * Yojson.Safe.json -> Xml.xml
+
+val decode: name:string -> f:(Yojson.Safe.json -> ('a, string) R.result) -> string -> 'a
 
 module Test : sig
   val async : ('a -> 'b Deferred.t) -> 'a -> 'b
