@@ -16,6 +16,7 @@
  *
   }}}*)
 
+module R = Result
 open Core.Std
 open Async.Std
 open Cohttp
@@ -24,16 +25,16 @@ open Cohttp_async
 module Ls = struct
   type time = Time.t
   let time_of_yojson = function
-    | `String s -> Pervasives.Ok (Time.of_string s)
-    | _ -> Pervasives.Error "Expected string"
+    | `String s -> R.Ok (Time.of_string s)
+    | _ -> R.Error "Expected string"
 
   type storage_class = Standard | Standard_ia | Reduced_redundancy | Glacier
   let storage_class_of_yojson = function
-    | `String "STANDARD" -> Pervasives.Ok Standard
-    | `String "STANDARD_IA" -> Pervasives.Ok Standard_ia
-    | `String "REDUCED_REDUNDANCY" -> Pervasives.Ok Reduced_redundancy
-    | `String "GLACIER" -> Pervasives.Ok Glacier
-    | _ -> Pervasives.Error "Expected string"
+    | `String "STANDARD" -> R.Ok Standard
+    | `String "STANDARD_IA" -> R.Ok Standard_ia
+    | `String "REDUCED_REDUNDANCY" -> R.Ok Reduced_redundancy
+    | `String "GLACIER" -> R.Ok Glacier
+    | _ -> R.Error "Expected string"
 
   type contents = {
     storage_class: storage_class [@key "StorageClass"];
@@ -100,9 +101,9 @@ end
 
 
 (* Default sleep upto 400 seconds *)
-let put ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ?content_type ?(gzip=false) ?acl ?cache_control ~path data =
+let put ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ?content_type ?(gzip=false) ?acl ?cache_control ~bucket ~key data =
   let open Deferred.Or_error in
-
+  let path = sprintf "%s/%s" bucket key in
   let content_encoding, body = match gzip with
     | true -> Some "gzip", Util.gzip_data data
     | false -> None, data
@@ -124,7 +125,7 @@ let put ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ?content_type ?(gz
     | _, ((500 | 503) as code) when count < retries ->
         (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
         let delay = ((2.0 ** float count) *. 100.) in
-        Log.Global.info "Put %s was rate limited (%d). Sleeping %f ms" path code delay;
+        Log.Global.info "Put s3://%s was rate limited (%d). Sleeping %f ms" path code delay;
         after (Time.Span.of_ms delay) >>= fun () ->
         cmd (count + 1)
     | _ ->
@@ -134,9 +135,10 @@ let put ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ?content_type ?(gz
   try_with_join (fun () -> cmd 0)
 
 (* Default sleep upto 400 seconds *)
-let get ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ~path () =
+let get ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ~bucket ~key () =
+  let path = sprintf "%s/%s" bucket key in
   let rec cmd count =
-    Util.make_request ?credentials ~region ~headers:[] ~meth:`GET ~path ~query:[] () >>= fun (resp, body) ->
+    Util.make_request ?credentials ~region ~headers:[] ~meth:`GET ~path:(bucket ^ "/" ^ key) ~query:[] () >>= fun (resp, body) ->
     let status = Cohttp.Response.status resp in
     match status, Code.code_of_status status with
     | #Code.success_status, _ ->
@@ -154,8 +156,8 @@ let get ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ~path () =
   in
   Deferred.Or_error.try_with_join (fun () -> cmd 0)
 
-(* Default sleep upto 400 seconds *)
-let delete ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ~path () =
+let delete ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ~bucket ~key () =
+  let path = sprintf "%s/%s" bucket key in
   let rec cmd count =
     Util.make_request ?credentials ~region ~headers:[] ~meth:`DELETE ~path ~query:[] () >>= fun (resp, body) ->
     let status = Cohttp.Response.status resp in

@@ -41,19 +41,25 @@ val put :
   ?gzip:bool ->
   ?acl:string ->
   ?cache_control:string ->
-  path:string -> String.t -> unit Deferred.Or_error.t
+  bucket:string ->
+  key:string ->
+  string -> unit Deferred.Or_error.t
 
 val get :
   ?retries:int ->
   ?credentials:Credentials.t ->
   ?region:Util.region ->
-  path:string -> unit -> string Deferred.Or_error.t
+  bucket:string ->
+  key:string ->
+  unit -> string Deferred.Or_error.t
 
 val delete :
   ?retries:int ->
   ?credentials:Credentials.t ->
   ?region:Util.region ->
-  path:string -> unit -> unit Deferred.Or_error.t
+  bucket:string ->
+  key:string ->
+  unit -> unit Deferred.Or_error.t
 
 val delete_multi :
   ?retries:int ->

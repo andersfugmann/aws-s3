@@ -2,17 +2,21 @@ open Core.Std
 open Async.Std
 open Aws_s3
 
-type s3path = {bucket : string; objekt : string}
+type objekt = { bucket: string; key: string }
+let objekt_of_uri u = { bucket = (Option.value_exn ~message:"No Host in uri" (Uri.host u));
+                        key = String.drop_prefix (Uri.path u) 1 (* Remove the beginning '/' *) }
 
 type cmd =
-  | S3toLocal of string * string
-  | LocaltoS3 of string * string
+  | S3toLocal of objekt * string
+  | LocaltoS3 of string * objekt
 
 let determine_paths src dst =
-  let is_s3 s = String.is_prefix ~prefix:"s3://" s in
+  let src = Uri.of_string src in
+  let dst = Uri.of_string dst in
+  let is_s3 u = Uri.scheme u = Some "s3" in
   match is_s3 src, is_s3 dst with
-  | (true, false) -> S3toLocal (String.drop_prefix src 5, dst)
-  | (false, true) -> LocaltoS3 (src, String.drop_prefix dst 5)
+  | (true, false) -> S3toLocal (objekt_of_uri src, Uri.path dst)
+  | (false, true) -> LocaltoS3 (Uri.path src, objekt_of_uri dst)
   | (false, false) -> failwith "Use cp(1) :)"
   | (true, true) -> failwith "Does not support copying from s3 to s3"
 
@@ -23,7 +27,7 @@ let cp profile src dst () =
   match determine_paths src dst with
   | S3toLocal (src, dst) ->
     begin
-      S3.get ~credentials ~path:src () >>= function
+      S3.get ~credentials ~bucket:src.bucket ~key:src.key () >>= function
       | Ok data ->
         Writer.with_file dst ~f:(fun writer -> Writer.write writer data; return ())
       | Error e -> Log.Global.error "Get error: %s" (Error.to_string_hum e);
@@ -31,16 +35,17 @@ let cp profile src dst () =
     end
   | LocaltoS3 (src, dst) ->
     Reader.file_contents src >>= fun data ->
-    S3.put ~credentials ~path:dst data >>= function
+    S3.put ~credentials ~bucket:dst.bucket ~key:dst.key data >>= function
     | Ok () -> return ()
     | Error e ->
       Log.Global.error "Could not put file: Error is: %s" (Error.to_string_hum e);
       return ()
 
 let rm profile path () =
+  let objekt = Uri.of_string path |> objekt_of_uri in
   Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
   let credentials = Or_error.ok_exn credentials in
-  S3.delete ~credentials ~path () >>= function
+  S3.delete ~credentials ~bucket:objekt.bucket ~key:objekt.key () >>= function
     | Ok () -> return ()
     | Error e ->
       Log.Global.error "Could not delete file: Error is: %s" (Error.to_string_hum e);

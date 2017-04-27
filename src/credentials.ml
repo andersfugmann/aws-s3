@@ -1,3 +1,4 @@
+module R = Result
 open Core.Std
 open Async.Std
 open Cohttp
@@ -5,8 +6,8 @@ open Cohttp_async
 
 type time = Time.t
 let time_of_yojson = function
-  | `String s -> Pervasives.Ok (Time.of_string s)
-  | _ -> Pervasives.Error "Expected string"
+  | `String s -> R.Ok (Time.of_string s)
+  | _ -> R.Error "Expected string"
 
 type t = {
   aws_access_key: string [@key "AccessKeyId"];
@@ -48,9 +49,9 @@ module Iam = struct
           Body.to_string body >>= fun body ->
           let json = Yojson.Safe.from_string body in
           match (of_yojson json) with
-          | Pervasives.Ok t ->
+          | R.Ok t ->
               return (Ok t)
-          | Pervasives.Error s ->
+          | R.Error s ->
               return (Or_error.errorf "Unable to parse credentials. Error was: %s" s)
         end
       | _ ->
