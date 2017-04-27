@@ -16,10 +16,8 @@ type t = {
   expiration: time option [@key "Expiration"];
   } [@@deriving of_yojson { strict = false }]
 
-
 let make_credentials ~access_key ~secret_key ?token ?expiration () =
   { aws_access_key=access_key; aws_secret_key=secret_key; aws_token=token; expiration }
-
 
 module Iam = struct
   let instance_data_host = "instance-data.ec2.internal"

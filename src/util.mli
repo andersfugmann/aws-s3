@@ -1,4 +1,9 @@
+(** Utilites *)
+
+(**/**)
 module R = Result
+(**/**)
+
 open Core.Std
 open Async.Std
 open Cohttp
@@ -16,6 +21,8 @@ type region =
   | Us_west_2
 
 val region_of_string : string -> region
+
+(**/**)
 val gzip_data : ?level:int -> String.t -> string
 val make_request :
   ?body:String.t ->

@@ -1,6 +1,4 @@
-(** The credentials module handles reading credentials locally
-    or from IAM service (aws).
-*)
+(** Loading credentials locally or from IAM service. *)
 
 type t = {
   aws_access_key: string;
@@ -17,10 +15,10 @@ val make_credentials :
 
 module Iam : sig
 
-  (** Get role assigned to this machine though IAM *)
+  (** Get machine role though IAM service *)
   val get_role : unit -> string Async.Std.Deferred.Or_error.t
 
-  (** Retrieve a credentials for [role] *)
+  (** Retrieve a credentials for a given role [role] *)
   val get_credentials : string -> t Async.Std.Deferred.Or_error.t
 
 end
@@ -35,11 +33,11 @@ end
 module Helper : sig
 
   (** Get credentials locally or though IAM service.
-      If a profile is supplied the credentials is
-      read from ~/.aws/credetils. If not section is given, credetials
-      is first read from section 'default', and if not found the
-      credentials is retrieved though looked up Iam aws credential
-      system
+      [profile] is used to speficy a specific section thethe local file.
+
+      If profile is not supplied and no credentials can be found in
+      the default section, then credentials are retrieved though Iam
+      service, using an assigned machine role.
   *)
   val get_credentials :
     ?profile:string -> unit -> t Async.Std.Deferred.Or_error.t

@@ -22,6 +22,9 @@ open Async.Std
 open Cohttp
 open Cohttp_async
 
+type 'a command = ?retries:int -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
+
+
 module Ls = struct
   type time = Time.t
   let time_of_yojson = function

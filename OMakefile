@@ -21,6 +21,12 @@ vmount(-l, src, _build)
     FILES[] = s3 credentials util
     OCamlPackage($(LIBNAME), $(FILES))
 
+    .doc.made: $(filter-exists $(addsuffix .mli, $(FILES))) $(addsuffix .ml, $(FILES))
+	mkdir -p doc
+        ocamlfind ocamldoc -thread -html -d doc $^ -package "$(OCAMLPACKS)"
+        touch $@
+
+
   section:
     OCAMLFLAGS = $(OFLAGS)
     OCamlProgram(aws, aws $(LIBNAME))
@@ -33,6 +39,8 @@ vmount(-l, src, _build)
   LIBFILES = $(addsuffixes .cmi .cmo .cmt .cmx .o, $(LIBNAME))
   install: uninstall $(LIBFILES)
     ocamlfind install $(lowercase $(LIBNAME)) $(LIBFILES) ../META
+
+
 
 
 .PHONY: clean dep distclean unit-test integration-test
