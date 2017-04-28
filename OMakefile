@@ -41,7 +41,7 @@ vmount(-l, src, _build)
 
   LIBFILES = $(addsuffixes .cmi .cmo .cmt .cmx .o, $(LIBNAME)) $(addsuffixes .cma .cmxa .a, $(lowercase $(LIBNAME)))
   install: uninstall $(LIBFILES)
-    ocamlfind install $(lowercase $(FINDLIB_NAME)) $(filter-out aws.%, $(ls *.cmi *.cmo *.cmt *.cmx *.cmxa *.o *.a *.cma)) ../META
+    ocamlfind install $(FINDLIB_NAME) $(filter-out aws.%, $(ls *.cmi *.cmo *.cmt *.cmx *.cmxa *.o *.a *.cma)) ../META
 
 
 .PHONY: clean dep distclean unit-test integration-test

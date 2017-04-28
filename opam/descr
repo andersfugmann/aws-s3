@@ -1,3 +1,4 @@
-Client Library for simple S3 access, including cp, rm and ls. The
-library also includes IAM bindings to get machine role and ssecurity
+Client Library for simple S3 access.
+The library implements methods to cp (get and put), rm and ls.
+Also included is IAM bindings to get machine role and security
 tokens.

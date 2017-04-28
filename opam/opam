@@ -1,5 +1,4 @@
 opam-version: "1.2"
-version: "0.9"
 maintainer: "anders@fugmann.net"
 authors: [ "Anders Fugmann" ]
 license: "BSD-3"
@@ -11,7 +10,7 @@ build: [
 ]
 install: ["omake" "install"]
 remove: [
-  ["ocamlfind" "remove" "aws_s3"]
+  ["ocamlfind" "remove" "aws-s3"]
 ]
 flags: [ light-uninstall ]
 
@@ -28,10 +27,3 @@ depends: [
   "ppx_deriving_yojson"
   "xml-light"
 ]
-
-synopsis: "Library to manipulate s3 objects."
-
-description: "
-Supported S3 operations: get, put, ls and delete.
-The library also supports fetching role and credentials though IAM service
-"
