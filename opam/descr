@@ -1,0 +1,3 @@
+Client Library for simple S3 access, including cp, rm and ls. The
+library also includes IAM bindings to get machine role and ssecurity
+tokens.

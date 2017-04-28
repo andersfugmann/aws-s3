@@ -5,6 +5,7 @@ NATIVE_ENABLED = true
 BYTE_ENABLED = true
 
 LIBNAME = Aws_s3
+FINDLIB_NAME = aws-s3
 
 OFLAGS = -thread -g -w @A-4-39-41-44-45-58 -bin-annot
 OCAMLPACKS[] = core async oUnit cohttp cohttp.async inifiles cryptokit nocrypto yojson ppx_deriving_yojson xml-light str
@@ -22,11 +23,13 @@ vmount(-l, src, _build)
     OCamlPackage($(LIBNAME), $(FILES))
 
     .doc.made: $(filter-exists $(addsuffix .mli, $(FILES))) $(addsuffix .ml, $(FILES))
-	mkdir -p doc
-        ocamlfind ocamldoc -thread -html -d doc $^ -package "$(OCAMLPACKS)"
-        touch $@
+      mkdir -p doc
+      ocamlfind ocamldoc -thread -html -d doc $^ -package "$(OCAMLPACKS)"
+      touch $@
 
-
+  section:
+    OCAMLFLAGS = $(OFLAGS)
+    OCamlLibrary($(lowercase $(LIBNAME)), $(LIBNAME))
   section:
     OCAMLFLAGS = $(OFLAGS)
     OCamlProgram(aws, aws $(LIBNAME))
@@ -34,13 +37,11 @@ vmount(-l, src, _build)
 
   .PHONY: uninstall install
   uninstall:
-    -ocamlfind remove $(lowercase $(LIBNAME))
+    -ocamlfind remove $(FINDLIB_NAME)
 
-  LIBFILES = $(addsuffixes .cmi .cmo .cmt .cmx .o, $(LIBNAME))
+  LIBFILES = $(addsuffixes .cmi .cmo .cmt .cmx .o, $(LIBNAME)) $(addsuffixes .cma .cmxa .a, $(lowercase $(LIBNAME)))
   install: uninstall $(LIBFILES)
-    ocamlfind install $(lowercase $(LIBNAME)) $(LIBFILES) ../META
-
-
+    ocamlfind install $(lowercase $(FINDLIB_NAME)) $(filter-out aws.%, $(ls *.cmi *.cmo *.cmt *.cmx *.cmxa *.o *.a *.cma)) ../META
 
 
 .PHONY: clean dep distclean unit-test integration-test
