@@ -10,6 +10,13 @@ type cmd =
   | S3toLocal of objekt * string
   | LocaltoS3 of string * objekt
 
+let rec retry ~delay ~retries ~(f : (unit -> 'a Deferred.Or_error.t)) () : 'a Deferred.Or_error.t =
+  f () >>= function
+  | Result.Error e when retries > 0 ->
+      Log.Global.info "Retry on error: %s" (Error.to_string_hum e);
+      after delay >>= fun () -> retry ~delay ~retries:(retries - 1) ~f ()
+  | r -> return r
+
 let determine_paths src dst =
   let src = Uri.of_string src in
   let dst = Uri.of_string dst in
@@ -62,17 +69,14 @@ let ls profile ratelimit bucket prefix () =
     Core.Std.List.iter ~f:(fun { S3.Ls.key; size; _ } -> printf "%d\t%s\n" size key) result;
 
     match cont with
-    | S3.Ls.More continuation -> ratelimit_f () >>= continuation >>= ls_all
+    | S3.Ls.More continuation -> ratelimit_f () >>= retry ~retries:5 ~delay:(Time.Span.of_sec 1.0) ~f:continuation >>= ls_all
     | S3.Ls.Done -> return ()
   in
   Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
   let credentials = Or_error.ok_exn credentials in
   (* nb client does not support redirects or preflight 100 *)
-  let open Deferred.Or_error in
-  let res = S3.ls ~credentials ?prefix ~bucket () >>= fun x -> ls_all x in
-  let open Async.Std in
-  res >>= function
-  | Ok () -> return ()
+  ls_all ([], S3.Ls.More (fun () -> S3.ls ~credentials ?prefix ~bucket ())) >>= function
+  | Result.Ok () -> return ()
   | Error e -> Log.Global.error "Error doing ls: Error is: %s" (Error.to_string_hum e);
       return ()
 
