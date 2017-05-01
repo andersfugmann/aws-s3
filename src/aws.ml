@@ -51,14 +51,18 @@ let rm profile path () =
       Log.Global.error "Could not delete file: Error is: %s" (Error.to_string_hum e);
       return ()
 
-let ls profile bucket prefix () =
+let ls profile ratelimit bucket prefix () =
+  let ratelimit_f = match ratelimit with
+    | None -> fun () -> Deferred.Or_error.return ()
+    | Some n -> fun () -> after (Time.Span.of_ns(1000. /. float n)) >>= Deferred.Or_error.return
+  in
   let rec ls_all (result, cont) =
     let open Deferred.Or_error in
 
     Core.Std.List.iter ~f:(fun { S3.Ls.key; size; _ } -> printf "%d\t%s\n" size key) result;
 
     match cont with
-    | S3.Ls.More continuation -> continuation () >>= ls_all
+    | S3.Ls.More continuation -> ratelimit_f () >>= continuation >>= ls_all
     | S3.Ls.Done -> return ()
   in
   Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
@@ -73,7 +77,8 @@ let ls profile bucket prefix () =
       return ()
 
 let () =
-  let profile_flag = Command.Spec.(flag "profile" (optional string) ~doc:"profile") in
+  let profile_flag = Command.Spec.(flag "profile" (optional string) ~doc:"<profile> Use local credentials from <profile>") in
+  let rate_limit_flag = Command.Spec.(flag "ratelimit" (optional int) ~doc:"<N> ratelimit requests to N/sec") in
 
   let cp =
     Command.async
@@ -97,6 +102,7 @@ let () =
       ~summary:"List files in S3"
       Command.Spec.(empty
                     +> profile_flag
+                    +> rate_limit_flag
                     +> anon ("bucket" %: string)
                     +> anon (maybe ("prefix" %: string))
                     ) ls
