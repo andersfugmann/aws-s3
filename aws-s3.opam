@@ -5,21 +5,14 @@ license: "BSD-3"
 homepage: "https://github.com/andersfugmann/aws-s3"
 dev-repo: "git@github.com/andersfugmann/aws-s3"
 bug-reports: "https://github.com/andersfugmann/aws-s3/issues"
-build: [
-  ["omake"]
-]
-install: ["omake" "install"]
-remove: [
-  ["ocamlfind" "remove" "aws-s3"]
-]
-flags: [ light-uninstall ]
+build: [["jbuilder" "build" "-p" name "-j" jobs]]
 
 depends: [
-  "omake" { build }
-  "core"
+  "jbuilder" { build }
+  "core { >= 0.9}"
   "async"
   "ounit"
-  "cohttp"
+  "cohttp-async"
   "ocaml-inifiles"
   "cryptokit"
   "nocrypto"
