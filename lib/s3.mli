@@ -13,8 +13,8 @@
 type 'a command = ?retries:int -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
 
 
-open Async.Std
-open Core.Std
+open Async
+open Core
 
 module Ls : sig
   type storage_class = Standard | Standard_ia | Reduced_redundancy | Glacier

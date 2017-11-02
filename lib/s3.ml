@@ -17,8 +17,8 @@
   }}}*)
 
 module R = Result
-open Core.Std
-open Async.Std
+open Core
+open Async
 open Cohttp
 open Cohttp_async
 
@@ -112,13 +112,13 @@ let put ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ?content_type ?(gz
     | false -> None, data
   in
   let rec cmd count =
-    let open Async.Std in
+    let open Async in
     let headers =
       let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
       let content_encoding = Option.map ~f:(fun ct -> ("Content-Encoding", ct)) content_encoding in
       let cache_control    = Option.map ~f:(fun cc -> ("Cache-Control", cc)) cache_control in
       let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
-      Core.Std.List.filter_opt [ content_type; content_encoding; cache_control; acl ]
+      Core.List.filter_opt [ content_type; content_encoding; cache_control; acl ]
     in
     Util.make_request ?credentials ~region ~headers ~meth:`PUT ~path ~body ~query: [] () >>= fun (resp, body) ->
     let status = Cohttp.Response.status resp in

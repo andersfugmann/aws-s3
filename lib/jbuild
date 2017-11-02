@@ -4,7 +4,7 @@
  ((name        aws_s3)
   (public_name aws-s3)
   (synopsis "Aws s3 client library")
-  (libraries (core async oUnit cohttp cohttp.async inifiles cryptokit nocrypto yojson ppx_deriving_yojson ppx_deriving_yojson.runtime xml-light str))
+  (libraries (core async async_extended oUnit cohttp cohttp.async inifiles cryptokit nocrypto yojson ppx_deriving_yojson ppx_deriving_yojson.runtime xml-light str))
   (flags (:standard -w -39))
   (preprocess (pps (ppx_deriving_yojson ppx_driver.runner -no-check)))
  )

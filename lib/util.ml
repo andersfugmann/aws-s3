@@ -17,8 +17,8 @@
   }}}*)
 
 module R = Result
-open Core.Std
-open Async.Std
+open Core
+open Async
 open Cohttp
 open Cohttp_async
 
@@ -75,9 +75,9 @@ module Compat = struct
     |> String.concat ~sep:"&"
 
   let format_time t =
-    (* Core.Std.Time doesn't have a format function that takes a timezone *)
+    (* Core.Time doesn't have a format function that takes a timezone *)
     let d, s = Time.to_date_ofday ~zone:Time.Zone.utc t in
-    let open Core.Span.Parts in
+    let open Time.Span.Parts in
     let {hr; min; sec; _} = Time.Ofday.to_parts s in
     sprintf "%sT%.2d%.2d%.2dZ"
       (Date.to_string_iso8601_basic d) hr min sec
@@ -386,7 +386,7 @@ module Test = struct
   let async f ctx =
     Thread_safe.block_on_async_exn (fun () -> f ctx)
 
-  open Async.Std
+  open Async
 
   let gunzip data =
     Process.create ~prog:"gunzip" ~args:[ "--no-name"; "-" ] () >>= fun proc ->

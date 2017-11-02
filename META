@@ -1,8 +1,0 @@
-version = "0.9"
-description = "Aws s3 client library"
-requires = "core async oUnit cohttp cohttp.async inifiles cryptokit nocrypto yojson ppx_deriving_yojson xml-light str"
-
-archive(byte) = "aws_s3.cma"
-archive(byte,plugin) = "aws_s3.cma"
-archive(native) = "aws_s3.cmxa"
-archive(native,plugin) = "aws_s3.cmxa"

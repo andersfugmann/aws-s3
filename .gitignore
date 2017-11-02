@@ -1,6 +1,3 @@
 _build
-*.omc
-*~
-.omakedb*
 .merlin
-src/.merlin
+aws-s3.install

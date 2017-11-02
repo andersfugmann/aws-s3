@@ -11,6 +11,7 @@ depends: [
   "jbuilder" { build }
   "core { >= 0.9}"
   "async"
+  "async-extended"
   "ounit"
   "cohttp-async"
   "ocaml-inifiles"

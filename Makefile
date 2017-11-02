@@ -1,25 +1,22 @@
-GOALS=$(filter-out dep docker, $(MAKECMDGOALS))
-.PHONY: $(GOALS) all dep docker
-
 ifeq ($(shell uname -s),Darwin)
-NPROC := $(shell sysctl -n hw.ncpu)
+  NPROC := $(shell sysctl -n hw.ncpu)
 else
-NPROC := $(shell nproc)
+  NPROC := $(shell nproc)
 endif
 
+.PHONY: build
+build:
+	jbuilder build @install -j $(NPROC) --dev
 
-$(GOALS) all:
-	omake -w -j $(NPROC) $(GOALS)
+.PHONY: install
+install: build
+	jbuilder install
 
+.PHONY: clean
+clean:
+	jbuilder clean
+
+.PHONY: dep
 dep:
-	opam switch set 4.03.0-decomposer --alias 4.03.0
-	opam update
-	opam install omake
-	omake dep
-
-# Aliases to help autocompletion
-integration-test:
-	omake -w -j $(NPROC) $@
-
-unit-test:
-	omake -w -j $(NPROC) $@
+	opam pin --no-action add ppx_deriving_yojson --dev-repo
+	jbuilder external-lib-deps --missing --dev @install

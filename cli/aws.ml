@@ -1,5 +1,5 @@
-open Core.Std
-open Async.Std
+open Core
+open Async
 open Aws_s3
 
 type objekt = { bucket: string; key: string }
@@ -66,7 +66,7 @@ let ls profile ratelimit bucket prefix () =
   let rec ls_all (result, cont) =
     let open Deferred.Or_error in
 
-    Core.Std.List.iter ~f:(fun { S3.Ls.key; size; _ } -> printf "%d\t%s\n" size key) result;
+    Core.List.iter ~f:(fun { S3.Ls.key; size; _ } -> printf "%d\t%s\n" size key) result;
 
     match cont with
     | S3.Ls.More continuation -> ratelimit_f () >>= retry ~retries:5 ~delay:(Time.Span.of_sec 1.0) ~f:continuation >>= ls_all

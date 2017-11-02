@@ -4,22 +4,22 @@ type t = {
   aws_access_key: string;
   aws_secret_key: string;
   aws_token: string option;
-  expiration: Core.Std.Time.t option;
+  expiration: Core.Time.t option;
 }
 
 
 (** Make credentials *)
 val make_credentials :
   access_key:string -> secret_key:string ->
-  ?token:string -> ?expiration:Core.Std.Time.t -> unit -> t
+  ?token:string -> ?expiration:Core.Time.t -> unit -> t
 
 module Iam : sig
 
   (** Get machine role though IAM service *)
-  val get_role : unit -> string Async.Std.Deferred.Or_error.t
+  val get_role : unit -> string Async.Deferred.Or_error.t
 
   (** Retrieve a credentials for a given role [role] *)
-  val get_credentials : string -> t Async.Std.Deferred.Or_error.t
+  val get_credentials : string -> t Async.Deferred.Or_error.t
 
 end
 
@@ -27,7 +27,7 @@ module Local : sig
   (** Load credentials from ~/.aws/credentials (file format compatible
       with botocore). *)
   val get_credentials :
-    ?profile:string -> unit -> t Async.Std.Deferred.Or_error.t
+    ?profile:string -> unit -> t Async.Deferred.Or_error.t
 end
 
 module Helper : sig
@@ -40,5 +40,5 @@ module Helper : sig
       service, using an assigned machine role.
   *)
   val get_credentials :
-    ?profile:string -> unit -> t Async.Std.Deferred.Or_error.t
+    ?profile:string -> unit -> t Async.Deferred.Or_error.t
 end
