@@ -4,5 +4,6 @@
  ((name        aws)
   (public_name aws)
   (libraries (aws-s3))
+  (flags (:standard -safe-string))
  )
 )

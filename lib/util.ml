@@ -50,9 +50,9 @@ module Compat = struct
             if is_hex(String.get s (i+1)) && is_hex(String.get s (i+2)) then
               Buffer.add_char buf c
             else
-              Buffer.add_bytes buf "%25"
+              Buffer.add_string buf "%25"
         end
-      | _ -> Buffer.add_bytes buf (Printf.sprintf "%%%X" (Char.to_int c))
+      | _ -> Buffer.add_string buf (Printf.sprintf "%%%X" (Char.to_int c))
     done;
     Buffer.contents buf
 
@@ -264,8 +264,8 @@ let gzip_data ?level data =
     Cryptokit.transform_string (Cryptokit.Zlib.compress ?level ()) data
   in
   let buffer = Buffer.create (len / 2) in
-  Buffer.add_bytes buffer header;
-  Buffer.add_bytes buffer compressed;
+  Buffer.add_string buffer header;
+  Buffer.add_string buffer compressed;
   let crc = (Crc.crc32 data |> Int63.to_int_exn) in
   write32 buffer crc;
   write32 buffer len;
@@ -316,68 +316,6 @@ let make_request ?body ?(region=Us_east_1) ?(credentials:Credentials.t option) ~
   | `GET -> Cohttp_async.Client.request request
   | `DELETE -> Cohttp_async.Client.request request
   | _ -> failwith "not possible right now"
-
-let bool = Str.regexp_case_fold "^\\(true\\|false\\)$"
-let integer = Str.regexp "^[0-9]+$"
-let float = Str.regexp "^[0-9]+\\([.][0-9]*\\)?$"
-
-(** Convert an xml structure to yojson.
-    This allows us to use ppx_deriving_yojson on xml structures
-*)
-
-let yojson_of_xml xml =
-  (* Group a sorted list of elements such that all `Assocs are made into lists *)
-  let rec group acc elems =
-    match (acc, elems) with
-    | (key, `List v) :: vs, (key', (`Assoc v')) :: xs when key = key' ->
-        group ((key, `List ( (`Assoc v') :: v)) :: vs) xs
-    | vs, (key, (`Assoc v)) :: xs -> group ((key, `List [`Assoc v]) :: vs) xs
-    | vs, x :: xs -> group (x :: vs) xs
-    | vs, [] -> vs
-  in
-  let yojson_of_string = function
-    | b when Str.string_match bool b 0    -> `Bool (bool_of_string b)
-    | i when Str.string_match integer i 0 -> `Int (int_of_string i)
-    | f when Str.string_match float f 0   -> `Float (float_of_string f)
-    | s -> `String s
-  in
-  let rec inner = function
-    | Xml.PCData _s -> failwith "unsupported"
-    | Xml.Element (n, _, [ ]) -> (n, `Null)
-    | Xml.Element (n, _, [ Xml.PCData s ]) -> (n, yojson_of_string s)
-    | Xml.Element (n, _, es) ->
-        let elements =
-          List.map ~f:inner es
-          |> List.sort ~cmp:(fun (n, _) (m, _) -> String.compare n m)
-          |> group []
-        in
-        (n, `Assoc elements)
-  in
-  inner xml
-
-let rec xml_of_yojson ((name : string), (value : Yojson.Safe.json)) : Xml.xml =
-  let v = match value with
-    | `Assoc s -> List.map ~f:xml_of_yojson s
-    | `List l -> List.map ~f:(fun e -> xml_of_yojson (name, e)) l
-    | `String s -> [ Xml.PCData s ]
-    | `Intlit s -> [ Xml.PCData s ]
-    | `Int i -> [ Xml.PCData (string_of_int i) ]
-    | `Float f -> [ Xml.PCData (string_of_float f) ]
-    | `Bool b -> [ Xml.PCData (string_of_bool b) ]
-    | `Null -> []
-    | `Tuple _
-    | `Variant _ -> failwith "Tuple and variant not supported"
-  in
-  Xml.Element (name, [], v )
-
-let decode ~name ~f s =
-  match Xml.parse_string s |> yojson_of_xml with
-  | n, v when n = name -> begin
-      match f v with
-      | R.Ok t -> t
-      | R.Error s -> failwith s
-    end
-  | v, _ -> failwith (sprintf "Found node '%s'. Expected '%s'" v name)
 
 
 module Test = struct

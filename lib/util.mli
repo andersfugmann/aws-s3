@@ -35,13 +35,6 @@ val make_request :
   unit ->
   (Response.t * Body.t) Deferred.t
 
-val yojson_of_xml :
-  Xml.xml -> string * Yojson.Safe.json
-
-val xml_of_yojson :
-  string * Yojson.Safe.json -> Xml.xml
-
-val decode: name:string -> f:(Yojson.Safe.json -> ('a, string) R.result) -> string -> 'a
 
 module Test : sig
   val async : ('a -> 'b Deferred.t) -> 'a -> 'b

@@ -3,18 +3,21 @@ open Core
 open Async
 open Cohttp
 open Cohttp_async
+open Deriving_protocol_json
 
 type time = Time.t
-let time_of_yojson = function
-  | `String s -> R.Ok (Time.of_string s)
-  | _ -> R.Error "Expected string"
+let time_of_json t =
+  Json.to_string ~flags:None t |> Time.of_string
+
+let time_to_json _ =
+  failwith "Not implemented"
 
 type t = {
   aws_access_key: string [@key "AccessKeyId"];
   aws_secret_key: string [@key "SecretAccessKey"];
   aws_token: string option [@key "Token"];
   expiration: time option [@key "Expiration"];
-  } [@@deriving of_yojson { strict = false }]
+} [@@deriving protocol ~driver:(module Json)]
 
 let make_credentials ~access_key ~secret_key ?token ?expiration () =
   { aws_access_key=access_key; aws_secret_key=secret_key; aws_token=token; expiration }
@@ -46,11 +49,7 @@ module Iam = struct
       | #Code.success_status -> begin
           Body.to_string body >>= fun body ->
           let json = Yojson.Safe.from_string body in
-          match (of_yojson json) with
-          | R.Ok t ->
-              return (Ok t)
-          | R.Error s ->
-              return (Or_error.errorf "Unable to parse credentials. Error was: %s" s)
+          t_of_json json |> Or_error.return |> return
         end
       | _ ->
           Body.to_string body >>= fun body ->

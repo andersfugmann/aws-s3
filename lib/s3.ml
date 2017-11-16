@@ -21,23 +21,28 @@ open Core
 open Async
 open Cohttp
 open Cohttp_async
+open Deriving_protocol_xml
 
 type 'a command = ?retries:int -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
 
 
 module Ls = struct
   type time = Time.t
-  let time_of_yojson = function
-    | `String s -> R.Ok (Time.of_string s)
-    | _ -> R.Error "Expected string"
+  let time_of_xml_light t =
+    Xml_light.to_string ~flags:None t |> Time.of_string
+  let time_to_xml_light _ =
+    failwith "Not implemented"
 
   type storage_class = Standard | Standard_ia | Reduced_redundancy | Glacier
-  let storage_class_of_yojson = function
-    | `String "STANDARD" -> R.Ok Standard
-    | `String "STANDARD_IA" -> R.Ok Standard_ia
-    | `String "REDUCED_REDUNDANCY" -> R.Ok Reduced_redundancy
-    | `String "GLACIER" -> R.Ok Glacier
-    | _ -> R.Error "Expected string"
+  let storage_class_of_xml_light t = Xml_light.to_string ~flags:None t |> function
+    | "STANDARD" -> Standard
+    | "STANDARD_IA" -> Standard_ia
+    | "REDUCED_REDUNDANCY" -> Reduced_redundancy
+    | "GLACIER" -> Glacier
+    | s -> failwith ("Unknown storage class: " ^ s)
+
+  let storage_class_to_xml_light _ =
+    failwith "Not implemented"
 
   type contents = {
     storage_class: storage_class [@key "StorageClass"];
@@ -45,21 +50,22 @@ module Ls = struct
     last_modified: time [@key "LastModified"];
     key: string [@key "Key"];
     etag: string [@key "ETag"];
-  } [@@deriving of_yojson { strict = false }]
+  } [@@deriving protocol ~driver:(module Xml_light)]
 
   type result = {
-    prefix: string option [@key "Prefix"] [@default None];
-    common_prefixes: string option [@key "CommonPrefixes"] [@default None];
-    delimiter: string option [@key "Delimiter"] [@default None];
-    next_continuation_token: string option [@key "NextContinuationToken"] [@default None];
+    prefix: string option [@key "Prefix"];
+    common_prefixes: string option [@key "CommonPrefixes"];
+    delimiter: string option [@key "Delimiter"];
+    next_continuation_token: string option [@key "NextContinuationToken"];
     name: string [@key "Name"];
     max_keys: int [@key "MaxKeys"];
     key_count: int [@key "KeyCount"];
     is_truncated: bool [@key "IsTruncated"];
     contents: contents list [@key "Contents"];
-  } [@@deriving of_yojson { strict = false }]
+  } [@@deriving protocol ~driver:(module Xml_light)]
 
-  let result_of_xml = Util.decode ~name:"ListBucketResult" ~f:result_of_yojson
+  let result_of_xml xml =
+    result_of_xml_light [ xml ]
 
   type t = (contents list * cont) Deferred.Or_error.t
   and cont = More of (unit -> t) | Done
@@ -69,37 +75,48 @@ end
 module Delete_multi = struct
   type objekt = {
     key: string [@key "Object"];
-    version_id: string option [@key "VersionId"] [@default None];
-  } [@@deriving to_yojson { strict = false }]
+    version_id: string option [@key "VersionId"];
+  } [@@deriving protocol ~driver:(module Xml_light)]
 
   type request = {
     quiet: bool [@key "Quiet"];
     objects: objekt list [@key "Object"]
-  } [@@deriving to_yojson { strict = false }]
+  } [@@deriving protocol ~driver:(module Xml_light)]
 
-  let xml_of_request request =
-    Util.xml_of_yojson ("Delete", request_to_yojson request)
+  let xml_of_request xml =
+    Xml.Element ("Delete", [], request_to_xml_light xml)
 
   type deleted = {
     key: string [@key "Key"];
-    version_id: string option [@key "VersionId"] [@default None];
-  } [@@deriving of_yojson { strict = false }]
+    version_id: string option [@key "VersionId"];
+  } [@@deriving protocol ~driver:(module Xml_light)]
 
   type error = {
     key: string [@key "Key"];
-    version_id: string option [@key "VersionId"] [@default None];
-    code : string [@key "Key"];
-    message : string [@key "Key"];
-  } [@@deriving of_yojson { strict = false }]
+    version_id: string option [@key "VersionId"];
+    code: string;
+    message : string;
+  } [@@deriving protocol ~driver:(module Xml_light)]
+
+  type delete_marker = bool
+
+  let delete_marker_of_xml_light t =
+    Xml_light.to_option ~flags:None (Xml_light.to_bool ~flags:None) t
+    |> function None -> false
+              | Some x -> x
+
+  let delete_marker_to_xml_light _t = failwith "Not implemented"
 
   type result = {
-    delete_marker: bool [@key "DeleteMarker"] [@default false];
-    delete_marker_version_id: string option [@key "DeleteMarkerVersionId"] [@default None];
-    deleted: deleted list [@key "Deleted"] [@default []];
-    error: error list  [@key "Error"] [@default []];
-  } [@@deriving of_yojson { strict = false }]
+    delete_marker: delete_marker [@key "DeleteMarker"];
+    delete_marker_version_id: string option [@key "DeleteMarkerVersionId"];
+    deleted: deleted list [@key "Deleted"];
+    error: error list  [@key "Error"];
+  } [@@deriving protocol ~driver:(module Xml_light)]
 
-  let result_of_xml = Util.decode ~name:"DeleteResult" ~f:result_of_yojson
+  let result_of_xml = function
+    | Xml.Element ("DeleteResult", [], xml) -> result_of_xml_light xml
+    | _ -> failwith "DeleteResult structure expected"
 end
 
 
@@ -195,7 +212,7 @@ let delete_multi ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ~bucket o
     match status, Code.code_of_status status with
     | #Code.success_status, _ ->
         Body.to_string body >>= fun body ->
-        let result = Delete_multi.result_of_xml body in
+        let result = Delete_multi.result_of_xml (Xml.parse_string body) in
         return (Ok result)
     | _, ((500 | 503) as code) when count < retries ->
         (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
@@ -221,7 +238,7 @@ let rec ls ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ?continuation_t
     match status, Code.code_of_status status with
     | #Code.success_status, _ ->
         Body.to_string body >>= fun body ->
-        let result = Ls.result_of_xml body in
+        let result = Ls.result_of_xml (Xml.parse_string body) in
         let continuation = match Ls.(result.next_continuation_token) with
           | Some ct -> Ls.More (ls ~retries ?credentials ~region ~continuation_token:ct ?prefix ~bucket)
           | None -> Ls.Done
