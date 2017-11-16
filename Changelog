@@ -1,3 +1,6 @@
+1.1.0:
+* Switch to use ppx_deriving_protocol, and compile with -safe-string
+
 1.0.0:
 * Switch to use jbuilder and require core >= 0.9.
 
