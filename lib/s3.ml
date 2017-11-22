@@ -21,7 +21,7 @@ open Core
 open Async
 open Cohttp
 open Cohttp_async
-open Deriving_protocol_xml
+open Protocol_conv_xml
 
 type 'a command = ?retries:int -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
 
@@ -29,20 +29,13 @@ type 'a command = ?retries:int -> ?credentials:Credentials.t -> ?region:Util.reg
 module Ls = struct
   type time = Time.t
   let time_of_xml_light t =
-    Xml_light.to_string ~flags:None t |> Time.of_string
-  let time_to_xml_light _ =
-    failwith "Not implemented"
+    Xml_light.to_string t |> Time.of_string
 
-  type storage_class = Standard | Standard_ia | Reduced_redundancy | Glacier
-  let storage_class_of_xml_light t = Xml_light.to_string ~flags:None t |> function
-    | "STANDARD" -> Standard
-    | "STANDARD_IA" -> Standard_ia
-    | "REDUCED_REDUNDANCY" -> Reduced_redundancy
-    | "GLACIER" -> Glacier
-    | s -> failwith ("Unknown storage class: " ^ s)
-
-  let storage_class_to_xml_light _ =
-    failwith "Not implemented"
+  type storage_class = Standard [@key "STANDARD"]
+                     | Standard_ia [@key "STANDARD_IA"]
+                     | Reduced_redundancy [@key "REDUCED_REDUNDANCY"]
+                     | Glacier [@key "GLACIER"]
+  [@@deriving of_protocol ~driver:(module Xml_light)]
 
   type contents = {
     storage_class: storage_class [@key "StorageClass"];
@@ -50,7 +43,8 @@ module Ls = struct
     last_modified: time [@key "LastModified"];
     key: string [@key "Key"];
     etag: string [@key "ETag"];
-  } [@@deriving protocol ~driver:(module Xml_light)]
+  } [@@deriving of_protocol ~driver:(module Xml_light)]
+
 
   type result = {
     prefix: string option [@key "Prefix"];
@@ -62,15 +56,19 @@ module Ls = struct
     key_count: int [@key "KeyCount"];
     is_truncated: bool [@key "IsTruncated"];
     contents: contents list [@key "Contents"];
-  } [@@deriving protocol ~driver:(module Xml_light)]
+  } [@@deriving of_protocol ~driver:(module Xml_light)]
 
   let result_of_xml xml =
-    result_of_xml_light [ xml ]
+    result_of_xml_light xml
 
   type t = (contents list * cont) Deferred.Or_error.t
   and cont = More of (unit -> t) | Done
 
 end
+
+let set_element_name name = function
+  | Xml.Element (_, attribs, ts) -> Xml.Element (name, attribs, ts)
+  | _ -> failwith "Not an element"
 
 module Delete_multi = struct
   type objekt = {
@@ -83,8 +81,8 @@ module Delete_multi = struct
     objects: objekt list [@key "Object"]
   } [@@deriving protocol ~driver:(module Xml_light)]
 
-  let xml_of_request xml =
-    Xml.Element ("Delete", [], request_to_xml_light xml)
+  let xml_of_request request =
+    request_to_xml_light request |> set_element_name "Delete"
 
   type deleted = {
     key: string [@key "Key"];
@@ -101,7 +99,7 @@ module Delete_multi = struct
   type delete_marker = bool
 
   let delete_marker_of_xml_light t =
-    Xml_light.to_option ~flags:None (Xml_light.to_bool ~flags:None) t
+    Xml_light.to_option (Xml_light.to_bool) t
     |> function None -> false
               | Some x -> x
 
@@ -114,9 +112,7 @@ module Delete_multi = struct
     error: error list  [@key "Error"];
   } [@@deriving protocol ~driver:(module Xml_light)]
 
-  let result_of_xml = function
-    | Xml.Element ("DeleteResult", [], xml) -> result_of_xml_light xml
-    | _ -> failwith "DeleteResult structure expected"
+  let result_of_xml xml = result_of_xml_light xml
 end
 
 

@@ -17,7 +17,7 @@ depends: [
   "ocaml-inifiles"
   "cryptokit"
   "nocrypto"
-  "yojson"
-  "ppx_deriving_yojson"
   "xml-light"
+  "yojson"
+  "ppx_protocol_conv"
 ]

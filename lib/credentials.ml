@@ -3,21 +3,18 @@ open Core
 open Async
 open Cohttp
 open Cohttp_async
-open Deriving_protocol_json
+open Protocol_conv_json
 
 type time = Time.t
 let time_of_json t =
-  Json.to_string ~flags:None t |> Time.of_string
-
-let time_to_json _ =
-  failwith "Not implemented"
+  Json.to_string t |> Time.of_string
 
 type t = {
   aws_access_key: string [@key "AccessKeyId"];
   aws_secret_key: string [@key "SecretAccessKey"];
   aws_token: string option [@key "Token"];
   expiration: time option [@key "Expiration"];
-} [@@deriving protocol ~driver:(module Json)]
+} [@@deriving of_protocol ~driver:(module Json)]
 
 let make_credentials ~access_key ~secret_key ?token ?expiration () =
   { aws_access_key=access_key; aws_secret_key=secret_key; aws_token=token; expiration }
