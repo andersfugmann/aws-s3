@@ -58,9 +58,6 @@ module Ls = struct
     contents: contents list [@key "Contents"];
   } [@@deriving of_protocol ~driver:(module Xml_light)]
 
-  let result_of_xml xml =
-    result_of_xml_light xml
-
   type t = (contents list * cont) Deferred.Or_error.t
   and cont = More of (unit -> t) | Done
 
@@ -112,7 +109,6 @@ module Delete_multi = struct
     error: error list  [@key "Error"];
   } [@@deriving protocol ~driver:(module Xml_light)]
 
-  let result_of_xml xml = result_of_xml_light xml
 end
 
 
@@ -208,7 +204,7 @@ let delete_multi ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ~bucket o
     match status, Code.code_of_status status with
     | #Code.success_status, _ ->
         Body.to_string body >>= fun body ->
-        let result = Delete_multi.result_of_xml (Xml.parse_string body) in
+        let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
         return (Ok result)
     | _, ((500 | 503) as code) when count < retries ->
         (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
@@ -234,7 +230,7 @@ let rec ls ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ?continuation_t
     match status, Code.code_of_status status with
     | #Code.success_status, _ ->
         Body.to_string body >>= fun body ->
-        let result = Ls.result_of_xml (Xml.parse_string body) in
+        let result = Ls.result_of_xml_light (Xml.parse_string body) in
         let continuation = match Ls.(result.next_continuation_token) with
           | Some ct -> Ls.More (ls ~retries ?credentials ~region ~continuation_token:ct ?prefix ~bucket)
           | None -> Ls.Done
