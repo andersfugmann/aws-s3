@@ -197,7 +197,7 @@ let delete_multi ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ~bucket o
     |> Delete_multi.xml_of_request
     |> Xml.to_string
   in
-  let headers = [ "Content-MD5", B64.encode (Digest.string request) ] in
+  let headers = [ "Content-MD5", B64.encode Md5.(digest_string request |> to_binary) ] in
   let rec cmd count =
     Util.make_request ~body:request ?credentials ~region ~headers ~meth:`POST ~query:["delete", ""] ~path:bucket () >>= fun (resp, body) ->
     let status = Cohttp.Response.status resp in

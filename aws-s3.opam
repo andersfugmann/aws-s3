@@ -9,7 +9,7 @@ build: ["jbuilder" "build" "-p" name "-j" jobs]
 version: "1.1.0"
 depends: [
   "jbuilder" { build }
-  "core" { >= "0.9" }
+  "core" { >= "v0.10.0" }
   "async"
   "async_extended"
   "ounit"

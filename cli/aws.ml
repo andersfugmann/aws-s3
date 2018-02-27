@@ -91,7 +91,7 @@ let () =
                     +> profile_flag
                     +> anon ("src" %: string)
                     +> anon ("dst" %: string)
-                   ) cp
+                    |> Fn.flip to_param cp)
   in
   let rm =
     Command.async
@@ -99,7 +99,7 @@ let () =
       Command.Spec.(empty
                     +> profile_flag
                     +> anon (* (sequence) *) ("path" %: string)
-                   ) rm
+                    |> Fn.flip to_param rm)
   in
   let ls =
     Command.async
@@ -109,7 +109,7 @@ let () =
                     +> rate_limit_flag
                     +> anon ("bucket" %: string)
                     +> anon (maybe ("prefix" %: string))
-                    ) ls
+                    |> Fn.flip to_param ls)
   in
   let s3_command = Command.group ~summary:"S3 command" [ "cp", cp; "rm", rm; "ls", ls ] in
   let command = Command.group ~summary:"Aws s3 command line utility" [ "s3", s3_command ] in
