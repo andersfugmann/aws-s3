@@ -1,5 +1,6 @@
-1.2.0:
+<unreleased>
 * Only compile against core >= v0.10.0
+* Dony compile with safestring anymore
 
 1.1.0:
 * Switch to use ppx_deriving_protocol, and compile with -safe-string
