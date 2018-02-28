@@ -20,3 +20,7 @@ clean:
 dep:
 	opam pin --no-action add ppx_deriving_yojson --dev-repo
 	jbuilder external-lib-deps --missing --dev @install
+
+.PHONY: test
+test: build
+	jbuilder runtest --dev

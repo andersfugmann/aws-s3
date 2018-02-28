@@ -163,10 +163,10 @@ module Auth = struct
         [("x-amz-security-token", token)]
       | _ -> []
     in
-    let headers = [
-      ("x-amz-content-sha256", hashed_payload);
-      ("x-amz-date", Compat.format_time time)
-    ] @ token_header
+    let headers =
+      ("x-amz-content-sha256", hashed_payload) ::
+      ("x-amz-date", Compat.format_time time) ::
+      token_header
     in
     (headers, hashed_payload)
 
@@ -317,14 +317,8 @@ let make_request ?body ?(region=Us_east_1) ?(credentials:Credentials.t option) ~
   | `DELETE -> Cohttp_async.Client.request request
   | _ -> failwith "not possible right now"
 
-
 module Test = struct
   open OUnit2
-
-  let async f ctx =
-    Thread_safe.block_on_async_exn (fun () -> f ctx)
-
-  open Async
 
   let gunzip data =
     Process.create ~prog:"gunzip" ~args:[ "--no-name"; "-" ] () >>= fun proc ->
@@ -345,9 +339,9 @@ module Test = struct
     List.init ~f:(fun _ -> Random.int 100_000) 100
     |> Deferred.List.iter ~how:`Parallel ~f:(test)
 
-  let unit_test =
+  let unit_test async_runner =
     __MODULE__ >::: [
-      "gzip" >:: async test_gzip
+      "gzip" >:: async_runner test_gzip
     ]
 
 end

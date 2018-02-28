@@ -37,8 +37,6 @@ val make_request :
 
 
 module Test : sig
-  val async : ('a -> 'b Deferred.t) -> 'a -> 'b
-  val gunzip : string -> string Or_error.t Deferred.t
-  val test_gzip : 'a -> unit Deferred.t
-  val unit_test : OUnit2.test
+  open OUnit2
+  val unit_test : ((test_ctxt -> unit Async.Deferred.t) -> test_ctxt -> unit) -> test
 end

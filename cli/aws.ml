@@ -24,7 +24,7 @@ let determine_paths src dst =
   match is_s3 src, is_s3 dst with
   | (true, false) -> S3toLocal (objekt_of_uri src, Uri.path dst)
   | (false, true) -> LocaltoS3 (Uri.path src, objekt_of_uri dst)
-  | (false, false) -> failwith "Use cp(1) :)"
+  | (false, false) -> failwith "Use cp(1)"
   | (true, true) -> failwith "Does not support copying from s3 to s3"
 
 let cp profile src dst () =

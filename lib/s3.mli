@@ -12,13 +12,12 @@
 *)
 type 'a command = ?retries:int -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
 
-
 open Async
 open Core
 
 module Ls : sig
   type storage_class = Standard | Standard_ia | Reduced_redundancy | Glacier
-  type contents = {
+  type content = {
     storage_class : storage_class;
     size : int;
     last_modified : Time.t;
@@ -26,7 +25,7 @@ module Ls : sig
     etag : string;
   }
 
-  type t = (contents list * cont) Deferred.Or_error.t
+  type t = (content list * cont) Deferred.Or_error.t
   and cont = More of (unit -> t) | Done
 end
 
@@ -90,3 +89,8 @@ val delete_multi :
 val ls :
   (?continuation_token:string -> ?prefix:string -> bucket:string -> unit ->
    Ls.t) command
+
+module Test : sig
+  open OUnit2
+  val unit_test : ((test_ctxt -> unit Async.Deferred.t) -> test_ctxt -> unit) -> test
+end
