@@ -1,15 +1,12 @@
 (jbuild_version 1)
 
 (executables
- ((names       (unittest async_test))
-  (libraries  (aws_s3))))
+ ((names       (unittest))
+  (libraries  (aws_s3 oUnit))
+))
+
 
 (alias
   ((name   runtest)
    (action (run ${exe:unittest.exe}))
-))
-
-(alias
-  ((name   runtest)
-   (action (run ${exe:async_test.exe}))
 ))

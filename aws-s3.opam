@@ -9,11 +9,9 @@ build: ["jbuilder" "build" "-p" name "-j" jobs]
 version: "1.1.0"
 depends: [
   "jbuilder" { build }
-  "core" { >= "v0.10.0" }
-  "async"
-  "async_extended"
+  "core"
   "ounit"
-  "cohttp-async"
+  "cohttp"
   "ocaml-inifiles"
   "cryptokit"
   "nocrypto"
@@ -21,3 +19,13 @@ depends: [
   "yojson"
   "ppx_protocol_conv"
 ]
+
+depopts: [
+  "async"
+  "lwt"
+]
+conflicts: [
+  "lwt" {< "2.4.6"}
+  "async" {< "v0.9.0"}
+]
+available: [ ocaml-version >= "4.04.0" ]

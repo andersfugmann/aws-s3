@@ -1,13 +1,7 @@
 (** Utilites *)
 
-(**/**)
-module R = Result
-(**/**)
-
 open Core
-open Async
 open Cohttp
-open Cohttp_async
 
 type region =
   | Ap_northeast_1
@@ -21,22 +15,27 @@ type region =
   | Us_west_2
 
 val region_of_string : string -> region
+val gzip_data : ?level:int -> string -> string
 
-(**/**)
-val gzip_data : ?level:int -> String.t -> string
-val make_request :
-  ?body:String.t ->
-  ?region:region ->
-  ?credentials:Credentials.t ->
-  headers:(string * string) list ->
-  meth:Code.meth ->
-  path:string ->
-  query:(string * string) list ->
-  unit ->
-  (Response.t * Body.t) Deferred.t
+module Make : functor(Compat: Types.Compat) -> sig
+  open Compat
 
+  val make_request :
+    ?body:String.t ->
+    ?region:region ->
+    ?credentials:Credentials.t ->
+    headers:(string * string) list ->
+    meth:Code.meth ->
+    path:string ->
+    query:(string * string) list ->
+    unit ->
+    (Response.t * Cohttp_deferred.Body.t) Deferred.t
 
+end
+
+(*
 module Test : sig
   open OUnit2
-  val unit_test : ((test_ctxt -> unit Async.Deferred.t) -> test_ctxt -> unit) -> test
+  val unit_test : ((test_ctxt -> unit Deferred.t) -> test_ctxt -> unit) -> test
 end
+*)

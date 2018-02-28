@@ -1,0 +1,10 @@
+(jbuild_version 1)
+
+(library
+ ((name aws_s3_lwt)
+  (public_name aws-s3.lwt)
+  (synopsis  "Lwt version of aws-s3")
+  (libraries (core aws_s3 lwt cohttp-lwt-unix))
+  (optional)
+ )
+)

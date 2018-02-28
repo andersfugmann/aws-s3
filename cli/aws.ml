@@ -1,10 +1,11 @@
 open Core
 open Async
-open Aws_s3
+open Aws_s3_async
 
 type objekt = { bucket: string; key: string }
 let objekt_of_uri u = { bucket = (Option.value_exn ~message:"No Host in uri" (Uri.host u));
                         key = String.drop_prefix (Uri.path u) 1 (* Remove the beginning '/' *) }
+
 
 type cmd =
   | S3toLocal of objekt * string

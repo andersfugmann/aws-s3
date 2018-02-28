@@ -4,6 +4,7 @@
  ((name aws_s3_async)
   (public_name aws-s3.async)
   (synopsis  "Async version of aws-s3")
-  (libraries (aws_s3 async))
+  (libraries (aws_s3 async cohttp-async))
+  (optional)
  )
 )

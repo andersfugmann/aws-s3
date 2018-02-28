@@ -16,11 +16,8 @@
  *
   }}}*)
 
-module R = Result
 open Core
-open Async
 open Cohttp
-open Cohttp_async
 
 let ksrt = fun (k,_) (k',_) -> String.compare k k'
 
@@ -170,7 +167,7 @@ module Auth = struct
     in
     (headers, hashed_payload)
 
-  let canonical_request hashed_payload (request : Cohttp_async.Request.t) =
+  let canonical_request hashed_payload (request : Cohttp.Request.t) =
     (* This corresponds to p.21 of the s3 api doc
        we're making:
        <HTTPMethod>\n
@@ -271,77 +268,84 @@ let gzip_data ?level data =
   write32 buffer len;
   Buffer.contents buffer
 
-let make_request ?body ?(region=Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
-  let host_str = region_host_string region in
-  let uri = Uri.make
-      ~scheme:"https"
-      ~host:host_str
-      ~path
-      ~query:(List.map ~f:(fun (k,v) -> k, [v]) query)
-      ()
-  in
-  let time = Time.now () in
-  (* If PUT add content length *)
-  let content_length = match meth with
-    | `PUT ->
-      let length = Option.value_map ~f:(String.length) ~default:0 body in
-      Some ("Content-Length", Int.to_string length)
-    | _ -> None
-  in
-  let host = "Host", host_str in
-  let (amz_headers, hashed_payload) = Auth.make_amz_headers ?credentials time ?body in
-  let headers =
-    host :: (List.filter_opt [ content_length ]) @ headers @ amz_headers
-  in
+module Make(C : Types.Compat) = struct
+  open C
 
-  let request = Request.make ~meth
-      ~headers:(Header.of_list headers)
-      uri in
+  let make_request ?body ?(region=Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
+    let host_str = region_host_string region in
+    let uri = Uri.make
+        ~scheme:"https"
+        ~host:host_str
+        ~path
+        ~query:(List.map ~f:(fun (k,v) -> k, [v]) query)
+        ()
+    in
+    let time = Time.now () in
+    (* If PUT add content length *)
+    let content_length = match meth with
+      | `PUT ->
+        let length = Option.value_map ~f:(String.length) ~default:0 body in
+        Some ("Content-Length", Int.to_string length)
+      | _ -> None
+    in
+    let host = "Host", host_str in
+    let (amz_headers, hashed_payload) = Auth.make_amz_headers ?credentials time ?body in
+    let headers =
+      host :: (List.filter_opt [ content_length ]) @ headers @ amz_headers
+    in
 
-  let auth_header =
-    match credentials with
-    | Some { Credentials.aws_access_key; aws_secret_key; _ } ->
+    let request = Request.make ~meth
+        ~headers:(Header.of_list headers)
+        uri in
+
+    let auth_header =
+      match credentials with
+      | Some { Credentials.aws_access_key; aws_secret_key; _ } ->
         Auth.auth_request ~now:time
           ~hashed_payload ~region:region
           ~aws_access_key
           ~aws_secret_key request
-    | None -> []
-  in
-  let headers = (headers @ auth_header) |> Header.of_list in
-  let request = {request with Cohttp.Request.headers} in
-  match meth with
-  | `PUT -> Cohttp_async.Client.request
-              ~body:(Option.value_map ~f:(Body.of_string) ~default:`Empty body)
-              request
-  | `GET -> Cohttp_async.Client.request request
-  | `DELETE -> Cohttp_async.Client.request request
-  | _ -> failwith "not possible right now"
-
-module Test = struct
-  open OUnit2
-
-  let gunzip data =
-    Process.create ~prog:"gunzip" ~args:[ "--no-name"; "-" ] () >>= fun proc ->
-    let proc = Or_error.ok_exn proc in
-    (* Write to the process. *)
-    Writer.write (Process.stdin proc) data;
-    Process.collect_stdout_and_wait proc
-
-  let test_gzip _ =
-    let test len =
-      let string = String.init len ~f:(fun _ -> Char.of_int_exn (Random.int 8)) in
-      let gzipped = gzip_data ~level:9 string in
-      gunzip gzipped >>= fun gunzipped ->
-      assert_equal string (Or_error.ok_exn gunzipped);
-      return ()
+      | None -> []
     in
-
-    List.init ~f:(fun _ -> Random.int 100_000) 100
-    |> Deferred.List.iter ~how:`Parallel ~f:(test)
-
-  let unit_test async_runner =
-    __MODULE__ >::: [
-      "gzip" >:: async_runner test_gzip
-    ]
+    let headers = (headers @ auth_header) |> Header.of_list in
+    let request = {request with Cohttp.Request.headers} in
+    match meth with
+    | `PUT ->
+      let body = Option.map ~f:(Cohttp_deferred.Body.of_string) body in
+      Cohttp_deferred.Client.request ?body request
+    | `GET -> Cohttp_deferred.Client.request request
+    | `DELETE -> Cohttp_deferred.Client.request request
+    | _ -> failwith "not possible right now"
 
 end
+
+ (*
+  module Test = struct
+    open OUnit2
+    let gunzip data =
+      (* But we dont know how to create a process. Should we use Caml.Sys intead? *)
+      Process.create ~prog:"gunzip" ~args:[ "--no-name"; "-" ] () >>= fun proc ->
+      let proc = Or_error.ok_exn proc in
+      (* Write to the process. *)
+      Writer.write (Process.stdin proc) data;
+      Process.collect_stdout_and_wait proc
+
+    let test_gzip _ =
+      let test len =
+        let string = String.init len ~f:(fun _ -> Char.of_int_exn (Random.int 8)) in
+        let gzipped = gzip_data ~level:9 string in
+        gunzip gzipped >>= fun gunzipped ->
+        assert_equal string (Or_error.ok_exn gunzipped);
+        return ()
+      in
+
+      List.init ~f:(fun _ -> Random.int 100_000) 100
+      |> Deferred.List.iter ~how:`Parallel ~f:(test)
+
+    let unit_test async_runner =
+      __MODULE__ >::: [
+        "gzip" >:: async_runner test_gzip
+      ]
+
+  end
+*)

@@ -2,9 +2,9 @@
 
 (library
  ((name        aws_s3)
-  (public_name aws-s3)
+  (public_name aws-s3.lib)
   (synopsis "Aws s3 client library")
-  (libraries (core async async_extended oUnit cohttp cohttp.async inifiles cryptokit nocrypto yojson ppx_protocol_conv ppx_protocol_conv.runtime ppx_protocol_conv.json ppx_protocol_conv.xml xml-light str))
+  (libraries (core oUnit cohttp inifiles cryptokit nocrypto yojson ppx_protocol_conv ppx_protocol_conv.runtime ppx_protocol_conv.json ppx_protocol_conv.xml xml-light str))
   (preprocess (pps (ppx_protocol_conv ppx_driver.runner)))
  )
 )
