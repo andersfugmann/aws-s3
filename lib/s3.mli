@@ -53,6 +53,8 @@ module Make(Compat : Types.Compat) : sig
       If gzip is true, the contents will be gzipped before uploading and
       content-encoding set to gzip so client will automatically
       decompress the content.
+
+      Returns the etag of the object. The etag is the base64 md5 checksum (RFC 1864)
   *)
 
   val put :
@@ -62,7 +64,7 @@ module Make(Compat : Types.Compat) : sig
      ?cache_control:string ->
      bucket:string ->
      key:string ->
-     string -> unit Deferred.Or_error.t) command
+     string -> string Deferred.Or_error.t) command
 
   (** Download [key] from s3 in [bucket] *)
   val get :

@@ -31,7 +31,7 @@ let determine_paths src dst =
 let cp profile src dst () =
   Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
   let credentials = Or_error.ok_exn credentials in
-  (* nb client does not support redirects or preflight 100 *)
+  (* nb client does not support preflight 100 *)
   match determine_paths src dst with
   | S3toLocal (src, dst) ->
     begin
@@ -44,7 +44,8 @@ let cp profile src dst () =
   | LocaltoS3 (src, dst) ->
     Reader.file_contents src >>= fun data ->
     S3.put ~credentials ~bucket:dst.bucket ~key:dst.key data >>= function
-    | Ok () -> return ()
+    | Ok _etag ->
+      return ()
     | Error e ->
       Log.Global.error "Could not put file: Error is: %s" (Error.to_string_hum e);
       return ()

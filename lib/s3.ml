@@ -105,6 +105,19 @@ module Protocol(P: sig type 'a or_error end) = struct
     } [@@deriving protocol ~driver:(module Xml_light)]
 
   end
+
+  module Error_response = struct
+    type t = {
+      code: string [@key "Code"];
+      message: string [@key "Message"];
+      bucket: string option [@key "Bucket"];
+      endpoint: string option [@key "Endpoint"];
+      region: string option [@key "Region"];
+      request_id: string [@key "RequestId"];
+      host_id: string [@key "HostId"];
+    } [@@deriving protocol ~driver:(module Xml_light)]
+  end
+
 end
 
 module Make(Compat : Types.Compat) = struct
@@ -115,86 +128,84 @@ module Make(Compat : Types.Compat) = struct
 
   type 'a command = ?retries:int -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
 
+  let do_command ?(retries=12) ~region cmd =
+    let rec inner ?host ~region count =
+      (* This should be the or_error *)
+      cmd ?host ~region >>= fun (resp, body) ->
+      let status = Cohttp.Response.status resp in
+      match Code.code_of_status status with
+      | code when 200 <= code && code < 300 ->
+        let headers = Cohttp.Response.headers resp in
+        Deferred.Or_error.return (headers, body)
+      | (301 | 400) as c when count <= retries -> begin
+          let open Error_response in
+          (* Parse the error message. We need to know where to redirect to *)
+          Cohttp_deferred.Body.to_string body >>= fun body ->
+          match Error_response.of_xml_light (Xml.parse_string body) with
+          | { code = "PermanentRedirect"; endpoint = Some host; _ } ->
+            inner ~host ~region count
+          | { code = "AuthorizationHeaderMalformed"; region = Some region; _ } ->
+            let region = Util.region_of_string region in
+            inner ?host ~region count
+          | { code; _ } ->
+            Deferred.return (Or_error.errorf "Unhanded error code: %d %s" c code)
+          | exception e -> Deferred.Or_error.fail (Error.of_exn e)
+        end
+      | (500 | 503) when count <= retries ->
+        (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
+        let delay = ((2.0 ** float count) /. 10.) in
+        Deferred.after delay >>= fun () ->
+        inner ?host ~region (count + 1)
+      | code ->
+        Cohttp_deferred.Body.to_string body >>= fun body ->
+        Deferred.return (Or_error.errorf "Command resulted in error: %d. Error: %s" code body)
+    in
+    Deferred.Or_error.catch (fun () -> inner ~region 0)
 
-  (* Make_request should not make assumptions on body, but return a function to read the body *)
-  (* If that can be done, then this module only needs some concurrency *)
-
-  (* Default sleep upto 400 seconds *)
-  let put ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ?content_type ?(gzip=false) ?acl ?cache_control ~bucket ~key data
-    : unit Deferred.Or_error.t =
+  let put ?retries ?credentials ?(region=Util.Us_east_1) ?content_type ?(gzip=false) ?acl ?cache_control ~bucket ~key data =
     let path = sprintf "%s/%s" bucket key in
     let content_encoding, body = match gzip with
       | true -> Some "gzip", Util.gzip_data data
       | false -> None, data
     in
-    let rec cmd count : unit Deferred.Or_error.t =
-      let headers =
-        let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
-        let content_encoding = Option.map ~f:(fun ct -> ("Content-Encoding", ct)) content_encoding in
-        let cache_control    = Option.map ~f:(fun cc -> ("Cache-Control", cc)) cache_control in
-        let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
-        Core.List.filter_opt [ content_type; content_encoding; cache_control; acl ]
-      in
-      Util_deferred.make_request ?credentials ~region ~headers ~meth:`PUT ~path ~body ~query:[] () >>= fun (resp, body) ->
-      let status = Cohttp.Response.status resp in
-      match status, Code.code_of_status status with
-      | #Code.success_status, _ ->
-        Deferred.return (Ok ())
-      | _, ((500 | 503) as _code) when count < retries ->
-        (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
-        let delay = ((2.0 ** float count) /. 10.) in
-        (* Log.Global.info "Put s3://%s was rate limited (%d). Sleeping %f ms" path code delay; *)
-        Deferred.after delay >>= fun () ->
-        cmd (count + 1)
-      | _ ->
-        Cohttp_deferred.Body.to_string body >>= fun body ->
-        Deferred.return (Core.Or_error.errorf "Failed to put s3://%s: Response was: %s" path body)
+    let headers =
+      let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
+      let content_encoding = Option.map ~f:(fun ct -> ("Content-Encoding", ct)) content_encoding in
+      let cache_control    = Option.map ~f:(fun cc -> ("Cache-Control", cc)) cache_control in
+      let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
+      Core.List.filter_opt [ content_type; content_encoding; cache_control; acl ]
     in
-    Deferred.Or_error.catch (fun () -> cmd 0)
+    let cmd ?host ~region =
+      Util_deferred.make_request ?credentials ?host ~region ~headers ~meth:`PUT ~path ~body ~query:[] ()
+    in
 
-  (* Default sleep upto 400 seconds *)
-  let get ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ~bucket ~key () =
+    do_command ?retries ~region cmd >>=? fun (headers, _body) ->
+    let etag =
+      Header.get headers "etag"
+      |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
+      |> String.strip ~drop:(function '"' -> true | _ -> false)
+      |> B64.decode
+    in
+    Deferred.Or_error.return etag
+
+  let get ?retries ?credentials ?(region=Util.Us_east_1) ~bucket ~key () =
     let path = sprintf "%s/%s" bucket key in
-    let rec cmd count =
-      Util_deferred.make_request ?credentials ~region ~headers:[] ~meth:`GET ~path:(bucket ^ "/" ^ key) ~query:[] () >>= fun (resp, body) ->
-      let status = Cohttp.Response.status resp in
-      match status, Code.code_of_status status with
-      | #Code.success_status, _ ->
-        Cohttp_deferred.Body.to_string body >>= fun body ->
-        Deferred.return (Ok body)
-      | _, ((500 | 503) as _code) when count < retries ->
-        (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
-        let delay = ((2.0 ** float count) /. 10.) in
-        (* Log.Global.info "Get %s was rate limited (%d). Sleeping %f ms" path code delay; *)
-        Deferred.after delay >>= fun () ->
-        cmd (count + 1)
-      | _ ->
-        Cohttp_deferred.Body.to_string body >>= fun body ->
-        Deferred.return (Or_error.errorf "Failed to get s3://%s. Error was: %s" path body)
+    let cmd ?host ~region =
+      Util_deferred.make_request ?credentials ?host ~region ~headers:[] ~meth:`GET ~path ~query:[] ()
     in
-    Deferred.Or_error.catch (fun () -> cmd 0)
+    do_command ?retries ~region cmd >>=? fun (_headers, body) ->
+    Cohttp_deferred.Body.to_string body >>= fun body ->
+    Deferred.return (Ok body)
 
-  let delete ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ~bucket ~key () =
+  let delete ?retries ?credentials ?(region=Util.Us_east_1) ~bucket ~key () =
     let path = sprintf "%s/%s" bucket key in
-    let rec cmd count =
-      Util_deferred.make_request ?credentials ~region ~headers:[] ~meth:`DELETE ~path ~query:[] () >>= fun (resp, body) ->
-      let status = Cohttp.Response.status resp in
-      match status, Code.code_of_status status with
-      | #Code.success_status, _ ->
-        Deferred.return (Ok ())
-      | _, ((500 | 503) as _code) when count < retries ->
-        (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
-        let delay = ((2.0 ** float count) /. 10.) in
-        (* Log.Global.info "Delete %s was rate limited (%d). Sleeping %f ms" path code delay; *)
-        Deferred.after delay >>= fun () ->
-        cmd (count + 1)
-      | _ ->
-        Cohttp_deferred.Body.to_string body >>= fun body ->
-        Deferred.return (Or_error.errorf "Failed to delete s3://%s. Error was: %s" path body)
+    let cmd ?host ~region =
+      Util_deferred.make_request ?credentials ?host ~region ~headers:[] ~meth:`DELETE ~path ~query:[] ()
     in
-    Deferred.Or_error.catch (fun () -> cmd 0)
+    do_command ?retries ~region cmd >>=? fun (_headers, _body) ->
+    Deferred.return (Ok ())
 
-  let delete_multi ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ~bucket objects () =
+  let delete_multi ?retries ?credentials ?(region=Util.Us_east_1) ~bucket objects () =
     let request =
       Delete_multi.({
           quiet=false;
@@ -204,57 +215,37 @@ module Make(Compat : Types.Compat) = struct
       |> Xml.to_string
     in
     let headers = [ "Content-MD5", B64.encode (Caml.Digest.string request) ] in
-    let rec cmd count =
-      Util_deferred.make_request ~body:request ?credentials ~region ~headers ~meth:`POST ~query:["delete", ""] ~path:bucket () >>= fun (resp, body) ->
-      let status = Cohttp.Response.status resp in
-      match status, Code.code_of_status status with
-      | #Code.success_status, _ ->
+    let cmd ?host ~region =
+      Util_deferred.make_request
+        ~body:request ?credentials ?host ~region ~headers
+        ~meth:`POST ~query:["delete", ""] ~path:bucket ()
+    in
+    do_command ?retries ~region cmd >>=? fun (_headers, body) ->
+    Deferred.catch (fun () ->
         Cohttp_deferred.Body.to_string body >>= fun body ->
         let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
-        Deferred.return (Ok result)
-      | _, ((500 | 503) as _code) when count < retries ->
-        (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
-        let delay = ((2.0 ** float count) /. 10.) in
-        (* Log.Global.info "Multi delete on bucket '%s' was rate limited (%d). Sleeping %f ms" bucket code delay; *)
-        Deferred.after delay >>= fun () ->
-        cmd (count + 1)
-      | _ ->
-        Cohttp_deferred.Body.to_string body >>= fun body ->
-        Deferred.return (Or_error.errorf "Failed to multi delete from bucket '%s'. Error was: %s" bucket body)
-    in
-    Deferred.Or_error.catch (fun () -> cmd 0)
+        Deferred.return result
+      )
 
-  let rec ls ?(retries = 12) ?credentials ?(region=Util.Us_east_1) ?continuation_token ?prefix ~bucket () =
+  let rec ls ?retries ?credentials ?(region=Util.Us_east_1) ?continuation_token ?prefix ~bucket () =
     let query = [ Some ("list-type", "2");
                   Option.map ~f:(fun ct -> ("continuation-token", ct)) continuation_token;
                   Option.map ~f:(fun prefix -> ("prefix", prefix)) prefix;
                 ] |> List.filter_opt
     in
-    let rec cmd count =
-      Util_deferred.make_request ?credentials ~region ~headers:[] ~meth:`GET ~path:bucket ~query () >>= fun (resp, body) ->
-      let status = Cohttp.Response.status resp in
-      match status, Code.code_of_status status with
-      | #Code.success_status, _ ->
+    let cmd ?host ~region =
+      Util_deferred.make_request ?credentials ~region ?host ~headers:[] ~meth:`GET ~path:bucket ~query ()
+    in
+    do_command ?retries ~region cmd >>=? fun (_headers, body) ->
+    Deferred.catch (fun () ->
         Cohttp_deferred.Body.to_string body >>= fun body ->
-
         let result = Ls.result_of_xml_light (Xml.parse_string body) in
         let continuation = match Ls.(result.next_continuation_token) with
-          | Some ct -> Ls.More (ls ~retries ?credentials ~region ~continuation_token:ct ?prefix ~bucket)
+          | Some ct -> Ls.More (ls ?retries ?credentials ~region ~continuation_token:ct ?prefix ~bucket)
           | None -> Ls.Done
         in
-        Deferred.return (Ok (Ls.(result.contents, continuation)))
-      | _, ((500 | 503) as _code) when count < retries ->
-        (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
-        let delay = ((2.0 ** float count) /. 10.) in
-        (* Log.Global.info "Get %s was rate limited (%d). Sleeping %f ms" bucket code delay; *)
-        Deferred.after delay >>= fun () ->
-        cmd (count + 1)
-      | _ ->
-        Cohttp_deferred.Body.to_string body >>= fun body ->
-        Deferred.return (Or_error.errorf "Failed to ls s3://%s. Error was: %s" bucket body)
-    in
-    Deferred.Or_error.catch (fun () -> cmd 0)
-
+        Deferred.return (Ls.(result.contents, continuation))
+      )
 end
 
 module Test = struct
@@ -292,8 +283,26 @@ module Test = struct
     ignore result;
     ()
 
+  let parse_error _ =
+    let data =
+      {| <Error>
+           <Code>PermanentRedirect</Code>
+           <Message>The bucket you are attempting to access must be addressed using the specified endpoint. Please send all future requests to this endpoint.</Message>
+           <Bucket>stijntest</Bucket>
+           <Endpoint>stijntest.s3.amazonaws.com</Endpoint>
+           <RequestId>9E23E3919C24476C</RequestId>
+           <HostId>zdRmjNUli+pR+gwwhfGt2/s7VVerHquAPqgi9KpZ9OVsYhfF+9uAkkRJtxPcLCJKk2ZjzV1MTv8=</HostId>
+         </Error>
+      |}
+    in
+    let xml = Xml.parse_string data in
+    let error = Protocol.Error_response.of_xml_light xml in
+    assert_equal ~msg:"Wrong code extracted" "PermanentRedirect" (error.Protocol.Error_response.code);
+    ()
+
   let unit_test =
     __MODULE__ >::: [
       "parse_result" >:: parse_result;
+      "parse_error" >:: parse_error;
     ]
 end

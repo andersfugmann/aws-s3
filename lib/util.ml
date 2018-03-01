@@ -271,8 +271,11 @@ let gzip_data ?level data =
 module Make(C : Types.Compat) = struct
   open C
 
-  let make_request ?body ?(region=Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
-    let host_str = region_host_string region in
+  let make_request ?body ?(region=Us_east_1) ?host ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
+    let host_str = match host with
+      | None -> region_host_string region
+      | Some host -> host
+    in
     let uri = Uri.make
         ~scheme:"https"
         ~host:host_str

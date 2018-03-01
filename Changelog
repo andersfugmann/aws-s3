@@ -1,14 +1,14 @@
-[ ] Support multi-upload
-[ ] Support partial get
-[ ] Add ability to pass the sha256 on put operation
-[ ] Funtorize over the concurrency monad (Async / Lwt)
-[ ] Support permanent redirect error code
+[ ] Support multipart upload (for speed)
+[p] Support permanent redirect error code
 [ ] Support copying from s3 -> s3
 
-[x] Allow using core >= v0.9.0
+[ ] Support range get
 
-[x] Only compile against core >= v0.10.0
-[x] Dont compile with safestring anymore
+[x] Funtorize over the concurrency monad (Async / Lwt)
+[x] Allow using core >= v0.9.0
+[x] Only compile against async >= v0.10.0
+[x] Dont compile with -safe-string
+[x] return md5 of uploaded file
 
 1.1.0:
 [x] Switch to use ppx_deriving_protocol, and compile with -safe-string

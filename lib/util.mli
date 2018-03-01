@@ -23,6 +23,7 @@ module Make : functor(Compat: Types.Compat) -> sig
   val make_request :
     ?body:String.t ->
     ?region:region ->
+    ?host:string ->
     ?credentials:Credentials.t ->
     headers:(string * string) list ->
     meth:Code.meth ->
