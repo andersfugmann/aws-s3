@@ -115,7 +115,7 @@ module Protocol(P: sig type 'a or_error end) = struct
       region: string option [@key "Region"];
       request_id: string [@key "RequestId"];
       host_id: string [@key "HostId"];
-    } [@@deriving protocol ~driver:(module Xml_light)]
+    } [@@deriving of_protocol ~driver:(module Xml_light)]
   end
 
 end
@@ -141,7 +141,7 @@ module Make(Compat : Types.Compat) = struct
           let open Error_response in
           (* Parse the error message. We need to know where to redirect to *)
           Cohttp_deferred.Body.to_string body >>= fun body ->
-          match Error_response.of_xml_light (Xml.parse_string body) with
+          match Error_response.t_of_xml_light (Xml.parse_string body) with
           | { code = "PermanentRedirect"; endpoint = Some host; _ } ->
             inner ~host ~region count
           | { code = "AuthorizationHeaderMalformed"; region = Some region; _ } ->
@@ -296,7 +296,7 @@ module Test = struct
       |}
     in
     let xml = Xml.parse_string data in
-    let error = Protocol.Error_response.of_xml_light xml in
+    let error = Protocol.Error_response.t_of_xml_light xml in
     assert_equal ~msg:"Wrong code extracted" "PermanentRedirect" (error.Protocol.Error_response.code);
     ()
 
