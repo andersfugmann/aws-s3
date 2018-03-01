@@ -8,19 +8,15 @@ env:
   global:
   - TESTS=true
   matrix:
-#  - PACKAGE="aws-s3-async" PINS="aws-s3:. aws-s3-async:." OCAML_VERSION=4.04
-#  - PACKAGE="aws-s3-async" PINS="aws-s3:. aws-s3-async:." OCAML_VERSION=4.05
+  - PACKAGE="aws-s3-async" PINS="aws-s3:. aws-s3-async:." OCAML_VERSION=4.04
+  - PACKAGE="aws-s3-async" PINS="aws-s3:. aws-s3-async:." OCAML_VERSION=4.05
   - PACKAGE="aws-s3-async" PINS="aws-s3:. aws-s3-async:." OCAML_VERSION=4.06
-#  - PACKAGE="aws-s3-lwt" PINS="aws-s3:. aws-s3-lwt:." OCAML_VERSION=4.04
-#  - PACKAGE="aws-s3-lwt" PINS="aws-s3:. aws-s3-lwt:." OCAML_VERSION=4.05
-#  - PACKAGE="aws-s3-lwt" PINS="aws-s3:. aws-s3-lwt:." OCAML_VERSION=4.06
+  - PACKAGE="aws-s3-lwt" PINS="aws-s3:. aws-s3-lwt:." OCAML_VERSION=4.04
+  - PACKAGE="aws-s3-lwt" PINS="aws-s3:. aws-s3-lwt:." OCAML_VERSION=4.05
+  - PACKAGE="aws-s3-lwt" PINS="aws-s3:. aws-s3-lwt:." OCAML_VERSION=4.06
 #  - PACKAGE="aws-s3-lwt" PINS="aws-s3:. aws-s3-lwt:. core:core.v0.9.2"  OCAML_VERSION=4.06
 #  - PACKAGE="aws-s3-async" PINS="aws-s3:. aws-s3-async:. core:core.v0.9.2"  OCAML_VERSION=4.06
 
 os:
   - linux
 #  - osx
-
-cache:
-  directories:
-    - $HOME/.opam
