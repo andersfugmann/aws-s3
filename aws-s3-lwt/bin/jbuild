@@ -1,0 +1,9 @@
+(jbuild_version 1)
+
+(executable
+ ((name        cli_lwt)
+  (public_name cli-lwt)
+  (libraries (aws_cli aws-s3-lwt))
+  (package aws-s3-lwt)
+ )
+)
