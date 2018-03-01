@@ -1,12 +1,17 @@
+-*- mode: fundamental -*-
+
 [ ] Support multipart upload (for speed)
 [p] Support permanent redirect error code
 [ ] Support copying from s3 -> s3
 
 [ ] Support range get
 
+[ ] Compatibility with core >= v0.9.0
+
 [x] Build multiple packages (aws-s3-lwt / aws-s3-async / aws-s3)
 [x] Funtorize over the concurrency monad (Async / Lwt)
-[x] Allow using core >= v0.9.0
+[x] Compatibility with core >= v0.9.0
+[x] Funtorize over the concurrency monad (Async / Lwt)
 [x] Only compile against async >= v0.10.0
 [x] Dont compile with -safe-string
 [x] return md5 of uploaded file
