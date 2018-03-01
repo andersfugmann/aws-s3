@@ -10,8 +10,9 @@ version: "2.0.0"
 depends: [
   "jbuilder" { build }
   "aws-s3"
+  "lwt"
+  "lwt_ssl"
   "cohttp-lwt-unix"
-  "lwt" { >= "2.4.6" }
 ]
 
 available: [ ocaml-version >= "4.04.0" ]

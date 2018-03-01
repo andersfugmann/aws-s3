@@ -41,10 +41,12 @@ module Cohttp_deferred = struct
 
   module Client = struct
     let request ?body request =
+      let uri = Uri.with_uri ~scheme:(Some "https") (Cohttp.Request.uri request) in
       Cohttp_lwt_unix.Client.call
         ~headers:(Cohttp.Request.headers request)
         ?body
         (Cohttp.Request.meth request)
-        (Cohttp.Request.uri request)
+        uri
+
   end
 end
