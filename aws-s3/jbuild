@@ -1,0 +1,12 @@
+(jbuild_version 1)
+
+(library
+ ((name        aws_s3)
+  (public_name aws-s3)
+  (synopsis "Amazon S3 access library")
+  (libraries (core oUnit cohttp inifiles cryptokit nocrypto yojson
+              ppx_protocol_conv ppx_protocol_conv.runtime ppx_protocol_conv.json
+              ppx_protocol_conv.xml xml-light str))
+  (preprocess (pps (ppx_protocol_conv ppx_driver.runner)))
+ )
+)

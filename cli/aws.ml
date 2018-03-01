@@ -80,7 +80,13 @@ let ls profile ratelimit bucket prefix () =
   ls_all ([], S3.Ls.More (fun () -> S3.ls ~credentials ?prefix ~bucket ())) >>= function
   | Result.Ok () -> return ()
   | Error e -> Log.Global.error "Error doing ls: Error is: %s" (Error.to_string_hum e);
-      return ()
+    return ()
+
+(* This needs to be some other command line parsing functions *)
+(* File reading / writing could be made synconious using the Unix lib *)
+(* Alternativly we could create a module that can do that based on the concurrency monad *)
+(* We also need multiple packages (s3-aws-async | s3-aws-lwt which depeneds on s3-aws-lib). *)
+(* We should make sure to have that before we release *)
 
 let () =
   let profile_flag = Command.Spec.(flag "profile" (optional string) ~doc:"<profile> Use local credentials from <profile>") in

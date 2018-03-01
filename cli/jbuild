@@ -4,5 +4,6 @@
  ((name        aws)
   (public_name aws)
   (libraries (aws_s3_async))
+  (package aws-s3-async)
  )
 )

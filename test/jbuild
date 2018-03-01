@@ -1,12 +1,12 @@
 (jbuild_version 1)
 
 (executables
- ((names       (unittest))
-  (libraries  (aws_s3 oUnit))
+ ((names     (unittest))
+  (libraries (aws_s3 oUnit))
 ))
-
 
 (alias
   ((name   runtest)
    (action (run ${exe:unittest.exe}))
+   (package aws-s3)
 ))
