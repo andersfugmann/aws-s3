@@ -11,6 +11,7 @@ depends: [
   "jbuilder" { build }
   "aws-s3"
   "async" { >= "v0.10.0" }
+  "cmdliner"
 ]
 
 available: [ ocaml-version >= "4.04.0" ]

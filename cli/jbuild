@@ -1,9 +1,26 @@
 (jbuild_version 1)
 
+(library
+ ((name      aws_cli)
+  (modules   (aws cli))
+  (libraries (aws-s3 cmdliner))
+))
+
+
 (executable
- ((name        aws)
-  (public_name aws)
-  (libraries (aws-s3-async))
+ ((name        cli_async)
+  (modules     cli_async)
+  (public_name cli-async)
+  (libraries (aws_cli aws-s3-async))
+  (package aws-s3-async)
+ )
+)
+
+(executable
+ ((name        cli_lwt)
+  (modules     cli_lwt)
+  (public_name cli-lwt)
+  (libraries (aws_cli aws-s3-lwt))
   (package aws-s3-async)
  )
 )
