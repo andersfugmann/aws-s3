@@ -2,7 +2,7 @@
 
 (executables
  ((names     (unittest))
-  (libraries (aws_s3 oUnit))
+  (libraries (aws-s3 oUnit))
 ))
 
 (alias

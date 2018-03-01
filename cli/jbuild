@@ -3,7 +3,7 @@
 (executable
  ((name        aws)
   (public_name aws)
-  (libraries (aws_s3_async))
+  (libraries (aws-s3-async))
   (package aws-s3-async)
  )
 )
