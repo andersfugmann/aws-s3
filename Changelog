@@ -6,8 +6,9 @@
 
 [ ] Support range get
 
+2.0.0~pre1
 [x] Compatibility with core >= v0.9.0
-[x] Build multiple packages (aws-s3-lwt / aws-s3-async / aws-s3)
+[x] Split into multiple packages (aws-s3-lwt / aws-s3-async / aws-s3)
 [x] Funtorize over the concurrency monad (Async / Lwt)
 [x] Dont compile with -safe-string
 [x] return md5 of uploaded file

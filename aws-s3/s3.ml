@@ -139,7 +139,6 @@ module Make(Compat : Types.Compat) = struct
         Deferred.Or_error.return (headers, body)
       | (301 | 400) as c when count <= retries -> begin
           let open Error_response in
-          (* Parse the error message. We need to know where to redirect to *)
           Cohttp_deferred.Body.to_string body >>= fun body ->
           match Error_response.t_of_xml_light (Xml.parse_string body) with
           | { code = "PermanentRedirect"; endpoint = Some host; _ } ->

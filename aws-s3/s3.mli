@@ -27,7 +27,6 @@ module Make(Compat : Types.Compat) : sig
     }
     type t = (content list * cont) Deferred.Or_error.t
     and cont = More of (unit -> t) | Done
-
   end
 
   module Delete_multi : sig

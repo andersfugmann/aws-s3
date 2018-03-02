@@ -1,4 +1,4 @@
-Ocaml library for accessing Amazon S3
+Ocaml library for accessing Amazon S3 - Async version
 
 This library provides access to Amazon Simple Storage Solution (S3).
 The library supports:
@@ -7,6 +7,4 @@ The library supports:
 * Delete single/multi object in S3
 * Fetching credentials (though IAM)
 
-The library supports both lwt and async concurrency models.
-* For lwt, please install `aws-s3-lwt` package
-* For Async, please install `aws-s3-async` package
+This library uses async for concurrency

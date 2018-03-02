@@ -326,7 +326,6 @@ end
   module Test = struct
     open OUnit2
     let gunzip data =
-      (* But we dont know how to create a process. Should we use Caml.Sys intead? *)
       Process.create ~prog:"gunzip" ~args:[ "--no-name"; "-" ] () >>= fun proc ->
       let proc = Or_error.ok_exn proc in
       (* Write to the process. *)

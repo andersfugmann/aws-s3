@@ -5,9 +5,10 @@ license: "BSD-3"
 homepage: "https://github.com/andersfugmann/aws-s3"
 dev-repo: "git+https://github.com/andersfugmann/aws-s3"
 bug-reports: "https://github.com/andersfugmann/aws-s3/issues"
+version: "2.0.0~pre1"
 depends: [
   "base" { = "v0.9.4" }
-  "core" { = "v0.9.2"}
-  "aws-s3-lwt"
-  "aws-s3-async"
+  "core" { = "v0.9.2" }
+  "aws-s3-lwt" { = "2.0.0~pre1" }
+  "aws-s3-async" { = "2.0.0~pre1" }
 ]
