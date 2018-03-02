@@ -30,5 +30,3 @@ bump_version:
 	@sed -i 's/^version: .*/version: "$(VERSION)"/' *.opam
 	@sed -i 's/"\(aws-s3[-a-z]*\)"[ ]*{ = .* }/"\1" { = "$(VERSION)" }/' *.opam
 	@echo ok: $(VERSION).
-#Tagging
-#	@git tag $(VERSION)
