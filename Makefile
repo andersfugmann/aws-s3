@@ -25,9 +25,10 @@ dep:
 test: build
 	jbuilder runtest --dev
 
-bump_version: VERSION=$(shell grep
 bump_version:
 	@if [ -z "$(VERSION)" ]; then echo "need to set VERSION"; exit 1; fi
 	@sed -i 's/^version: .*/version: "$(VERSION)"/' *.opam
-	@echo ok: $(VERSION). Tagging
-	@git tag $(VERSION)
+	@sed -i 's/"aws-s3"[ ]*{ = .* }/"aws-s3" { = "$(VERSION)" }/' *.opam
+	@echo ok: $(VERSION).
+#Tagging
+#	@git tag $(VERSION)

@@ -6,7 +6,7 @@
 
 [ ] Support range get
 
-2.0.0~pre1
+2.0.0:
 [x] Compatibility with core >= v0.9.0
 [x] Split into multiple packages (aws-s3-lwt / aws-s3-async / aws-s3)
 [x] Funtorize over the concurrency monad (Async / Lwt)
