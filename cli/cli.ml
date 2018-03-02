@@ -7,8 +7,8 @@ open Cmdliner
 
 type actions =
   | Ls of { bucket: string; prefix: string option; ratelimit: int option; }
-  | Rm of string
-  | Cp of { src: string; dest: string }
+  | Rm of { bucket: string; paths : string list }
+  | Cp of { src: string; dest: string; first: int option; last: int option }
 
 type options =
   { profile: string option; }
@@ -46,13 +46,27 @@ let parse exec =
   in
 
   let cp =
-    let make opts src dest = opts, Cp { src; dest } in
-    Term.(const make $ common_opts $ path 0 "SRC" $ path 1 "DEST"),
+    let make opts first last src dest = opts, Cp { src; dest; first; last } in
+    let first =
+      let doc = "first byte of the source object to copy. If omitted means from the start." in
+      Arg.(value & opt (some int) None & info ["first"; "f"] ~docv:"BYTE" ~doc)
+    in
+    let last =
+      let doc = "last byte of the source object to copy. If omitted means to the end" in
+      Arg.(value & opt (some int) None & info ["last"; "l"] ~docv:"BYTE" ~doc)
+    in
+
+    Term.(const make $ common_opts $ first $ last $ path 0 "SRC" $ path 1 "DEST"),
     Term.info "cp" ~doc:"Copy files to and from S3"
   in
   let rm =
-    let make opts path = opts, Rm path in
-    Term.(const make $ common_opts $ path 0 "PATH"),
+    let objects =
+      let doc = "name of the object to delete" in
+      Arg.(non_empty & pos_all string [] & info [] ~docv:"OBJECT" ~doc)
+    in
+
+    let make opts bucket paths = opts, Rm { bucket; paths } in
+    Term.(const make $ common_opts $ bucket 0 $ objects),
     Term.info "rm" ~doc:"Delete files from s3"
   in
 
@@ -74,4 +88,8 @@ let parse exec =
     let cmds = [cp; rm; ls] in
     Term.(eval_choice help cmds)
   in
-  exec @@ commands
+  let run = function
+    | `Ok cmd -> exec cmd
+    | _ -> 254
+  in
+  run @@ commands |> exit

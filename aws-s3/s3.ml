@@ -76,11 +76,6 @@ module Protocol(P: sig type 'a or_error end) = struct
     let xml_of_request request =
       request_to_xml_light request |> set_element_name "Delete"
 
-    type deleted = {
-      key: string [@key "Key"];
-      version_id: string option [@key "VersionId"];
-    } [@@deriving protocol ~driver:(module Xml_light)]
-
     type error = {
       key: string [@key "Key"];
       version_id: string option [@key "VersionId"];
@@ -100,7 +95,7 @@ module Protocol(P: sig type 'a or_error end) = struct
     type result = {
       delete_marker: delete_marker [@key "DeleteMarker"];
       delete_marker_version_id: string option [@key "DeleteMarkerVersionId"];
-      deleted: deleted list [@key "Deleted"];
+      deleted: objekt list [@key "Deleted"];
       error: error list  [@key "Error"];
     } [@@deriving protocol ~driver:(module Xml_light)]
 
@@ -125,6 +120,8 @@ module Make(Compat : Types.Compat) = struct
   open Compat
   open Deferred.Infix
   include Protocol(struct type 'a or_error = 'a Deferred.Or_error.t end)
+
+  type range = { first: int option; last: int option }
 
   type 'a command = ?retries:int -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
 
@@ -187,10 +184,25 @@ module Make(Compat : Types.Compat) = struct
     in
     Deferred.Or_error.return etag
 
-  let get ?retries ?credentials ?(region=Util.Us_east_1) ~bucket ~key () =
+  let get ?retries ?credentials ?(region=Util.Us_east_1) ?range ~bucket ~key () =
+    let headers =
+      let r_opt r = Option.value_map ~f:(string_of_int) ~default:"" r in
+
+      [ Option.bind ~f:(function { first = None; last = None }-> None
+                               | { first = Some first; last } ->
+                                 Some ("Range", sprintf "bytes=%d-%s" first (r_opt last))
+                               | { first = None; last = Some last } when last < 0 ->
+                                 Some ("Range", sprintf "bytes=-%d" last)
+                               | { first = None; last = Some last } ->
+                                 Some ("Range", sprintf "bytes=0-%d" last)
+
+          ) range
+      ]
+      |> List.filter_opt
+    in
     let path = sprintf "%s/%s" bucket key in
     let cmd ?host ~region =
-      Util_deferred.make_request ?credentials ?host ~region ~headers:[] ~meth:`GET ~path ~query:[] ()
+      Util_deferred.make_request ?credentials ?host ~region ~headers ~meth:`GET ~path ~query:[] ()
     in
     do_command ?retries ~region cmd >>=? fun (_headers, body) ->
     Cohttp_deferred.Body.to_string body >>= fun body ->

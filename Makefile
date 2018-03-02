@@ -28,7 +28,7 @@ test: build
 bump_version:
 	@if [ -z "$(VERSION)" ]; then echo "need to set VERSION"; exit 1; fi
 	@sed -i 's/^version: .*/version: "$(VERSION)"/' *.opam
-	@sed -i 's/"aws-s3"[ ]*{ = .* }/"aws-s3" { = "$(VERSION)" }/' *.opam
+	@sed -i 's/"\(aws-s3[-a-z]*\)"[ ]*{ = .* }/"\1" { = "$(VERSION)" }/' *.opam
 	@echo ok: $(VERSION).
 #Tagging
 #	@git tag $(VERSION)

@@ -31,8 +31,6 @@ module Make(Compat : Types.Compat) : sig
 
   module Delete_multi : sig
     type objekt = { key : string; version_id : string option; }
-
-    type deleted = { key : string; version_id : string option; }
     type error = {
       key : string;
       version_id : string option;
@@ -42,10 +40,12 @@ module Make(Compat : Types.Compat) : sig
     type result = {
       delete_marker : bool;
       delete_marker_version_id : string option;
-      deleted : deleted list;
+      deleted : objekt list;
       error : error list;
     }
   end
+
+  type range = { first: int option; last:int option }
 
   (** Upload [key] to [bucket].
 
@@ -55,7 +55,6 @@ module Make(Compat : Types.Compat) : sig
 
       Returns the etag of the object. The etag is the base64 md5 checksum (RFC 1864)
   *)
-
   val put :
     (?content_type:string ->
      ?gzip:bool ->
@@ -65,15 +64,18 @@ module Make(Compat : Types.Compat) : sig
      key:string ->
      string -> string Deferred.Or_error.t) command
 
-  (** Download [key] from s3 in [bucket] *)
+
+  (** Download [key] from s3 in [bucket]
+      If [range] is specified, only a part of the file is downloaded.
+      - If [first] is None, then start from the beginning of the object.
+      - If [last] is None, then get to the end of the object.
+  *)
   val get :
-    (bucket:string -> key:string -> unit ->
-     string Deferred.Or_error.t) command
+    (?range:range -> bucket:string -> key:string -> unit -> string Deferred.Or_error.t) command
 
   (** Delete [key] from [bucket]. *)
   val delete :
-    (bucket:string -> key:string -> unit ->
-     unit Deferred.Or_error.t) command
+    (bucket:string -> key:string -> unit -> unit Deferred.Or_error.t) command
 
   (** Delete multiple objects from [bucket].
 
@@ -81,8 +83,7 @@ module Make(Compat : Types.Compat) : sig
       an item is not found it will be reported as successfully deleted.
   *)
   val delete_multi :
-    (bucket:string -> Delete_multi.objekt list -> unit ->
-     Delete_multi.result Deferred.Or_error.t) command
+    (bucket:string -> Delete_multi.objekt list -> unit -> Delete_multi.result Deferred.Or_error.t) command
 
   (** List contents in [bucket]
 
@@ -90,8 +91,7 @@ module Make(Compat : Types.Compat) : sig
       returned, the function will return a continuation.
   *)
   val ls :
-    (?continuation_token:string -> ?prefix:string -> bucket:string -> unit ->
-     Ls.t) command
+    (?continuation_token:string -> ?prefix:string -> bucket:string -> unit -> Ls.t) command
 end
 
 module Test : sig

@@ -7,8 +7,15 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
   open Compat.Deferred
   open Compat.Deferred.Infix
 
-  let read_file file =
-    Core.In_channel.(with_file file ~f:input_all)
+  let read_file ?first ?last file =
+    let data = Core.In_channel.(with_file file ~f:input_all) in
+    let len = String.length data in
+    match (first, last) with
+    | None, None -> data
+    | first, last ->
+      let first = Option.value ~default:0 first in
+      let last = Option.value ~default:(len - 1) last in
+      String.sub ~pos:first ~len:(last - first + 1) data
 
   let save_file file contents =
     Core.Out_channel.(with_file file ~f:(fun c -> output_string c contents))
@@ -39,38 +46,33 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     | (false, false) -> failwith "Use cp(1)"
     | (true, true) -> failwith "Does not support copying from s3 to s3"
 
-  let cp profile src dst () =
+  let cp profile ?first ?last src dst =
+    let range = { S3.first; last } in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = Core.Or_error.ok_exn credentials in
     (* nb client does not support preflight 100 *)
     match determine_paths src dst with
     | S3toLocal (src, dst) ->
-      begin
-        S3.get ~credentials ~bucket:src.bucket ~key:src.key () >>= function
-        | Ok data ->
-          save_file dst data;
-          return ()
-        | Error _ ->
-          return ()
-      end
+        S3.get ~credentials ~range ~bucket:src.bucket ~key:src.key () >>=? fun data ->
+        save_file dst data;
+        Deferred.Or_error.return ()
     | LocaltoS3 (src, dst) ->
-      let data = read_file src in
-      S3.put ~credentials ~bucket:dst.bucket ~key:dst.key data >>= function
-      | Ok _etag ->
-        return ()
-      | Error _ ->
-        return ()
+      let data = read_file ?first ?last src in
+      S3.put ~credentials ~bucket:dst.bucket ~key:dst.key data >>=? fun _etag ->
+      Deferred.Or_error.return ()
 
-  let rm profile path () =
-    let objekt = Uri.of_string path |> objekt_of_uri in
+  let rm profile bucket paths =
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = Core.Or_error.ok_exn credentials in
-    S3.delete ~credentials ~bucket:objekt.bucket ~key:objekt.key () >>= function
-    | Ok () -> return ()
-    | Error _ ->
-      return ()
+    match paths with
+    | [ key ] ->
+        S3.delete ~credentials ~bucket ~key ()
+    | keys ->
+      let objects : S3.Delete_multi.objekt list = List.map ~f:(fun key -> { S3.Delete_multi.key; version_id = None }) keys in
+      S3.delete_multi ~credentials ~bucket objects () >>=? fun _deleted ->
+      Deferred.Or_error.return ()
 
-  let ls profile ratelimit bucket prefix () =
+  let ls profile ratelimit bucket prefix =
     let ratelimit_f = match ratelimit with
       | None -> fun () -> Deferred.Or_error.return ()
       | Some n -> fun () -> after (1000. /. float n) >>= Deferred.Or_error.return
@@ -87,17 +89,20 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = Core.Or_error.ok_exn credentials in
     (* nb client does not support redirects or preflight 100 *)
-    ls_all ([], S3.Ls.More (fun () -> S3.ls ~credentials ?prefix ~bucket ())) >>= function
-    | Result.Ok () -> return ()
-    | Error _ -> return ()
+    ls_all ([], S3.Ls.More (fun () -> S3.ls ~credentials ?prefix ~bucket ()))
 
   let exec ({ Cli.profile }, cmd) =
-    match cmd with
-    | Cli.Cp { src; dest } ->
-      cp profile src dest ()
-    | Rm path ->
-      rm profile path ()
-    | Ls { ratelimit; bucket; prefix } ->
-      ls profile ratelimit bucket prefix ()
-
+    begin
+      match cmd with
+      | Cli.Cp { src; dest; first; last } ->
+        cp profile ?first ?last src dest
+      | Rm { bucket; paths }->
+        rm profile bucket paths
+      | Ls { ratelimit; bucket; prefix } ->
+        ls profile ratelimit bucket prefix
+    end >>= function
+    | Ok _ -> return 0
+    | Error e ->
+      Printf.eprintf "%s\n%!" (Error.to_string_hum e);
+      return 1
 end
