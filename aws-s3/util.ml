@@ -318,7 +318,10 @@ module Make(C : Types.Compat) = struct
       Cohttp_deferred.Client.request ?body request
     | `GET -> Cohttp_deferred.Client.request request
     | `DELETE -> Cohttp_deferred.Client.request request
-    | _ -> failwith "not possible right now"
+    | `POST ->
+      let body = Option.map ~f:(Cohttp_deferred.Body.of_string) body in
+      Cohttp_deferred.Client.request ?body request
+    | _ -> failwith "Unsupported http verb (method)"
 
 end
 

@@ -64,7 +64,7 @@ module Protocol(P: sig type 'a or_error end) = struct
 
   module Delete_multi = struct
     type objekt = {
-      key: string [@key "Object"];
+      key: string [@key "Key"];
       version_id: string option [@key "VersionId"];
     } [@@deriving protocol ~driver:(module Xml_light)]
 

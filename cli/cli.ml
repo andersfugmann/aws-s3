@@ -1,6 +1,6 @@
 (** Parse command line options *)
+open Core
 open Cmdliner
-
 (* When executing, we take a function to do the work,
    so we need a descr of what to do.
 *)
@@ -34,11 +34,6 @@ let parse exec =
     Arg.(required & pos n (some string) None & info [] ~docv:"BUCKET" ~doc)
   in
 
-  let prefix n =
-    let doc = "Only list elements with the given prefix" in
-    Arg.(value & pos n (some string) None & info [] ~docv:"PREFIX" ~doc)
-  in
-
 
   let path n name =
     let doc = "path: <local_path>|<s3://<bucket>/<objname>" in
@@ -62,7 +57,7 @@ let parse exec =
   let rm =
     let objects =
       let doc = "name of the object to delete" in
-      Arg.(non_empty & pos_all string [] & info [] ~docv:"OBJECT" ~doc)
+      Arg.(non_empty & pos_right 0 string [] & info [] ~docv:"OBJECT" ~doc)
     in
 
     let make opts bucket paths = opts, Rm { bucket; paths } in
@@ -71,8 +66,14 @@ let parse exec =
   in
 
   let ls =
-    let make opts ratelimit bucket prefix = opts, Ls { bucket; prefix; ratelimit } in
-    Term.(const make $ common_opts $ ratelimit $ bucket 0 $ prefix 1),
+    let make opts ratelimit prefix bucket = opts, Ls { bucket; prefix; ratelimit } in
+
+    let prefix =
+      let doc = "Only list elements with the given prefix" in
+      Arg.(value & opt (some string) None & info ["prefix"] ~docv:"PREFIX" ~doc)
+    in
+
+    Term.(const make $ common_opts $ ratelimit $ prefix $ bucket 0),
     Term.info "ls" ~doc:"List files in bucket"
   in
 
