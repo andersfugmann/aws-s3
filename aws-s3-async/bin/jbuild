@@ -1,8 +1,8 @@
 (jbuild_version 1)
 
 (executable
- ((name        cli_async)
-  (public_name cli-async)
+ ((name        aws_cli_async)
+  (public_name aws-cli-async)
   (libraries (aws_cli aws-s3-async))
   (package aws-s3-async)
  )
