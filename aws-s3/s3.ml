@@ -26,11 +26,11 @@ module Protocol(P: sig type 'a or_error end) = struct
     let time_of_xml_light t =
       Xml_light.to_string t |> Time.of_string
 
-    type etag = Core.Digest.t
+    type etag = Caml.Digest.t
     let etag_of_xml_light t =
       Xml_light.to_string t
       |> String.strip ~drop:(function '"' -> true | _ -> false)
-      |> Digest.of_hex_exn
+      |> Caml.Digest.from_hex
 
     type storage_class =
       | Standard           [@key "STANDARD"]
@@ -185,7 +185,7 @@ module Make(Compat : Types.Compat) = struct
       Header.get headers "etag"
       |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
       |> String.strip ~drop:(function '"' -> true | _ -> false)
-      |> Digest.of_hex_exn
+      |> Caml.Digest.from_hex
     in
     Deferred.Or_error.return etag
 

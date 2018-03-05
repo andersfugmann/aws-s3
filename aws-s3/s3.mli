@@ -23,7 +23,7 @@ module Make(Compat : Types.Compat) : sig
       size : int;
       last_modified : Time.t;
       key : string;
-      etag : Md5.t;
+      etag : Caml.Digest.t;
     }
     type t = (content list * cont) Deferred.Or_error.t
     and cont = More of (unit -> t) | Done
@@ -53,7 +53,7 @@ module Make(Compat : Types.Compat) : sig
       content-encoding set to gzip so client will automatically
       decompress the content.
 
-      Returns the etag of the object. The etag is the base64 md5 checksum (RFC 1864)
+      Returns the etag of the object. The etag is the md5 checksum (RFC 1864)
   *)
   val put :
     (?content_type:string ->
@@ -62,7 +62,7 @@ module Make(Compat : Types.Compat) : sig
      ?cache_control:string ->
      bucket:string ->
      key:string ->
-     string -> Digest.t Deferred.Or_error.t) command
+     string -> Caml.Digest.t Deferred.Or_error.t) command
 
 
   (** Download [key] from s3 in [bucket]
