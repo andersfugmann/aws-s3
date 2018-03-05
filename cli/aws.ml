@@ -78,7 +78,7 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
       | Some n -> fun () -> after (1000. /. float n) >>= Deferred.Or_error.return
     in
     let rec ls_all (result, cont) =
-      Core.List.iter ~f:(fun { last_modified;  S3.Ls.key; size; etag; _ } -> Caml.Printf.eprintf "%s\t%d\t%s\t%s\n" (Time.to_string last_modified) size key (Caml.Digest.to_hex etag)) result;
+      Core.List.iter ~f:(fun { last_modified;  S3.Ls.key; size; etag; _ } -> Caml.Printf.printf "%s\t%d\t%s\t%s\n%!" (Time.to_string last_modified) size key (Caml.Digest.to_hex etag)) result;
 
       match cont with
       | S3.Ls.More continuation -> ratelimit_f ()
