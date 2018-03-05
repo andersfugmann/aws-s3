@@ -62,7 +62,7 @@ module Make(Compat : Types.Compat) : sig
      ?cache_control:string ->
      bucket:string ->
      key:string ->
-     string -> Md5.t Deferred.Or_error.t) command
+     string -> Digest.t Deferred.Or_error.t) command
 
 
   (** Download [key] from s3 in [bucket]
