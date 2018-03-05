@@ -222,26 +222,34 @@ module Make(Compat : Types.Compat) = struct
     Deferred.return (Ok ())
 
   let delete_multi ?retries ?credentials ?(region=Util.Us_east_1) ~bucket objects () =
-    let request =
-      Delete_multi.({
-          quiet=false;
-          objects=objects;
-        })
-      |> Delete_multi.xml_of_request
-      |> Xml.to_string
-    in
-    let headers = [ "Content-MD5", B64.encode (Caml.Digest.string request) ] in
-    let cmd ?host ~region =
-      Util_deferred.make_request
-        ~body:request ?credentials ?host ~region ~headers
-        ~meth:`POST ~query:["delete", ""] ~path:bucket ()
-    in
-    do_command ?retries ~region cmd >>=? fun (_headers, body) ->
-    Deferred.catch (fun () ->
-        Cohttp_deferred.Body.to_string body >>= fun body ->
-        let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
-        Deferred.return result
-      )
+    match objects with
+    | [] -> Delete_multi.{
+        delete_marker = false;
+        delete_marker_version_id = None;
+        deleted = [];
+        error = [];
+      } |> Deferred.Or_error.return
+    | _ ->
+      let request =
+        Delete_multi.{
+            quiet=false;
+            objects=objects;
+          }
+        |> Delete_multi.xml_of_request
+        |> Xml.to_string
+      in
+      let headers = [ "Content-MD5", B64.encode (Caml.Digest.string request) ] in
+      let cmd ?host ~region =
+        Util_deferred.make_request
+          ~body:request ?credentials ?host ~region ~headers
+          ~meth:`POST ~query:["delete", ""] ~path:bucket ()
+      in
+      do_command ?retries ~region cmd >>=? fun (_headers, body) ->
+      Deferred.catch (fun () ->
+          Cohttp_deferred.Body.to_string body >>= fun body ->
+          let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
+          Deferred.return result
+        )
 
   let rec ls ?retries ?credentials ?(region=Util.Us_east_1) ?continuation_token ?prefix ~bucket () =
     let query = [ Some ("list-type", "2");

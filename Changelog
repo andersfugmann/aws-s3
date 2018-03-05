@@ -5,6 +5,7 @@
 [ ] Support copying from s3 -> s3
 
 2.0.0:
+[x] Calling delete multi with an empty list is now a noop
 [x] Return Md5.t digest type instead of strings
 [x] Fix multi delete
 [x] Support range get
