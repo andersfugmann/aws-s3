@@ -26,19 +26,24 @@ module Protocol(P: sig type 'a or_error end) = struct
     let time_of_xml_light t =
       Xml_light.to_string t |> Time.of_string
 
+    type etag = Md5.t
+    let etag_of_xml_light t =
+      Xml_light.to_string t
+      |> String.strip ~drop:(function '"' -> true | _ -> false)
+      |> Md5.of_hex_exn
+
     type storage_class =
       | Standard           [@key "STANDARD"]
       | Standard_ia        [@key "STANDARD_IA"]
       | Reduced_redundancy [@key "REDUCED_REDUNDANCY"]
       | Glacier            [@key "GLACIER"]
 
-
     and content = {
       storage_class: storage_class [@key "StorageClass"];
       size: int [@key "Size"];
       last_modified: time [@key "LastModified"];
       key: string [@key "Key"];
-      etag: string [@key "ETag"];
+      etag: etag [@key "ETag"];
     }
 
     and result = {
@@ -180,7 +185,7 @@ module Make(Compat : Types.Compat) = struct
       Header.get headers "etag"
       |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
       |> String.strip ~drop:(function '"' -> true | _ -> false)
-      |> B64.decode
+      |> Md5.of_hex_exn
     in
     Deferred.Or_error.return etag
 

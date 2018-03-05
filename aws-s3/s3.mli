@@ -23,7 +23,7 @@ module Make(Compat : Types.Compat) : sig
       size : int;
       last_modified : Time.t;
       key : string;
-      etag : string;
+      etag : Md5.t;
     }
     type t = (content list * cont) Deferred.Or_error.t
     and cont = More of (unit -> t) | Done
@@ -62,7 +62,7 @@ module Make(Compat : Types.Compat) : sig
      ?cache_control:string ->
      bucket:string ->
      key:string ->
-     string -> string Deferred.Or_error.t) command
+     string -> Md5.t Deferred.Or_error.t) command
 
 
   (** Download [key] from s3 in [bucket]
