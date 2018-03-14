@@ -283,7 +283,6 @@ module Make(C : Types.Compat) = struct
 
   let make_request ?body ?(region=Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
     let host_str = host_of_region region in
-    Printf.eprintf "Connect to host: %s\n%!" host_str;
     let uri = Uri.make
         ~scheme:"https"
         ~host:host_str
