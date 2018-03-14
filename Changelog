@@ -1,8 +1,11 @@
 -*- mode: fundamental -*-
 
 [ ] Support multipart upload (for speed)
-[p] Support permanent redirect error code
 [ ] Support copying from s3 -> s3
+
+
+[x] Support permanent/temporary redirect error code
+
 
 2.0.0:
 [x] Calling delete multi with an empty list is now a noop

@@ -14,6 +14,7 @@ type region =
   | Us_west_1
   | Us_west_2
 
+val region_of_host : string -> region
 val region_of_string : string -> region
 val gzip_data : ?level:int -> string -> string
 
@@ -23,7 +24,6 @@ module Make : functor(Compat: Types.Compat) -> sig
   val make_request :
     ?body:String.t ->
     ?region:region ->
-    ?host:string ->
     ?credentials:Credentials.t ->
     headers:(string * string) list ->
     meth:Code.meth ->

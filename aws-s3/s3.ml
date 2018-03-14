@@ -130,24 +130,27 @@ module Make(Compat : Types.Compat) = struct
 
   type 'a command = ?retries:int -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
 
-  let do_command ?(retries=12) ~region cmd =
-    let rec inner ?host ~region count =
+  let do_command ?(retries=12) ?region cmd =
+    let rec inner ?region count =
       (* This should be the or_error *)
-      cmd ?host ~region >>= fun (resp, body) ->
+      cmd ?region () >>= fun (resp, body) ->
       let status = Cohttp.Response.status resp in
       match Code.code_of_status status with
       | code when 200 <= code && code < 300 ->
         let headers = Cohttp.Response.headers resp in
         Deferred.Or_error.return (headers, body)
-      | (301 | 400) as c when count <= retries -> begin
+      | 404 -> raise Not_found
+      | c when 300 <= c && c < 500 && count <= retries -> begin
           let open Error_response in
           Cohttp_deferred.Body.to_string body >>= fun body ->
           match Error_response.t_of_xml_light (Xml.parse_string body) with
-          | { code = "PermanentRedirect"; endpoint = Some host; _ } ->
-            inner ~host ~region count
+          | { code = "PermanentRedirect"; endpoint = Some host; _ }
+          | { code = "TemporaryRedirect"; endpoint = Some host; _ } ->
+            let region = Util.region_of_host host in
+            inner ~region count
           | { code = "AuthorizationHeaderMalformed"; region = Some region; _ } ->
             let region = Util.region_of_string region in
-            inner ?host ~region count
+            inner ~region count
           | { code; _ } ->
             Deferred.return (Or_error.errorf "Unhanded error code: %d %s" c code)
           | exception e -> Deferred.Or_error.fail (Error.of_exn e)
@@ -156,14 +159,14 @@ module Make(Compat : Types.Compat) = struct
         (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
         let delay = ((2.0 ** float count) /. 10.) in
         Deferred.after delay >>= fun () ->
-        inner ?host ~region (count + 1)
+        inner ?region (count + 1)
       | code ->
         Cohttp_deferred.Body.to_string body >>= fun body ->
         Deferred.return (Or_error.errorf "Command resulted in error: %d. Error: %s" code body)
     in
-    Deferred.Or_error.catch (fun () -> inner ~region 0)
+    Deferred.Or_error.catch (fun () -> inner ?region 0)
 
-  let put ?retries ?credentials ?(region=Util.Us_east_1) ?content_type ?(gzip=false) ?acl ?cache_control ~bucket ~key data =
+  let put ?retries ?credentials ?region ?content_type ?(gzip=false) ?acl ?cache_control ~bucket ~key data =
     let path = sprintf "%s/%s" bucket key in
     let content_encoding, body = match gzip with
       | true -> Some "gzip", Util.gzip_data data
@@ -176,11 +179,11 @@ module Make(Compat : Types.Compat) = struct
       let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
       Core.List.filter_opt [ content_type; content_encoding; cache_control; acl ]
     in
-    let cmd ?host ~region =
-      Util_deferred.make_request ?credentials ?host ~region ~headers ~meth:`PUT ~path ~body ~query:[] ()
+    let cmd ?region () =
+      Util_deferred.make_request ?credentials ?region ~headers ~meth:`PUT ~path ~body ~query:[] ()
     in
 
-    do_command ?retries ~region cmd >>=? fun (headers, _body) ->
+    do_command ?retries ?region cmd >>=? fun (headers, _body) ->
     let etag =
       Header.get headers "etag"
       |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
@@ -189,7 +192,7 @@ module Make(Compat : Types.Compat) = struct
     in
     Deferred.Or_error.return etag
 
-  let get ?retries ?credentials ?(region=Util.Us_east_1) ?range ~bucket ~key () =
+  let get ?retries ?credentials ?region ?range ~bucket ~key () =
     let headers =
       let r_opt r = Option.value_map ~f:(string_of_int) ~default:"" r in
 
@@ -206,22 +209,22 @@ module Make(Compat : Types.Compat) = struct
       |> List.filter_opt
     in
     let path = sprintf "%s/%s" bucket key in
-    let cmd ?host ~region =
-      Util_deferred.make_request ?credentials ?host ~region ~headers ~meth:`GET ~path ~query:[] ()
+    let cmd ?region () =
+      Util_deferred.make_request ?credentials ?region ~headers ~meth:`GET ~path ~query:[] ()
     in
-    do_command ?retries ~region cmd >>=? fun (_headers, body) ->
+    do_command ?retries ?region cmd >>=? fun (_headers, body) ->
     Cohttp_deferred.Body.to_string body >>= fun body ->
     Deferred.return (Ok body)
 
-  let delete ?retries ?credentials ?(region=Util.Us_east_1) ~bucket ~key () =
+  let delete ?retries ?credentials ?region ~bucket ~key () =
     let path = sprintf "%s/%s" bucket key in
-    let cmd ?host ~region =
-      Util_deferred.make_request ?credentials ?host ~region ~headers:[] ~meth:`DELETE ~path ~query:[] ()
+    let cmd ?region () =
+      Util_deferred.make_request ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query:[] ()
     in
-    do_command ?retries ~region cmd >>=? fun (_headers, _body) ->
+    do_command ?retries ?region cmd >>=? fun (_headers, _body) ->
     Deferred.return (Ok ())
 
-  let delete_multi ?retries ?credentials ?(region=Util.Us_east_1) ~bucket objects () =
+  let delete_multi ?retries ?credentials ?region ~bucket objects () =
     match objects with
     | [] -> Delete_multi.{
         delete_marker = false;
@@ -239,33 +242,33 @@ module Make(Compat : Types.Compat) = struct
         |> Xml.to_string
       in
       let headers = [ "Content-MD5", B64.encode (Caml.Digest.string request) ] in
-      let cmd ?host ~region =
+      let cmd ?region () =
         Util_deferred.make_request
-          ~body:request ?credentials ?host ~region ~headers
+          ~body:request ?credentials ?region ~headers
           ~meth:`POST ~query:["delete", ""] ~path:bucket ()
       in
-      do_command ?retries ~region cmd >>=? fun (_headers, body) ->
+      do_command ?retries ?region cmd >>=? fun (_headers, body) ->
       Deferred.catch (fun () ->
           Cohttp_deferred.Body.to_string body >>= fun body ->
           let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
           Deferred.return result
         )
 
-  let rec ls ?retries ?credentials ?(region=Util.Us_east_1) ?continuation_token ?prefix ~bucket () =
+  let rec ls ?retries ?credentials ?region ?continuation_token ?prefix ~bucket () =
     let query = [ Some ("list-type", "2");
                   Option.map ~f:(fun ct -> ("continuation-token", ct)) continuation_token;
                   Option.map ~f:(fun prefix -> ("prefix", prefix)) prefix;
                 ] |> List.filter_opt
     in
-    let cmd ?host ~region =
-      Util_deferred.make_request ?credentials ~region ?host ~headers:[] ~meth:`GET ~path:bucket ~query ()
+    let cmd ?region () =
+      Util_deferred.make_request ?credentials ?region ~headers:[] ~meth:`GET ~path:bucket ~query ()
     in
-    do_command ?retries ~region cmd >>=? fun (_headers, body) ->
+    do_command ?retries ?region cmd >>=? fun (_headers, body) ->
     Deferred.catch (fun () ->
         Cohttp_deferred.Body.to_string body >>= fun body ->
         let result = Ls.result_of_xml_light (Xml.parse_string body) in
         let continuation = match Ls.(result.next_continuation_token) with
-          | Some ct -> Ls.More (ls ?retries ?credentials ~region ~continuation_token:ct ?prefix ~bucket)
+          | Some ct -> Ls.More (ls ?retries ?credentials ?region ~continuation_token:ct ?prefix ~bucket)
           | None -> Ls.Done
         in
         Deferred.return (Ls.(result.contents, continuation))

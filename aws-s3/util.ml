@@ -134,7 +134,17 @@ let region_of_string = function
   | "us-west-2" -> Us_west_2
   | s -> failwith ("Unknown region: " ^ s)
 
-let region_host_string = function
+let region_of_host host =
+  match String.split ~on:'.' host |> List.rev with
+  | "com" :: "amazonaws" :: "s3" :: _  ->
+    Eu_west_1
+  | "com" :: "amazonaws" :: host :: _ ->
+    String.chop_prefix host ~prefix:"s3-"
+    |> Option.value ~default:host
+    |> region_of_string
+  | _ -> failwith "Cannot parse region from host"
+
+let host_of_region = function
   | Us_east_1 -> "s3.amazonaws.com"
   | region -> string_of_region region |> sprintf "s3-%s.amazonaws.com"
 
@@ -271,11 +281,9 @@ let gzip_data ?level data =
 module Make(C : Types.Compat) = struct
   open C
 
-  let make_request ?body ?(region=Us_east_1) ?host ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
-    let host_str = match host with
-      | None -> region_host_string region
-      | Some host -> host
-    in
+  let make_request ?body ?(region=Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
+    let host_str = host_of_region region in
+    Printf.eprintf "Connect to host: %s\n%!" host_str;
     let uri = Uri.make
         ~scheme:"https"
         ~host:host_str
