@@ -1,12 +1,11 @@
 -*- mode: fundamental -*-
 
 [ ] Support multipart upload (for speed)
-[ ] Support copying from s3 -> s3
-[ ] Make region a polymorphic type and add a custom type for buckets that do no exist.
-[ ] Return an error indicating the redirect to successive calls
+[ ] Support copying s3 -> s3
 
-2.0.1: (unreleased)
+3.0.0: (unreleased)
 [x] Support permanent/temporary redirect error code
+[x] Return an error indicating the redirect to successive calls
 
 
 2.0.0:
