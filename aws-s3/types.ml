@@ -21,7 +21,7 @@ module type Compat = sig
     module Infix: sig
       val (>>=): 'a t -> ('a -> 'b t) -> 'b t
       val (>>|): 'a t -> ('a -> 'b) -> 'b t
-      val (>>=?): 'a Or_error.t -> ('a -> 'b Or_error.t) -> 'b Or_error.t
+      val (>>=?): ('a, 'c) result t -> ('a -> ('b, 'c) result t ) -> ('b, 'c) result t
     end
   end
 

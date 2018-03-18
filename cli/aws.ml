@@ -29,12 +29,18 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     | S3toLocal of objekt * string
     | LocaltoS3 of string * objekt
 
-  let rec retry ~delay ~retries ~(f : (unit -> 'a Deferred.Or_error.t)) () : 'a Deferred.Or_error.t =
-    f () >>= function
-    | Result.Error e when retries > 0 ->
-      Caml.Printf.eprintf "Error: %s\n%!" (Core.Error.to_string_hum e);
-      after delay >>= fun () -> retry ~delay ~retries:(retries - 1) ~f ()
-    | r -> return r
+  let retry ~delay ~retries ~(f : (?region:Aws_s3.Util.region -> unit -> ('a, 'b) result Deferred.t)) () : ('a, 'b) result Deferred.t =
+    let rec inner ?region ~retries () =
+      f ?region () >>= function
+      | Error (S3.Redirect region) ->
+        inner ~region ~retries ()
+      | Error _ ->
+        Caml.Printf.eprintf "Error. Retry\n%!";
+        after delay >>= fun () -> inner ?region ~retries:(retries - 1) ()
+      | Ok r -> return (Ok r)
+    in
+    inner ~retries ()
+
 
   let determine_paths src dst =
     let src = Uri.of_string src in
@@ -55,11 +61,11 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     | S3toLocal (src, dst) ->
         S3.get ~credentials ~range ~bucket:src.bucket ~key:src.key () >>=? fun data ->
         save_file dst data;
-        Deferred.Or_error.return ()
+        Deferred.return (Ok ())
     | LocaltoS3 (src, dst) ->
       let data = read_file ?first ?last src in
       S3.put ~credentials ~bucket:dst.bucket ~key:dst.key data >>=? fun _etag ->
-      Deferred.Or_error.return ()
+      Deferred.return (Ok ())
 
   let rm profile bucket paths =
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
@@ -70,26 +76,25 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     | keys ->
       let objects : S3.Delete_multi.objekt list = List.map ~f:(fun key -> { S3.Delete_multi.key; version_id = None }) keys in
       S3.delete_multi ~credentials ~bucket objects () >>=? fun _deleted ->
-      Deferred.Or_error.return ()
+      Deferred.return (Ok ())
 
   let ls profile ratelimit bucket prefix =
     let ratelimit_f = match ratelimit with
-      | None -> fun () -> Deferred.Or_error.return ()
-      | Some n -> fun () -> after (1000. /. float n) >>= Deferred.Or_error.return
+      | None -> fun () -> Deferred.return (Ok ())
+      | Some n -> fun () -> after (1000. /. float n) >>= fun () -> Deferred.return (Ok ())
     in
     let rec ls_all (result, cont) =
       Core.List.iter ~f:(fun { last_modified;  S3.Ls.key; size; etag; _ } -> Caml.Printf.printf "%s\t%d\t%s\t%s\n%!" (Time.to_string last_modified) size key (Caml.Digest.to_hex etag)) result;
 
       match cont with
       | S3.Ls.More continuation -> ratelimit_f ()
-        >>=? retry ~retries:5 ~delay:1.0 ~f:continuation
+        >>=? retry ~retries:5 ~delay:1.0 ~f:(fun ?region:_ () -> continuation ())
         >>=? ls_all
-      | S3.Ls.Done -> Deferred.Or_error.return ()
+      | S3.Ls.Done -> Deferred.return (Ok ())
     in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = Core.Or_error.ok_exn credentials in
-    (* nb client does not support redirects or preflight 100 *)
-    ls_all ([], S3.Ls.More (fun () -> S3.ls ~credentials ?prefix ~bucket ()))
+    ls_all ([], S3.Ls.More (S3.ls ~credentials ?prefix ~bucket))
 
   let exec ({ Cli.profile }, cmd) =
     begin
@@ -102,7 +107,7 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
         ls profile ratelimit bucket prefix
     end >>= function
     | Ok _ -> return 0
-    | Error e ->
-      Printf.eprintf "%s\n%!" (Error.to_string_hum e);
+    | Error _ ->
+      Printf.eprintf "Error\n%!";
       return 1
 end

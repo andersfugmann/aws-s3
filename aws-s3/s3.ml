@@ -20,7 +20,7 @@ open Cohttp
 open Protocol_conv_xml
 
 (* Protocol definitions *)
-module Protocol(P: sig type 'a or_error end) = struct
+module Protocol(P: sig type 'a result end) = struct
   module Ls = struct
     type time = Core.Time.t
     let time_of_xml_light t =
@@ -58,7 +58,7 @@ module Protocol(P: sig type 'a or_error end) = struct
       contents: content list [@key "Contents"];
     } [@@deriving of_protocol ~driver:(module Xml_light)]
 
-    type t = (content list * cont) P.or_error
+    type t = (content list * cont) P.result
     and cont = More of (unit -> t) | Done
 
   end
@@ -124,49 +124,51 @@ module Make(Compat : Types.Compat) = struct
   module Util_deferred = Util.Make(Compat)
   open Compat
   open Deferred.Infix
-  include Protocol(struct type 'a or_error = 'a Deferred.Or_error.t end)
+
+  type error =
+    | Redirect of Util.region
+    | Throttled
+    | Unknown of int * string
+
+  include Protocol(struct type nonrec 'a result = ('a, error) result Deferred.t end)
 
   type range = { first: int option; last: int option }
 
-  type 'a command = ?retries:int -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
+  type nonrec 'a result = ('a, error) result Deferred.t
+  type 'a command = ?credentials:Credentials.t -> ?region:Util.region -> 'a
 
-  let do_command ?(retries=12) ?region cmd =
-    let rec inner ?region count =
-      (* This should be the or_error *)
-      cmd ?region () >>= fun (resp, body) ->
-      let status = Cohttp.Response.status resp in
-      match Code.code_of_status status with
-      | code when 200 <= code && code < 300 ->
-        let headers = Cohttp.Response.headers resp in
-        Deferred.Or_error.return (headers, body)
-      | 404 -> raise Not_found
-      | c when 300 <= c && c < 500 && count <= retries -> begin
-          let open Error_response in
-          Cohttp_deferred.Body.to_string body >>= fun body ->
-          match Error_response.t_of_xml_light (Xml.parse_string body) with
-          | { code = "PermanentRedirect"; endpoint = Some host; _ }
-          | { code = "TemporaryRedirect"; endpoint = Some host; _ } ->
-            let region = Util.region_of_host host in
-            inner ~region count
-          | { code = "AuthorizationHeaderMalformed"; region = Some region; _ } ->
-            let region = Util.region_of_string region in
-            inner ~region count
-          | { code; _ } ->
-            Deferred.return (Or_error.errorf "Unhanded error code: %d %s" c code)
-          | exception e -> Deferred.Or_error.fail (Error.of_exn e)
-        end
-      | (500 | 503) when count <= retries ->
-        (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
-        let delay = ((2.0 ** float count) /. 10.) in
-        Deferred.after delay >>= fun () ->
-        inner ?region (count + 1)
-      | code ->
+  let do_command ?region cmd =
+    (* This should be the or_error *)
+    cmd ?region () >>= fun (resp, body) ->
+    let status = Cohttp.Response.status resp in
+    match Code.code_of_status status with
+    | code when 200 <= code && code < 300 ->
+      let headers = Cohttp.Response.headers resp in
+      Deferred.return (Ok (headers, body))
+    | 404 -> raise Not_found
+    | c when 300 <= c && c < 500 -> begin
+        let open Error_response in
         Cohttp_deferred.Body.to_string body >>= fun body ->
-        Deferred.return (Or_error.errorf "Command resulted in error: %d. Error: %s" code body)
-    in
-    Deferred.Or_error.catch (fun () -> inner ?region 0)
+        match Error_response.t_of_xml_light (Xml.parse_string body) with
+        | { code = "PermanentRedirect"; endpoint = Some host; _ }
+        | { code = "TemporaryRedirect"; endpoint = Some host; _ } ->
+          let region = Util.region_of_host host in
+          Deferred.return (Error (Redirect region))
+        | { code = "AuthorizationHeaderMalformed"; region = Some region; _ } ->
+          let region = Util.region_of_string region in
+          Deferred.return (Error (Redirect region))
+        | { code; _ } ->
+          Deferred.return (Error (Unknown (c, code)))
+      end
+    | (500 | 503) ->
+      (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
+      Deferred.return (Error Throttled)
+    | code ->
+      Cohttp_deferred.Body.to_string body >>= fun body ->
+      let resp = Error_response.t_of_xml_light (Xml.parse_string body) in
+      Deferred.return (Error (Unknown (code, resp.code)))
 
-  let put ?retries ?credentials ?region ?content_type ?(gzip=false) ?acl ?cache_control ~bucket ~key data =
+  let put ?credentials ?region ?content_type ?(gzip=false) ?acl ?cache_control ~bucket ~key data =
     let path = sprintf "%s/%s" bucket key in
     let content_encoding, body = match gzip with
       | true -> Some "gzip", Util.gzip_data data
@@ -183,16 +185,16 @@ module Make(Compat : Types.Compat) = struct
       Util_deferred.make_request ?credentials ?region ~headers ~meth:`PUT ~path ~body ~query:[] ()
     in
 
-    do_command ?retries ?region cmd >>=? fun (headers, _body) ->
+    do_command ?region cmd >>=? fun (headers, _body) ->
     let etag =
       Header.get headers "etag"
       |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
       |> String.strip ~drop:(function '"' -> true | _ -> false)
       |> Caml.Digest.from_hex
     in
-    Deferred.Or_error.return etag
+    Deferred.return (Ok etag)
 
-  let get ?retries ?credentials ?region ?range ~bucket ~key () =
+  let get ?credentials ?region ?range ~bucket ~key () =
     let headers =
       let r_opt r = Option.value_map ~f:(string_of_int) ~default:"" r in
 
@@ -212,26 +214,26 @@ module Make(Compat : Types.Compat) = struct
     let cmd ?region () =
       Util_deferred.make_request ?credentials ?region ~headers ~meth:`GET ~path ~query:[] ()
     in
-    do_command ?retries ?region cmd >>=? fun (_headers, body) ->
+    do_command ?region cmd >>=? fun (_headers, body) ->
     Cohttp_deferred.Body.to_string body >>= fun body ->
     Deferred.return (Ok body)
 
-  let delete ?retries ?credentials ?region ~bucket ~key () =
+  let delete ?credentials ?region ~bucket ~key () =
     let path = sprintf "%s/%s" bucket key in
     let cmd ?region () =
       Util_deferred.make_request ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query:[] ()
     in
-    do_command ?retries ?region cmd >>=? fun (_headers, _body) ->
+    do_command ?region cmd >>=? fun (_headers, _body) ->
     Deferred.return (Ok ())
 
-  let delete_multi ?retries ?credentials ?region ~bucket objects () =
+  let delete_multi ?credentials ?region ~bucket objects () : Delete_multi.result result =
     match objects with
     | [] -> Delete_multi.{
         delete_marker = false;
         delete_marker_version_id = None;
         deleted = [];
         error = [];
-      } |> Deferred.Or_error.return
+      } |> (fun r -> Deferred.return (Ok r))
     | _ ->
       let request =
         Delete_multi.{
@@ -247,14 +249,12 @@ module Make(Compat : Types.Compat) = struct
           ~body:request ?credentials ?region ~headers
           ~meth:`POST ~query:["delete", ""] ~path:bucket ()
       in
-      do_command ?retries ?region cmd >>=? fun (_headers, body) ->
-      Deferred.catch (fun () ->
-          Cohttp_deferred.Body.to_string body >>= fun body ->
-          let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
-          Deferred.return result
-        )
+      do_command ?region cmd >>=? fun (_headers, body) ->
+      Cohttp_deferred.Body.to_string body >>= fun body ->
+      let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
+      Deferred.return (Ok result)
 
-  let rec ls ?retries ?credentials ?region ?continuation_token ?prefix ~bucket () =
+  let rec ls ?credentials ?region ?continuation_token ?prefix ~bucket () =
     let query = [ Some ("list-type", "2");
                   Option.map ~f:(fun ct -> ("continuation-token", ct)) continuation_token;
                   Option.map ~f:(fun prefix -> ("prefix", prefix)) prefix;
@@ -263,22 +263,34 @@ module Make(Compat : Types.Compat) = struct
     let cmd ?region () =
       Util_deferred.make_request ?credentials ?region ~headers:[] ~meth:`GET ~path:bucket ~query ()
     in
-    do_command ?retries ?region cmd >>=? fun (_headers, body) ->
-    Deferred.catch (fun () ->
-        Cohttp_deferred.Body.to_string body >>= fun body ->
-        let result = Ls.result_of_xml_light (Xml.parse_string body) in
-        let continuation = match Ls.(result.next_continuation_token) with
-          | Some ct -> Ls.More (ls ?retries ?credentials ?region ~continuation_token:ct ?prefix ~bucket)
-          | None -> Ls.Done
-        in
-        Deferred.return (Ls.(result.contents, continuation))
-      )
+    do_command ?region cmd >>=? fun (_headers, body) ->
+    Cohttp_deferred.Body.to_string body >>= fun body ->
+    let result = Ls.result_of_xml_light (Xml.parse_string body) in
+    let continuation = match Ls.(result.next_continuation_token) with
+      | Some ct -> Ls.More (ls ?credentials ?region ~continuation_token:ct ?prefix ~bucket)
+      | None -> Ls.Done
+    in
+    Deferred.return (Ok (Ls.(result.contents, continuation)))
+(*
+  module Multipart_upload = struct
+    type part = { id: int; etag: string }
+    type t = { id: string;
+               mutable parts: part list;
+             }
+
+    let init ?retries ?credentials ?region ~bucket ~key () = ()
+    let upload_part t ?credentials ?region id data = ()
+    let complete t = ()
+    let abort t = ()
+  end
+*)
+
 end
 
 module Test = struct
   open OUnit2
 
-  module Protocol = Protocol(struct type 'a or_error = 'a Core.Or_error.t end)
+  module Protocol = Protocol(struct type 'a result = 'a end)
 
   let parse_result _ =
     let data = {|

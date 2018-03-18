@@ -1,12 +1,6 @@
-ifeq ($(shell uname -s),Darwin)
-  NPROC := $(shell sysctl -n hw.ncpu)
-else
-  NPROC := $(shell nproc)
-endif
-
 .PHONY: build
 build:
-	jbuilder build @install -j $(NPROC) --dev
+	jbuilder build @install --dev
 
 .PHONY: install
 install: build

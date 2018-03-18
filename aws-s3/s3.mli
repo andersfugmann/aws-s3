@@ -9,12 +9,18 @@
 
     [region] specified on which region the operation should go to. default [us-east]
 *)
+
 module Make(Compat : Types.Compat) : sig
   open Compat
-
-  type 'a command = ?retries:int -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
-
   open Core
+
+  type error =
+    | Redirect of Util.region
+    | Throttled
+    | Unknown of int * string
+
+  type nonrec 'a result = ('a, error) result Deferred.t
+  type 'a command = ?credentials:Credentials.t -> ?region:Util.region -> 'a
 
   module Ls : sig
     type storage_class = Standard | Standard_ia | Reduced_redundancy | Glacier
@@ -25,7 +31,7 @@ module Make(Compat : Types.Compat) : sig
       key : string;
       etag : Caml.Digest.t;
     }
-    type t = (content list * cont) Deferred.Or_error.t
+    type t = (content list * cont) result
     and cont = More of (unit -> t) | Done
   end
 
@@ -62,7 +68,7 @@ module Make(Compat : Types.Compat) : sig
      ?cache_control:string ->
      bucket:string ->
      key:string ->
-     string -> Caml.Digest.t Deferred.Or_error.t) command
+     string -> Caml.Digest.t result) command
 
 
   (** Download [key] from s3 in [bucket]
@@ -71,11 +77,11 @@ module Make(Compat : Types.Compat) : sig
       - If [last] is None, then get to the end of the object.
   *)
   val get :
-    (?range:range -> bucket:string -> key:string -> unit -> string Deferred.Or_error.t) command
+    (?range:range -> bucket:string -> key:string -> unit -> string result) command
 
   (** Delete [key] from [bucket]. *)
   val delete :
-    (bucket:string -> key:string -> unit -> unit Deferred.Or_error.t) command
+    (bucket:string -> key:string -> unit -> unit result) command
 
   (** Delete multiple objects from [bucket].
 
@@ -83,7 +89,7 @@ module Make(Compat : Types.Compat) : sig
       an item is not found it will be reported as successfully deleted.
   *)
   val delete_multi :
-    (bucket:string -> Delete_multi.objekt list -> unit -> Delete_multi.result Deferred.Or_error.t) command
+    (bucket:string -> Delete_multi.objekt list -> unit -> Delete_multi.result result) command
 
   (** List contents in [bucket]
 
