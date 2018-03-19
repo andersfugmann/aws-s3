@@ -1,1 +1,1 @@
-include Types.Compat with type 'a deferred = 'a
+include Types.Compat with type 'a Deferred.t  = 'a

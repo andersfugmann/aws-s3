@@ -1,9 +1,7 @@
 (** Module for abstracting async and lwt *)
 module type Compat = sig
-  type 'a deferred
   module Deferred : sig
-    type 'a t = 'a deferred
-
+    type 'a t
     module Or_error: sig
       type nonrec 'a t = ('a, Base.Error.t) result t
       val return: 'a -> 'a t

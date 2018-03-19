@@ -308,9 +308,9 @@ module Make(C : Types.Compat) = struct
         ()
     in
     let time = Time.now () in
-    (* If PUT add content length *)
+    (* If PUT|POST add content length *)
     let content_length = match meth with
-      | `PUT ->
+      | `PUT | `POST ->
         let length = Option.value_map ~f:(String.length) ~default:0 body in
         Some ("Content-Length", Int.to_string length)
       | _ -> None
@@ -336,14 +336,10 @@ module Make(C : Types.Compat) = struct
     let headers = (headers @ auth_header) |> Header.of_list in
     let request = {request with Cohttp.Request.headers} in
     match meth with
-    | `PUT ->
+    | `PUT | `POST->
       let body = Option.map ~f:(Cohttp_deferred.Body.of_string) body in
       Cohttp_deferred.Client.request ?body request
-    | `GET -> Cohttp_deferred.Client.request request
-    | `DELETE -> Cohttp_deferred.Client.request request
-    | `POST ->
-      let body = Option.map ~f:(Cohttp_deferred.Body.of_string) body in
-      Cohttp_deferred.Client.request ?body request
+    | `GET | `DELETE-> Cohttp_deferred.Client.request request
     | _ -> failwith "Unsupported http verb (method)"
 
 end

@@ -30,10 +30,12 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     | S3.Throttled -> "Throttled"
     | S3.Unknown (code, msg) -> sprintf "Unknown: %d, %s" code msg
     | S3.Not_found -> "Not_found"
+    | S3.Exn exn -> sprintf "Exn: %s" (Exn.to_string exn)
 
   type cmd =
     | S3toLocal of objekt * string
     | LocaltoS3 of string * objekt
+    | S3toS3 of objekt * objekt
 
   let retry ~delay ~retries ~(f : (?region:Aws_s3.Util.region -> unit -> ('a, 'b) result Deferred.t)) () : ('a, 'b) result Deferred.t =
     let rec inner ?region ~retries () =
@@ -47,7 +49,6 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     in
     inner ~retries ()
 
-
   let determine_paths src dst =
     let src = Uri.of_string src in
     let dst = Uri.of_string dst in
@@ -55,22 +56,46 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     match is_s3 src, is_s3 dst with
     | (true, false) -> S3toLocal (objekt_of_uri src, Uri.path dst)
     | (false, true) -> LocaltoS3 (Uri.path src, objekt_of_uri dst)
+    | (true, true) -> S3toS3 (objekt_of_uri src, objekt_of_uri dst)
     | (false, false) -> failwith "Use cp(1)"
-    | (true, true) -> failwith "Does not support copying from s3 to s3"
 
-  let cp profile ?first ?last src dst =
+  let rec upload_parts t ~credentials ?(offset=0) ?(part_number=1) data =
+    match (String.length data - offset) with
+    | 0 -> []
+    | n when n > 5*1024*1024 ->
+      let len = 5*1024*1024 in
+      let part = String.sub ~pos:offset ~len data in
+      (S3.Multipart_upload.upload_part t ~credentials ~part_number part) ::
+      upload_parts t ~credentials ~offset:(offset + 5*1024*1024) ~part_number:(part_number + 1) data
+    | len ->
+      let part = String.sub ~pos:offset ~len data in
+      [ S3.Multipart_upload.upload_part t ~credentials ~part_number part ]
+
+  let cp profile ?(use_multi=false) ?first ?last src dst =
     let range = { S3.first; last } in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = Core.Or_error.ok_exn credentials in
     (* nb client does not support preflight 100 *)
     match determine_paths src dst with
     | S3toLocal (src, dst) ->
-        S3.get ~credentials ~range ~bucket:src.bucket ~key:src.key () >>=? fun data ->
-        save_file dst data;
-        Deferred.return (Ok ())
+      S3.get ~credentials ~range ~bucket:src.bucket ~key:src.key () >>=? fun data ->
+      save_file dst data;
+      Deferred.return (Ok ())
+    | LocaltoS3 (src, dst) when use_multi ->
+      let data = read_file ?first ?last src in
+      S3.Multipart_upload.init ~credentials ~bucket:dst.bucket ~key:dst.key () >>=? fun t ->
+      let uploads = upload_parts t ~credentials data in
+      List.fold_left ~init:(Deferred.return (Ok ())) ~f:(fun acc x -> acc >>=? fun () -> x) uploads >>=? fun () ->
+      S3.Multipart_upload.complete ~credentials t >>=? fun _md5 ->
+      Deferred.return (Ok ())
     | LocaltoS3 (src, dst) ->
       let data = read_file ?first ?last src in
       S3.put ~credentials ~bucket:dst.bucket ~key:dst.key data >>=? fun _etag ->
+      Deferred.return (Ok ())
+    | S3toS3 (src, dst) ->
+      S3.Multipart_upload.init ~credentials ~bucket:dst.bucket ~key:dst.key () >>=? fun t ->
+      S3.Multipart_upload.copy_part t ~credentials ~bucket:src.bucket ~key:src.key ~part_number:1 >>=? fun () ->
+      S3.Multipart_upload.complete ~credentials t >>=? fun _md5 ->
       Deferred.return (Ok ())
 
   let rm profile bucket paths =
@@ -90,7 +115,7 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
       | Some n -> fun () -> after (1000. /. float n) >>= fun () -> Deferred.return (Ok ())
     in
     let rec ls_all (result, cont) =
-      Core.List.iter ~f:(fun { last_modified;  S3.Ls.key; size; etag; _ } -> Caml.Printf.printf "%s\t%d\t%s\t%s\n%!" (Time.to_string last_modified) size key (Caml.Digest.to_hex etag)) result;
+      Core.List.iter ~f:(fun { last_modified;  S3.Ls.key; size; etag; _ } -> Caml.Printf.printf "%s\t%d\t%s\t%s\n%!" (Time.to_string last_modified) size key etag) result;
 
       match cont with
       | S3.Ls.More continuation -> ratelimit_f ()
@@ -104,15 +129,15 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
   let exec ({ Cli.profile }, cmd) =
     begin
       match cmd with
-      | Cli.Cp { src; dest; first; last } ->
-        cp profile ?first ?last src dest
+      | Cli.Cp { src; dest; first; last; multi } ->
+        cp profile ~use_multi:multi ?first ?last src dest
       | Rm { bucket; paths }->
         rm profile bucket paths
       | Ls { ratelimit; bucket; prefix } ->
         ls profile ratelimit bucket prefix
     end >>= function
     | Ok _ -> return 0
-    | Error _ ->
-      Printf.eprintf "Error\n%!";
+    | Error e ->
+      Printf.eprintf "Error: %s\n%!" (string_of_error e);
       return 1
 end

@@ -21,16 +21,12 @@ open Protocol_conv_xml
 
 (* Protocol definitions *)
 module Protocol(P: sig type 'a result end) = struct
-  module Ls = struct
-    type time = Core.Time.t
-    let time_of_xml_light t =
-      Xml_light.to_string t |> Time.of_string
+  type time = Core.Time.t
+  let time_of_xml_light t =
+    Xml_light.to_string t |> Time.of_string
 
-    type etag = Caml.Digest.t
-    let etag_of_xml_light t =
-      Xml_light.to_string t
-      |> String.strip ~drop:(function '"' -> true | _ -> false)
-      |> Caml.Digest.from_hex
+  type etag = string [@@deriving protocol ~driver:(module Xml_light)]
+  module Ls = struct
 
     type storage_class =
       | Standard           [@key "STANDARD"]
@@ -71,7 +67,8 @@ module Protocol(P: sig type 'a result end) = struct
     type objekt = {
       key: string [@key "Key"];
       version_id: string option [@key "VersionId"];
-    } [@@deriving protocol ~driver:(module Xml_light)]
+    }
+    [@@deriving protocol ~driver:(module Xml_light)]
 
     type request = {
       quiet: bool [@key "Quiet"];
@@ -118,6 +115,41 @@ module Protocol(P: sig type 'a result end) = struct
     } [@@deriving of_protocol ~driver:(module Xml_light)]
   end
 
+  module Multipart = struct
+    type part = { part_number: int [@key "PartNumber"];
+                  etag: etag [@key "ETag"];
+                }
+    [@@deriving to_protocol ~driver:(module Xml_light)]
+
+    module Initiate = struct
+      type t = {
+        bucket: string [@key "Bucket"];
+        key: string [@key "Key"];
+        upload_id: string [@key "UploadId"];
+      } [@@deriving of_protocol ~driver:(module Xml_light)]
+    end
+    module Complete = struct
+      type request = {
+        parts: part list [@key "Part"];
+      }
+      [@@deriving to_protocol ~driver:(module Xml_light)]
+      let xml_of_request request =
+        request_to_xml_light request |> set_element_name "CompleteMultipartUpload"
+      type response = { location: string [@key "Location"];
+                        bucket: string [@key "Bucket"];
+                        key: string [@key "Key"];
+                        etag: etag [@key "ETag"];
+                      }
+      [@@deriving of_protocol ~driver:(module Xml_light)]
+    end
+    module Copy = struct
+      type t = {
+        etag: etag [@key "ETag"];
+        last_modified: time [@key "LastModified"];
+      }
+      [@@deriving of_protocol ~driver:(module Xml_light)]
+    end
+  end
 end
 
 module Make(Compat : Types.Compat) = struct
@@ -130,6 +162,7 @@ module Make(Compat : Types.Compat) = struct
     | Throttled
     | Unknown of int * string
     | Not_found
+    | Exn of exn
 
   include Protocol(struct type nonrec 'a result = ('a, error) result Deferred.t end)
 
@@ -149,7 +182,8 @@ module Make(Compat : Types.Compat) = struct
     | c when 300 <= c && c < 500 -> begin
         let open Error_response in
         Cohttp_deferred.Body.to_string body >>= fun body ->
-        match Error_response.t_of_xml_light (Xml.parse_string body) with
+        let xml = Xml.parse_string body in
+        match Error_response.t_of_xml_light xml with
         | { code = "PermanentRedirect"; endpoint = Some host; _ }
         | { code = "TemporaryRedirect"; endpoint = Some host; _ } ->
           let region = Util.region_of_host host in
@@ -186,7 +220,6 @@ module Make(Compat : Types.Compat) = struct
       Header.get headers "etag"
       |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
       |> String.strip ~drop:(function '"' -> true | _ -> false)
-      |> Caml.Digest.from_hex
     in
     Deferred.return (Ok etag)
 
@@ -267,19 +300,112 @@ module Make(Compat : Types.Compat) = struct
       | None -> Ls.Done
     in
     Deferred.return (Ok (Ls.(result.contents, continuation)))
-(*
+
   module Multipart_upload = struct
-    type part = { id: int; etag: string }
     type t = { id: string;
-               mutable parts: part list;
+               mutable parts: Multipart.part list;
+               bucket: string;
+               key: string;
              }
 
-    let init ?retries ?credentials ?region ~bucket ~key () = ()
-    let upload_part t ?credentials ?region id data = ()
-    let complete t = ()
-    let abort t = ()
+    let init ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key  () =
+      let path = sprintf "%s/%s" bucket key in
+      let query = ["uploads", ""] in
+      let headers =
+        let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
+        let cache_control    = Option.map ~f:(fun cc -> ("Cache-Control", cc)) cache_control in
+        let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
+        Core.List.filter_opt [ content_type; content_encoding; cache_control; acl ]
+      in
+      let cmd ?region () =
+        Util_deferred.make_request ?credentials ?region ~headers ~meth:`POST ~path ~query ()
+      in
+
+      do_command ?region cmd >>=? fun (_headers, body) ->
+      Cohttp_deferred.Body.to_string body >>| fun body ->
+      match Multipart.Initiate.of_xml_light (Xml.parse_string body) with
+      | resp ->
+        Ok { id = resp.Multipart.Initiate.upload_id;
+             parts = [];
+             bucket;
+             key;
+           }
+      | exception e ->
+        Error (Exn e)
+
+    let upload_part t ?credentials ?region ~part_number body =
+      let path = sprintf "%s/%s" t.bucket t.key in
+      let query =
+        [ "partNumber", string_of_int part_number;
+          "uploadId", t.id ]
+      in
+      let cmd ?region () =
+        Util_deferred.make_request ?credentials ?region ~headers:[] ~meth:`PUT ~path ~body ~query ()
+      in
+
+      do_command ?region cmd >>=? fun (headers, _body) ->
+      let etag =
+        Header.get headers "etag"
+        |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
+        |> String.strip ~drop:(function '"' -> true | _ -> false)
+      in
+      t.parts <- { etag; part_number } :: t.parts;
+      Deferred.return (Ok ())
+
+    let copy_part ?credentials ?region ~part_number ?range ~bucket ~key t =
+      let path = sprintf "%s/%s" t.bucket t.key in
+      let query =
+        [ "partNumber", string_of_int part_number;
+          "uploadId", t.id ]
+      in
+      let headers =
+        ("x-amz-copy-source", sprintf "/%s/%s" bucket key) ::
+        Option.value_map ~default:[] ~f:(fun (first, last) ->
+            [ "x-amz-copy-source-range", sprintf "bytes=%d-%d" first last ]) range
+      in
+      let cmd ?region () =
+        Util_deferred.make_request ?credentials ?region ~headers ~meth:`PUT ~path ~query ()
+      in
+
+      do_command ?region cmd >>=? fun (_headers, body) ->
+      Cohttp_deferred.Body.to_string body >>| fun body ->
+      let xml = Xml.parse_string body in
+      match Multipart.Copy.of_xml_light xml with
+      | { Multipart.Copy.etag; _ } ->
+        t.parts <- { etag; part_number } :: t.parts;
+        (Ok ())
+
+    let complete ?credentials ?region t =
+      let path = sprintf "%s/%s" t.bucket t.key in
+      let query = [ "uploadId", t.id ] in
+      let request =
+        (* TODO: Sort the parts by partNumber *)
+        let parts = Caml.List.sort (fun a b -> compare a.Multipart.part_number b.part_number) t.parts in
+        Multipart.Complete.(xml_of_request { parts })
+        |> Xml.to_string_fmt
+      in
+      let cmd ?region () =
+        Util_deferred.make_request ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:request ()
+      in
+      do_command ?region cmd >>=? fun (_headers, body) ->
+      Cohttp_deferred.Body.to_string body >>| fun body ->
+      let xml = Xml.parse_string body in
+      match Multipart.Complete.response_of_xml_light xml with
+      | { location=_; etag; bucket; key } when bucket = t.bucket && key = t.key ->
+        Ok etag
+      | _ -> Error (Unknown ((-1), "Bucket/key does not match"))
+      | exception e ->
+        Error (Exn e)
+
+    let abort ?credentials ?region t =
+      let path = sprintf "%s/%s" t.bucket t.key in
+      let query = [ "uploadId", t.id ] in
+      let cmd ?region () =
+        Util_deferred.make_request ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query ()
+      in
+      do_command ?region cmd >>=? fun (_headers, _body) ->
+      Deferred.return (Ok ())
   end
-*)
 
 end
 

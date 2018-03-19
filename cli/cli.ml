@@ -8,7 +8,7 @@ open Cmdliner
 type actions =
   | Ls of { bucket: string; prefix: string option; ratelimit: int option; }
   | Rm of { bucket: string; paths : string list }
-  | Cp of { src: string; dest: string; first: int option; last: int option }
+  | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool}
 
 type options =
   { profile: string option; }
@@ -41,7 +41,7 @@ let parse exec =
   in
 
   let cp =
-    let make opts first last src dest = opts, Cp { src; dest; first; last } in
+    let make opts first last multi src dest = opts, Cp { src; dest; first; last; multi } in
     let first =
       let doc = "first byte of the source object to copy. If omitted means from the start." in
       Arg.(value & opt (some int) None & info ["first"; "f"] ~docv:"BYTE" ~doc)
@@ -50,8 +50,12 @@ let parse exec =
       let doc = "last byte of the source object to copy. If omitted means to the end" in
       Arg.(value & opt (some int) None & info ["last"; "l"] ~docv:"BYTE" ~doc)
     in
+    let multi =
+      let doc = "Use multipart upload" in
+      Arg.(value & flag & info ["multi"; "m"] ~docv:"MULTI" ~doc)
+    in
 
-    Term.(const make $ common_opts $ first $ last $ path 0 "SRC" $ path 1 "DEST"),
+    Term.(const make $ common_opts $ first $ last $ multi $ path 0 "SRC" $ path 1 "DEST"),
     Term.info "cp" ~doc:"Copy files to and from S3"
   in
   let rm =

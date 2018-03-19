@@ -1,9 +1,10 @@
 -*- mode: fundamental -*-
 
-[I] Support multipart upload (for speed)
-[ ] Support copying s3 -> s3 (Depends on multipart support)
+[ ] Zero copy support
 
 3.0.0: (unreleased)
+[x] Support copying s3 -> s3
+[x] Support multipart upload
 [x] Support permanent/temporary redirect error code
 [x] Return an error indicating the redirect to successive calls
 [x] Switch to use Digistif module

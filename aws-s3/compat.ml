@@ -1,7 +1,6 @@
-type 'a deferred = 'a
 module Deferred = struct
   open Core
-  type 'a t = 'a deferred
+  type 'a t = 'a
 
   module Or_error = struct
     type nonrec 'a t = 'a Or_error.t
