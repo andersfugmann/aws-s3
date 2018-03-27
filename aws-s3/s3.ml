@@ -129,6 +129,7 @@ module Make(Compat : Types.Compat) = struct
     | Redirect of Util.region
     | Throttled
     | Unknown of int * string
+    | Not_found
 
   include Protocol(struct type nonrec 'a result = ('a, error) result Deferred.t end)
 
@@ -145,7 +146,7 @@ module Make(Compat : Types.Compat) = struct
     | code when 200 <= code && code < 300 ->
       let headers = Cohttp.Response.headers resp in
       Deferred.return (Ok (headers, body))
-    | 404 -> raise Not_found
+    | 404 -> Deferred.return (Error (Not_found))
     | c when 300 <= c && c < 500 -> begin
         let open Error_response in
         Cohttp_deferred.Body.to_string body >>= fun body ->
@@ -168,12 +169,8 @@ module Make(Compat : Types.Compat) = struct
       let resp = Error_response.t_of_xml_light (Xml.parse_string body) in
       Deferred.return (Error (Unknown (code, resp.code)))
 
-  let put ?credentials ?region ?content_type ?(gzip=false) ?acl ?cache_control ~bucket ~key data =
+  let put ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key body =
     let path = sprintf "%s/%s" bucket key in
-    let content_encoding, body = match gzip with
-      | true -> Some "gzip", Util.gzip_data data
-      | false -> None, data
-    in
     let headers =
       let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
       let content_encoding = Option.map ~f:(fun ct -> ("Content-Encoding", ct)) content_encoding in

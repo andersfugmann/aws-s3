@@ -26,7 +26,6 @@ type region =
 
 val region_of_host : string -> region
 val region_of_string : string -> region
-val gzip_data : ?level:int -> string -> string
 
 module Make : functor(Compat: Types.Compat) -> sig
   open Compat

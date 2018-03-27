@@ -18,6 +18,7 @@ module Make(Compat : Types.Compat) : sig
     | Redirect of Util.region
     | Throttled
     | Unknown of int * string
+    | Not_found
 
   type nonrec 'a result = ('a, error) result Deferred.t
   type 'a command = ?credentials:Credentials.t -> ?region:Util.region -> 'a
@@ -63,7 +64,7 @@ module Make(Compat : Types.Compat) : sig
   *)
   val put :
     (?content_type:string ->
-     ?gzip:bool ->
+     ?content_encoding:string ->
      ?acl:string ->
      ?cache_control:string ->
      bucket:string ->

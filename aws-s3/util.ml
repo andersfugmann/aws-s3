@@ -60,7 +60,7 @@ module Compat = struct
        '+' is pct encoded as '%2B'.
     *)
     Uri.query uri
-    |> List.sort ~cmp:ksrt
+    |> Caml.List.sort ksrt
     |> List.map ~f:(function (k, []) -> (k, [ "" ]) | x -> x)
     |> List.map ~f:(fun (k, vs) ->
         List.map vs ~f:(fun v ->
@@ -223,7 +223,7 @@ module Auth = struct
     let canonical_query = Compat.encode_query_string (uri request) in
     (* TODO: Merge identical headers *)
     let sorted_headers = Header.to_list request.headers
-                         |> List.sort ~cmp:ksrt
+                         |> Caml.List.sort ksrt
                          |> List.map ~f:( fun (k, v) -> (String.lowercase k), (String.strip v))
     in
     let canonical_headers = sorted_headers
@@ -286,26 +286,6 @@ module Auth = struct
 
 end
 
-let gzip_data ?level data =
-  let write32 buf v =
-    for i = 0 to 3 do
-      Buffer.add_char buf (Char.of_int_exn (v lsr (i * 8) land 0xFF))
-    done
-  in
-  let header = "\x1F\x8B\x08\x00\x00\x00\x00\x00\x00\xFF" in
-  let len = String.length data in
-
-  let compressed =
-    Cryptokit.transform_string (Cryptokit.Zlib.compress ?level ()) data
-  in
-  let buffer = Buffer.create (len / 2) in
-  Buffer.add_string buffer header;
-  Buffer.add_string buffer compressed;
-  let crc = (Crc.crc32 data |> Int63.to_int_exn) in
-  write32 buffer crc;
-  write32 buffer len;
-  Buffer.contents buffer
-
 module Make(C : Types.Compat) = struct
   open C
 
@@ -359,33 +339,3 @@ module Make(C : Types.Compat) = struct
     | _ -> failwith "Unsupported http verb (method)"
 
 end
-
- (*
-  module Test = struct
-    open OUnit2
-    let gunzip data =
-      Process.create ~prog:"gunzip" ~args:[ "--no-name"; "-" ] () >>= fun proc ->
-      let proc = Or_error.ok_exn proc in
-      (* Write to the process. *)
-      Writer.write (Process.stdin proc) data;
-      Process.collect_stdout_and_wait proc
-
-    let test_gzip _ =
-      let test len =
-        let string = String.init len ~f:(fun _ -> Char.of_int_exn (Random.int 8)) in
-        let gzipped = gzip_data ~level:9 string in
-        gunzip gzipped >>= fun gunzipped ->
-        assert_equal string (Or_error.ok_exn gunzipped);
-        return ()
-      in
-
-      List.init ~f:(fun _ -> Random.int 100_000) 100
-      |> Deferred.List.iter ~how:`Parallel ~f:(test)
-
-    let unit_test async_runner =
-      __MODULE__ >::: [
-        "gzip" >:: async_runner test_gzip
-      ]
-
-  end
-*)

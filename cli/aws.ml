@@ -25,6 +25,12 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
                           key = String.drop_prefix (Uri.path u) 1 (* Remove the beginning '/' *) }
 
 
+  let string_of_error = function
+    | S3.Redirect _ -> "Redirect"
+    | S3.Throttled -> "Throttled"
+    | S3.Unknown (code, msg) -> sprintf "Unknown: %d, %s" code msg
+    | S3.Not_found -> "Not_found"
+
   type cmd =
     | S3toLocal of objekt * string
     | LocaltoS3 of string * objekt
@@ -34,8 +40,8 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
       f ?region () >>= function
       | Error (S3.Redirect region) ->
         inner ~region ~retries ()
-      | Error _ ->
-        Caml.Printf.eprintf "Error. Retry\n%!";
+      | Error e ->
+        Caml.Printf.eprintf "Error. Retry %s\n%!" (string_of_error e);
         after delay >>= fun () -> inner ?region ~retries:(retries - 1) ()
       | Ok r -> return (Ok r)
     in
