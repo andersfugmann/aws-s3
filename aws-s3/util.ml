@@ -78,25 +78,6 @@ module Compat = struct
     let {hr; min; sec; _} = Time.Ofday.to_parts s in
     sprintf "%sT%.2d%.2d%.2dZ"
       (Date.to_string_iso8601_basic d) hr min sec
-
-  let hexa = "0123456789abcdef"
-
-  let of_char c =
-    let x = Char.to_int c in
-    hexa.[x lsr 4], hexa.[x land 0xf]
-
-  let cstruct_to_hex_string cs =
-    let open Cstruct in
-    let n = cs.len in
-    let buf = Buffer.create (n * 2) in
-    for i = 0 to n - 1 do
-      let c = Bigarray.Array1.get cs.buffer (cs.off+i) in
-      let (x,y) = of_char c in
-      Buffer.add_char buf x;
-      Buffer.add_char buf y;
-    done;
-    Buffer.contents buf
-
 end
 
 type region =
@@ -178,19 +159,30 @@ let host_of_region region =
 
 module Auth = struct
   (** AWS S3 Authorization *)
-  let digest s =
-    (* string -> sha256 as a hex string *)
-    Nocrypto.Hash.(digest `SHA256 (Cstruct.of_string s))
-    |> Compat.cstruct_to_hex_string
+  let digest (s : string) =
+    let open Digestif.SHA256.Bytes in
+    Bytes.of_string s
+    |> digest
+    |> to_hex
+    |> Bytes.to_string
 
-  let mac k v = Nocrypto.Hash.(
-      mac `SHA256 ~key:k (Cstruct.of_string v))
+  let mac ~key v =
+    let key = Bytes.of_string key in
+    let v = Bytes.of_string v in
+    Digestif.SHA256.Bytes.hmac ~key v
+    |> Bytes.to_string
 
+  let to_hex (k : string) =
+    let k = Bytes.of_string k in
+    let h = Digestif.SHA256.Bytes.to_hex k |> Bytes.to_string in
+    h
+
+  let empty_digest = digest ""
   let make_amz_headers ?credentials ?body time =
     (* Return x-amz-date and x-amz-sha256 headers *)
     let hashed_payload =
       match body with
-        None -> "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" (* digest "" *)
+        None -> empty_digest
       | Some s -> digest s
     in
     let token_header = match credentials with
@@ -239,7 +231,7 @@ module Auth = struct
     in
     (canonical_req, signed_headers)
 
-  let string_to_sign ?time ~scope canonical_request:string =
+  let string_to_sign ?time ~scope canonical_request =
     (* As per p. 23 of s3 api doc. The requests need current time in utc
        time parameter is there for testing. *)
     let time_str = match time with
@@ -254,33 +246,50 @@ module Auth = struct
     let hashed_req = digest canonical_request in
     sprintf "AWS4-HMAC-SHA256\n%s\n%s\n%s" time_str scope_str hashed_req
 
-  let make_signing_key ?date ~region ~secret_access_key =
-    let date' = match date with
-        None -> Date.today ~zone:Time.Zone.utc
-      | Some d -> d in
-    let date_str = Date.to_string_iso8601_basic date' in
-    let date_key = mac (Cstruct.of_string ("AWS4"^secret_access_key)) date_str in
-    let date_region_key = mac date_key (string_of_region region) in
-    let date_region_service_key = mac date_region_key "s3" in
-    let signing_key = mac date_region_service_key "aws4_request" in
-    signing_key
+
+  (** Even hough the Aws documentation states that the signing key will last forever,
+      we still use the date as cache key also *)
+  let make_signing_key =
+    let cache = Caml.Hashtbl.create 0 in
+
+    let make ~date ~region ~secret_access_key =
+      let date_key = mac ~key:("AWS4" ^ secret_access_key) date in
+      let date_region_key = mac ~key:date_key (string_of_region region) in
+      let date_region_service_key = mac ~key:date_region_key "s3" in
+      let signing_key = mac ~key:date_region_service_key "aws4_request" in
+      signing_key
+    in
+
+    fun ?date ~region ~secret_access_key ->
+      let date = match date with
+          None -> Date.today ~zone:Time.Zone.utc |> Date.to_string_iso8601_basic
+        | Some d -> Date.to_string_iso8601_basic d in
+      match Caml.Hashtbl.find_opt cache (region, secret_access_key) with
+      | Some (date', signing_key) when date' = date ->
+        signing_key
+      | Some _ | None ->
+        let signing_key = make ~date ~region ~secret_access_key in
+        Caml.Hashtbl.replace cache (region, secret_access_key) (date, signing_key);
+        signing_key
 
   let auth_request ?now ~hashed_payload ~region ~aws_access_key ~aws_secret_key request =
     (* Important use the same time for everything here *)
     let time = Option.value ~default:(Time.now()) now in
     let date = Time.to_date ~zone:Time.Zone.utc time in
     let (canonical_request, signed_headers) = canonical_request hashed_payload request in
+
     let string_to_sign = string_to_sign ~time:time ~scope:(date, region) canonical_request in
     let signing_key = make_signing_key ~date ~region ~secret_access_key:aws_secret_key in
     let creds = sprintf "%s/%s/%s/s3/aws4_request"
         aws_access_key (Date.to_string_iso8601_basic date)
         (string_of_region region)
     in
-    let signature = mac signing_key string_to_sign in
+    let signature = mac ~key:signing_key string_to_sign |> to_hex in
 
     let auth_header = sprintf
         "AWS4-HMAC-SHA256 Credential=%s,SignedHeaders=%s,Signature=%s"
-        creds signed_headers (Compat.cstruct_to_hex_string signature)
+        creds signed_headers signature
+
     in
     [("Authorization", auth_header);]
 
@@ -306,10 +315,9 @@ module Make(C : Types.Compat) = struct
         Some ("Content-Length", Int.to_string length)
       | _ -> None
     in
-    let host = "Host", host_str in
     let (amz_headers, hashed_payload) = Auth.make_amz_headers ?credentials time ?body in
     let headers =
-      host :: (List.filter_opt [ content_length ]) @ headers @ amz_headers
+      ("User-Agent", "aws-s3 ocaml client") :: ("Host", host_str) :: (List.filter_opt [ content_length ]) @ headers @ amz_headers
     in
 
     let request = Request.make ~meth

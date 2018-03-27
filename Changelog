@@ -6,6 +6,11 @@
 3.0.0: (unreleased)
 [x] Support permanent/temporary redirect error code
 [x] Return an error indicating the redirect to successive calls
+[x] Switch to use Digistif module
+[x] Remove support for gzip
+    - Users can set the content encoding to gzip, and use ezgzip instead
+[x] Compatability with base.v0.11.0
+
 
 
 2.0.0:

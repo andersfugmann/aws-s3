@@ -14,11 +14,11 @@ depends: [
   "ounit"
   "cohttp"
   "ocaml-inifiles"
-  "cryptokit"
-  "nocrypto"
+  "digestif"
   "xml-light"
   "yojson"
-  "ppx_protocol_conv" { < "1.1.0" }
+  "ppx_protocol_conv_xml-light"
+  "ppx_protocol_conv_json"
 ]
 
 available: [ ocaml-version >= "4.04.0" ]
