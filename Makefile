@@ -19,8 +19,12 @@ dep:
 test: build
 	jbuilder runtest --dev
 
-bump_version:
-	@if [ -z "$(VERSION)" ]; then echo "need to set VERSION"; exit 1; fi
+update-version: VERSION=$(shell cat Changelog | grep -E '^[0-9]' | head -n 1 | cut -f1 -d':' )
+update-version:
+	@echo "Set version to $(VERSION)"
 	@sed -i 's/^version: .*/version: "$(VERSION)"/' *.opam
 	@sed -i 's/"\(aws-s3[-a-z]*\)"[ ]*{ = .* }/"\1" { = "$(VERSION)" }/' *.opam
-	@echo ok: $(VERSION).
+
+release: VERSION=$(shell cat Changelog | grep -E '^[0-9]' | head -n 1 | cut -f1 -d':')
+release:
+	@./release.sh $(VERSION)
