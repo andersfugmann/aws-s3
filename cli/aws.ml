@@ -100,8 +100,7 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = Core.Or_error.ok_exn credentials in
-    ls_all ([], S3.Ls.More (S3.ls ~credentials ?prefix ~bucket))
-
+    retry ~retries:5 ~delay:1.0 ~f:(fun ?region () -> S3.ls ?region ~credentials ?prefix ~bucket ()) () >>=? ls_all
   let exec ({ Cli.profile }, cmd) =
     begin
       match cmd with

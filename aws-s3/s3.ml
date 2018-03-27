@@ -139,7 +139,6 @@ module Make(Compat : Types.Compat) = struct
   type 'a command = ?credentials:Credentials.t -> ?region:Util.region -> 'a
 
   let do_command ?region cmd =
-    (* This should be the or_error *)
     cmd ?region () >>= fun (resp, body) ->
     let status = Cohttp.Response.status resp in
     match Code.code_of_status status with

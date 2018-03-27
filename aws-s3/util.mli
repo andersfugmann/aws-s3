@@ -24,8 +24,11 @@ type region =
  | Ca_central_1    (* Canada - central *)
  | Other of string (* Other unknown *)
 
-val region_of_host : string -> region
+val host_of_region : region -> string
+val string_of_region : region -> string
+
 val region_of_string : string -> region
+val region_of_host : string -> region
 
 module Make : functor(Compat: Types.Compat) -> sig
   open Compat
