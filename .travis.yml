@@ -8,7 +8,7 @@ env:
   global:
   - TESTS=true
   matrix:
-  - PACKAGE="core-v0_9-compat" PINS="ppx_protocol_conv aws-s3:. aws-s3-lwt:. aws-s3-async:. core-v0_9-compat:." OCAML_VERSION=4.06
+  - PACKAGE="core-v0_9-compat" PINS="aws-s3:. aws-s3-lwt:. aws-s3-async:. core-v0_9-compat:." OCAML_VERSION=4.06
   - PACKAGE="aws-s3-async"     PINS="aws-s3:. aws-s3-async:." OCAML_VERSION=4.04
   - PACKAGE="aws-s3-async"     PINS="aws-s3:. aws-s3-async:." OCAML_VERSION=4.05
   - PACKAGE="aws-s3-async"     PINS="aws-s3:. aws-s3-async:." OCAML_VERSION=4.06

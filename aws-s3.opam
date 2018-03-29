@@ -17,7 +17,7 @@ depends: [
   "digestif"
   "xml-light"
   "yojson"
-  "ppx_protocol_conv_xml-light"
+  "ppx_protocol_conv_xml_light"
   "ppx_protocol_conv_json"
 ]
 
