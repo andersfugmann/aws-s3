@@ -104,6 +104,7 @@ module Make(Compat : Types.Compat) : sig
   module Multipart_upload: sig
     type t
 
+    (** Initialize multipart upload *)
     val init :
       ?credentials:Credentials.t ->
       ?region:Util.region ->
@@ -112,12 +113,17 @@ module Make(Compat : Types.Compat) : sig
       ?acl:string ->
       ?cache_control:string ->
       bucket:string -> key:string -> unit -> (t, error) Core_kernel.result Deferred.t
+
+    (** Upload a part of the file. All parts except the last part must be
+        at least 5Mb big. All parts must have a unique part number.
+        The final file will be assembled from all parts sorted by part number *)
     val upload_part :
       t ->
       ?credentials:Credentials.t ->
       ?region:Util.region ->
       part_number:int -> string -> (unit, error) Core_kernel.result Deferred.t
 
+    (** Specify a part as a copy of an existing object in S3. *)
     val copy_part :
       ?credentials:Credentials.t ->
       ?region:Util.region ->
@@ -126,14 +132,15 @@ module Make(Compat : Types.Compat) : sig
       bucket:string -> key:string ->
       t -> (unit, error) Caml.result Deferred.t
 
+    (** Complete a multipart upload. The returned string is an opaque identifier used as etag *)
     val complete :
       ?credentials:Credentials.t ->
       ?region:Util.region -> t -> (string, error) Core_kernel.result Deferred.t
 
+    (** Abort a multipart upload. *)
     val abort :
       ?credentials:Credentials.t ->
       ?region:Util.region -> t -> (unit, error) Caml.result Deferred.t
-
   end
 end
 
