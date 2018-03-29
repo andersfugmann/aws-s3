@@ -10,7 +10,7 @@
 [x] Switch to use Digistif module
 [x] Remove support for gzip
     - Users can set the content encoding to gzip, and use ezgzip instead
-[x] Compatability with base.v0.11.0
+[x] Compatibility with base.v0.11.0
 
 2.0.0:
 [x] Calling delete multi with an empty list is now a noop
