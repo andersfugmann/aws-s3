@@ -161,20 +161,20 @@ module Auth = struct
   (** AWS S3 Authorization *)
   let digest (s : string) =
     let open Digestif.SHA256.Bytes in
-    Bytes.of_string s
+    Caml.Bytes.of_string s
     |> digest
     |> to_hex
-    |> Bytes.to_string
+    |> Caml.Bytes.to_string
 
   let mac ~key v =
-    let key = Bytes.of_string key in
-    let v = Bytes.of_string v in
+    let key = Caml.Bytes.of_string key in
+    let v = Caml.Bytes.of_string v in
     Digestif.SHA256.Bytes.hmac ~key v
-    |> Bytes.to_string
+    |> Caml.Bytes.to_string
 
   let to_hex (k : string) =
-    let k = Bytes.of_string k in
-    let h = Digestif.SHA256.Bytes.to_hex k |> Bytes.to_string in
+    let k = Caml.Bytes.of_string k in
+    let h = Digestif.SHA256.Bytes.to_hex k |> Caml.Bytes.to_string in
     h
 
   let empty_digest = digest ""
