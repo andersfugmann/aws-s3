@@ -264,13 +264,18 @@ module Auth = struct
       let date = match date with
           None -> Date.today ~zone:Time.Zone.utc |> Date.to_string_iso8601_basic
         | Some d -> Date.to_string_iso8601_basic d in
-      match Caml.Hashtbl.find_opt cache (region, secret_access_key) with
-      | Some (date', signing_key) when date' = date ->
+      match Caml.Hashtbl.find cache (region, secret_access_key) with
+      | (date', signing_key) when date' = date ->
         signing_key
-      | Some _ | None ->
+      | _ ->
         let signing_key = make ~date ~region ~secret_access_key in
         Caml.Hashtbl.replace cache (region, secret_access_key) (date, signing_key);
         signing_key
+      | exception _ ->
+        let signing_key = make ~date ~region ~secret_access_key in
+        Caml.Hashtbl.replace cache (region, secret_access_key) (date, signing_key);
+        signing_key
+
 
   let auth_request ?now ~hashed_payload ~region ~aws_access_key ~aws_secret_key request =
     (* Important use the same time for everything here *)
