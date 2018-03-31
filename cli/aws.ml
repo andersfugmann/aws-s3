@@ -30,24 +30,11 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     | S3.Throttled -> "Throttled"
     | S3.Unknown (code, msg) -> sprintf "Unknown: %d, %s" code msg
     | S3.Not_found -> "Not_found"
-    | S3.Exn exn -> sprintf "Exn: %s" (Exn.to_string exn)
 
   type cmd =
     | S3toLocal of objekt * string
     | LocaltoS3 of string * objekt
     | S3toS3 of objekt * objekt
-
-  let retry ~delay ~retries ~(f : (?region:Aws_s3.Util.region -> unit -> ('a, 'b) result Deferred.t)) () : ('a, 'b) result Deferred.t =
-    let rec inner ?region ~retries () =
-      f ?region () >>= function
-      | Error (S3.Redirect region) ->
-        inner ~region ~retries ()
-      | Error e ->
-        Caml.Printf.eprintf "Error. Retry %s\n%!" (string_of_error e);
-        after delay >>= fun () -> inner ?region ~retries:(retries - 1) ()
-      | Ok r -> return (Ok r)
-    in
-    inner ~retries ()
 
   let determine_paths src dst =
     let src = Uri.of_string src in
@@ -65,37 +52,45 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     | n when n > 5*1024*1024 ->
       let len = 5*1024*1024 in
       let part = String.sub ~pos:offset ~len data in
-      (S3.Multipart_upload.upload_part t ~credentials ~part_number part) ::
+      (S3.retry ~retries:5
+         ~f:(fun ?region -> S3.Multipart_upload.upload_part ?region ~credentials t ~part_number ~data:part) ()) ::
       upload_parts t ~credentials ~offset:(offset + 5*1024*1024) ~part_number:(part_number + 1) data
     | len ->
       let part = String.sub ~pos:offset ~len data in
-      [ S3.Multipart_upload.upload_part t ~credentials ~part_number part ]
+      [ S3.retry ~retries:5
+         ~f:(fun ?region -> S3.Multipart_upload.upload_part ?region ~credentials t ~part_number ~data:part) () ]
 
   let cp profile ?(use_multi=false) ?first ?last src dst =
     let range = { S3.first; last } in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = Core.Or_error.ok_exn credentials in
-    (* nb client does not support preflight 100 *)
     match determine_paths src dst with
     | S3toLocal (src, dst) ->
-      S3.get ~credentials ~range ~bucket:src.bucket ~key:src.key () >>=? fun data ->
+      S3.retry ~retries:5
+        ~f:(fun ?region () -> S3.get ?region ~credentials ~range ~bucket:src.bucket ~key:src.key ()) () >>=? fun data ->
       save_file dst data;
       Deferred.return (Ok ())
     | LocaltoS3 (src, dst) when use_multi ->
       let data = read_file ?first ?last src in
-      S3.Multipart_upload.init ~credentials ~bucket:dst.bucket ~key:dst.key () >>=? fun t ->
+      S3.retry ~retries:5
+        ~f:(fun ?region () -> S3.Multipart_upload.init ?region ~credentials ~bucket:dst.bucket ~key:dst.key ()) () >>=? fun t ->
       let uploads = upload_parts t ~credentials data in
-      List.fold_left ~init:(Deferred.return (Ok ())) ~f:(fun acc x -> acc >>=? fun () -> x) uploads >>=? fun () ->
-      S3.Multipart_upload.complete ~credentials t >>=? fun _md5 ->
+      List.fold_left ~init:(Deferred.return (Ok ())) ~f:(fun acc x -> acc >>=? fun () -> x) uploads >>=?
+      S3.retry ~retries:5
+        ~f:(fun ?region () -> S3.Multipart_upload.complete ?region ~credentials t ()) >>=? fun _md5 ->
       Deferred.return (Ok ())
     | LocaltoS3 (src, dst) ->
       let data = read_file ?first ?last src in
-      S3.put ~credentials ~bucket:dst.bucket ~key:dst.key data >>=? fun _etag ->
+      S3.retry ~retries:5
+        ~f:(fun ?region () -> S3.put ?region ~credentials ~bucket:dst.bucket ~key:dst.key ~data ()) () >>=? fun _etag ->
       Deferred.return (Ok ())
     | S3toS3 (src, dst) ->
-      S3.Multipart_upload.init ~credentials ~bucket:dst.bucket ~key:dst.key () >>=? fun t ->
-      S3.Multipart_upload.copy_part t ~credentials ~bucket:src.bucket ~key:src.key ~part_number:1 >>=? fun () ->
-      S3.Multipart_upload.complete ~credentials t >>=? fun _md5 ->
+      S3.retry ~retries:5
+        ~f:(fun ?region () -> S3.Multipart_upload.init ?region ~credentials ~bucket:dst.bucket ~key:dst.key ()) () >>=? fun t ->
+      S3.retry ~retries:5
+        ~f:(fun ?region () -> S3.Multipart_upload.copy_part ?region ~credentials t ~bucket:src.bucket ~key:src.key ~part_number:1 ()) () >>=?
+      S3.retry ~retries:5
+        ~f:(fun ?region () -> S3.Multipart_upload.complete ?region ~credentials t ()) >>=? fun _md5 ->
       Deferred.return (Ok ())
 
   let rm profile bucket paths =
@@ -103,10 +98,11 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     let credentials = Core.Or_error.ok_exn credentials in
     match paths with
     | [ key ] ->
-        S3.delete ~credentials ~bucket ~key ()
+        S3.retry ~retries:5 ~f:(S3.delete ~credentials ~bucket ~key) ()
     | keys ->
       let objects : S3.Delete_multi.objekt list = List.map ~f:(fun key -> { S3.Delete_multi.key; version_id = None }) keys in
-      S3.delete_multi ~credentials ~bucket objects () >>=? fun _deleted ->
+      S3.retry ~retries:5
+        ~f:(S3.delete_multi ~credentials ~bucket ~objects) () >>=? fun _deleted ->
       Deferred.return (Ok ())
 
   let ls profile ratelimit bucket prefix =
@@ -119,13 +115,13 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
 
       match cont with
       | S3.Ls.More continuation -> ratelimit_f ()
-        >>=? retry ~retries:5 ~delay:1.0 ~f:(fun ?region:_ () -> continuation ())
+        >>=? S3.retry ~retries:5 ~f:(fun ?region:_ () -> continuation ())
         >>=? ls_all
       | S3.Ls.Done -> Deferred.return (Ok ())
     in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = Core.Or_error.ok_exn credentials in
-    retry ~retries:5 ~delay:1.0 ~f:(fun ?region () -> S3.ls ?region ~credentials ?prefix ~bucket ()) () >>=? ls_all
+    S3.retry ~retries:5 ~f:(S3.ls ?continuation_token:None ~credentials ?prefix ~bucket) () >>=? ls_all
   let exec ({ Cli.profile }, cmd) =
     begin
       match cmd with

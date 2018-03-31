@@ -162,7 +162,6 @@ module Make(Compat : Types.Compat) = struct
     | Throttled
     | Unknown of int * string
     | Not_found
-    | Exn of exn
 
   include Protocol(struct type nonrec 'a result = ('a, error) result Deferred.t end)
 
@@ -171,6 +170,7 @@ module Make(Compat : Types.Compat) = struct
   type nonrec 'a result = ('a, error) result Deferred.t
   type 'a command = ?credentials:Credentials.t -> ?region:Util.region -> 'a
 
+  (**/**)
   let do_command ?region cmd =
     cmd ?region () >>= fun (resp, body) ->
     let status = Cohttp.Response.status resp in
@@ -195,14 +195,16 @@ module Make(Compat : Types.Compat) = struct
           Deferred.return (Error (Unknown (c, code)))
       end
     | (500 | 503) ->
-      (* Should actually extract the textual error code: 'NOT_READY' = 500 | 'THROTTLED' = 503 *)
+      (* 500, InternalError | 503, SlowDown | 503, ServiceUnavailable -> Throttle *)
       Deferred.return (Error Throttled)
     | code ->
       Cohttp_deferred.Body.to_string body >>= fun body ->
       let resp = Error_response.t_of_xml_light (Xml.parse_string body) in
       Deferred.return (Error (Unknown (code, resp.code)))
+  (**/**)
 
-  let put ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key body =
+  (** Upload a file to S3. *)
+  let put ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data () =
     let path = sprintf "%s/%s" bucket key in
     let headers =
       let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
@@ -212,7 +214,7 @@ module Make(Compat : Types.Compat) = struct
       Core.List.filter_opt [ content_type; content_encoding; cache_control; acl ]
     in
     let cmd ?region () =
-      Util_deferred.make_request ?credentials ?region ~headers ~meth:`PUT ~path ~body ~query:[] ()
+      Util_deferred.make_request ?credentials ?region ~headers ~meth:`PUT ~path ~body:data ~query:[] ()
     in
 
     do_command ?region cmd >>=? fun (headers, _body) ->
@@ -223,6 +225,7 @@ module Make(Compat : Types.Compat) = struct
     in
     Deferred.return (Ok etag)
 
+  (** Retrieve a file from s3. The range option can be specified to only retrieve a part of the file.*)
   let get ?credentials ?region ?range ~bucket ~key () =
     let headers =
       let r_opt r = Option.value_map ~f:(string_of_int) ~default:"" r in
@@ -247,6 +250,7 @@ module Make(Compat : Types.Compat) = struct
     Cohttp_deferred.Body.to_string body >>= fun body ->
     Deferred.return (Ok body)
 
+  (* Delete a single file on S3 *)
   let delete ?credentials ?region ~bucket ~key () =
     let path = sprintf "%s/%s" bucket key in
     let cmd ?region () =
@@ -255,7 +259,8 @@ module Make(Compat : Types.Compat) = struct
     do_command ?region cmd >>=? fun (_headers, _body) ->
     Deferred.return (Ok ())
 
-  let delete_multi ?credentials ?region ~bucket objects () : Delete_multi.result result =
+  (* Delete a list of objects from s3, all residing in the same bucket *)
+  let delete_multi ?credentials ?region ~bucket ~objects () =
     match objects with
     | [] -> Delete_multi.{
         delete_marker = false;
@@ -283,6 +288,7 @@ module Make(Compat : Types.Compat) = struct
       let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
       Deferred.return (Ok result)
 
+  (** List contents of bucket in s3. *)
   let rec ls ?credentials ?region ?continuation_token ?prefix ~bucket () =
     let query = [ Some ("list-type", "2");
                   Option.map ~f:(fun ct -> ("continuation-token", ct)) continuation_token;
@@ -301,6 +307,7 @@ module Make(Compat : Types.Compat) = struct
     in
     Deferred.return (Ok (Ls.(result.contents, continuation)))
 
+  (** Function for doing multipart uploads *)
   module Multipart_upload = struct
     type t = { id: string;
                mutable parts: Multipart.part list;
@@ -308,6 +315,7 @@ module Make(Compat : Types.Compat) = struct
                key: string;
              }
 
+    (** Initiate a multipart upload *)
     let init ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key  () =
       let path = sprintf "%s/%s" bucket key in
       let query = ["uploads", ""] in
@@ -323,24 +331,26 @@ module Make(Compat : Types.Compat) = struct
 
       do_command ?region cmd >>=? fun (_headers, body) ->
       Cohttp_deferred.Body.to_string body >>| fun body ->
-      match Multipart.Initiate.of_xml_light (Xml.parse_string body) with
-      | resp ->
-        Ok { id = resp.Multipart.Initiate.upload_id;
-             parts = [];
-             bucket;
-             key;
-           }
-      | exception e ->
-        Error (Exn e)
+      let resp = Multipart.Initiate.of_xml_light (Xml.parse_string body) in
+      Ok { id = resp.Multipart.Initiate.upload_id;
+           parts = [];
+           bucket;
+           key;
+         }
 
-    let upload_part t ?credentials ?region ~part_number body =
+    (** Upload a part of the file.
+        Parts must be at least 5Mb except for the last part
+        [part_number] specifies the part numer. Parts will be assembled in order, but
+        does not have to be consequtive
+    *)
+    let upload_part ?credentials ?region t ~part_number ~data () =
       let path = sprintf "%s/%s" t.bucket t.key in
       let query =
         [ "partNumber", string_of_int part_number;
           "uploadId", t.id ]
       in
       let cmd ?region () =
-        Util_deferred.make_request ?credentials ?region ~headers:[] ~meth:`PUT ~path ~body ~query ()
+        Util_deferred.make_request ?credentials ?region ~headers:[] ~meth:`PUT ~path ~body:data ~query ()
       in
 
       do_command ?region cmd >>=? fun (headers, _body) ->
@@ -352,7 +362,10 @@ module Make(Compat : Types.Compat) = struct
       t.parts <- { etag; part_number } :: t.parts;
       Deferred.return (Ok ())
 
-    let copy_part ?credentials ?region ~part_number ?range ~bucket ~key t =
+    (** Specify a part to be a file on s3.
+        [range] can be used to only include a part of the s3 file
+    *)
+    let copy_part ?credentials ?region t ~part_number ?range ~bucket ~key () =
       let path = sprintf "%s/%s" t.bucket t.key in
       let query =
         [ "partNumber", string_of_int part_number;
@@ -375,7 +388,10 @@ module Make(Compat : Types.Compat) = struct
         t.parts <- { etag; part_number } :: t.parts;
         (Ok ())
 
-    let complete ?credentials ?region t =
+    (** Complete the multipart upload.
+        The returned etag is a opaque identifier (not md5)
+    *)
+    let complete ?credentials ?region t () =
       let path = sprintf "%s/%s" t.bucket t.key in
       let query = [ "uploadId", t.id ] in
       let request =
@@ -394,10 +410,9 @@ module Make(Compat : Types.Compat) = struct
       | { location=_; etag; bucket; key } when bucket = t.bucket && key = t.key ->
         Ok etag
       | _ -> Error (Unknown ((-1), "Bucket/key does not match"))
-      | exception e ->
-        Error (Exn e)
 
-    let abort ?credentials ?region t =
+    (** Abort a multipart upload, deleting all specified parts *)
+    let abort ?credentials ?region t () =
       let path = sprintf "%s/%s" t.bucket t.key in
       let query = [ "uploadId", t.id ] in
       let cmd ?region () =
@@ -406,7 +421,30 @@ module Make(Compat : Types.Compat) = struct
       do_command ?region cmd >>=? fun (_headers, _body) ->
       Deferred.return (Ok ())
   end
+  (** Helper function to handle redirects and throttling *)
 
+  let retry ?region ~retries ~f () =
+    let delay n =
+      let jitter = Random.float_range 0.5 1.0 in
+      let backoff = 2.0 ** (float n) in
+      (min 60.0 backoff) *. jitter
+      in
+    let rec inner ?region ~retry_count ~redirected () =
+      f ?region () >>= function
+      | Error (Redirect _) as e when redirected ->
+        Deferred.return e
+      | Error (Redirect region) ->
+        inner ~region ~retry_count ~redirected:true ()
+      | Error _ as e when retry_count = retries ->
+        Deferred.return e
+      | Error (Throttled) ->
+        Deferred.after (delay (retry_count + 1)) >>= fun () ->
+        inner ?region ~retry_count:(retry_count + 1) ~redirected ()
+      | Error _ ->
+        inner ?region ~retry_count:(retry_count + 1) ~redirected ()
+      | Ok r -> Deferred.return (Ok r)
+    in
+    inner ?region ~retry_count:0 ~redirected:false ()
 end
 
 module Test = struct

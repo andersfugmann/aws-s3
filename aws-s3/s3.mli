@@ -1,15 +1,4 @@
 (** S3 commands *)
-
-(** S3 command type.
-    If [retries] is set, then the system will retry if the command is
-    throttled  using exponential backoff.
-
-    [credentials] are credentials used for accessing s3. If none is
-    supplied the command will be attempted without.
-
-    [region] specified on which region the operation should go to. default [us-east]
-*)
-
 module Make(Compat : Types.Compat) : sig
   open Compat
   open Core
@@ -19,7 +8,6 @@ module Make(Compat : Types.Compat) : sig
     | Throttled
     | Unknown of int * string
     | Not_found
-    | Exn of exn
 
   type nonrec 'a result = ('a, error) result Deferred.t
   type 'a command = ?credentials:Credentials.t -> ?region:Util.region -> 'a
@@ -70,11 +58,11 @@ module Make(Compat : Types.Compat) : sig
      ?cache_control:string ->
      bucket:string ->
      key:string ->
-     string -> Caml.Digest.t result) command
+     data:string -> unit -> Caml.Digest.t result) command
 
 
   (** Download [key] from s3 in [bucket]
-      If [range] is specified, only a part of the file is downloaded.
+      If [range] is specified, only a part of the file is retrieved.
       - If [first] is None, then start from the beginning of the object.
       - If [last] is None, then get to the end of the object.
   *)
@@ -91,7 +79,7 @@ module Make(Compat : Types.Compat) : sig
       an item is not found it will be reported as successfully deleted.
   *)
   val delete_multi :
-    (bucket:string -> Delete_multi.objekt list -> unit -> Delete_multi.result result) command
+    (bucket:string -> objects:Delete_multi.objekt list -> unit -> Delete_multi.result result) command
 
   (** List contents in [bucket]
 
@@ -106,42 +94,35 @@ module Make(Compat : Types.Compat) : sig
 
     (** Initialize multipart upload *)
     val init :
-      ?credentials:Credentials.t ->
-      ?region:Util.region ->
-      ?content_type:string ->
+      (?content_type:string ->
       ?content_encoding:string * string ->
       ?acl:string ->
       ?cache_control:string ->
-      bucket:string -> key:string -> unit -> (t, error) Core_kernel.result Deferred.t
+      bucket:string -> key:string -> unit -> t result) command
 
     (** Upload a part of the file. All parts except the last part must be
         at least 5Mb big. All parts must have a unique part number.
-        The final file will be assembled from all parts sorted by part number *)
+        The final file will be assembled from all parts ordered by part number *)
     val upload_part :
-      t ->
-      ?credentials:Credentials.t ->
-      ?region:Util.region ->
-      part_number:int -> string -> (unit, error) Core_kernel.result Deferred.t
+      (t -> part_number:int -> data:string -> unit -> unit result) command
 
     (** Specify a part as a copy of an existing object in S3. *)
     val copy_part :
-      ?credentials:Credentials.t ->
-      ?region:Util.region ->
-      part_number:int ->
-      ?range:int * int ->
-      bucket:string -> key:string ->
-      t -> (unit, error) Caml.result Deferred.t
+      (t -> part_number:int -> ?range:int * int -> bucket:string -> key:string -> unit -> unit result) command
 
     (** Complete a multipart upload. The returned string is an opaque identifier used as etag *)
-    val complete :
-      ?credentials:Credentials.t ->
-      ?region:Util.region -> t -> (string, error) Core_kernel.result Deferred.t
+    val complete : (t -> unit -> string result) command
 
-    (** Abort a multipart upload. *)
-    val abort :
-      ?credentials:Credentials.t ->
-      ?region:Util.region -> t -> (unit, error) Caml.result Deferred.t
+    (** Abort a multipart upload. This also discards all uploaded parts. *)
+    val abort : (t -> unit -> unit result) command
   end
+
+  (** Helper function to handle error codes.
+      The function handle redirects and throttling.
+  *)
+  val retry : ?region:Util.region -> retries:int ->
+    f:(?region:Util.region -> unit -> ('a, error) Result.t Deferred.t) -> unit ->
+    ('a, error) Result.t Deferred.t
 end
 
 module Test : sig

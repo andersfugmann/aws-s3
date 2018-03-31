@@ -10,11 +10,6 @@ install: build
 clean:
 	jbuilder clean
 
-.PHONY: dep
-dep:
-	opam pin --no-action add ppx_deriving_yojson --dev-repo
-	jbuilder external-lib-deps --missing --dev @install
-
 .PHONY: test
 test: build
 	jbuilder runtest --dev
@@ -28,3 +23,18 @@ update-version:
 release: VERSION=$(shell cat Changelog | grep -E '^[0-9]' | head -n 1 | cut -f1 -d':')
 release:
 	@./release.sh $(VERSION)
+
+doc:
+	jbuilder build --dev @doc
+
+gh-pages: doc
+	git clone `git config --get remote.origin.url` .gh-pages --reference .
+	git -C .gh-pages checkout --orphan gh-pages
+	git -C .gh-pages reset
+	git -C .gh-pages clean -dxf
+	cp  -r _build/default/_doc/* .gh-pages
+	git -C .gh-pages add .
+	git -C .gh-pages config user.email 'docs@aws-s3'
+	git -C .gh-pages commit -m "Update documentation"
+	git -C .gh-pages push origin gh-pages -f
+	rm -rf .gh-pages

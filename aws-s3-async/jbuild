@@ -4,6 +4,6 @@
  ((name aws_s3_async)
   (public_name aws-s3-async)
   (synopsis  "Async backed for aws-s3")
-  (libraries (aws-s3 async cohttp-async))
+  (libraries (aws-s3 async_kernel core_kernel cohttp-async))
  )
 )
