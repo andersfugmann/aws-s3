@@ -425,7 +425,7 @@ module Make(Compat : Types.Compat) = struct
 
   let retry ?region ~retries ~f () =
     let delay n =
-      let jitter = Random.float_range 0.5 1.0 in
+      let jitter = Random.float 0.5 +. 0.5 in
       let backoff = 2.0 ** (float n) in
       (min 60.0 backoff) *. jitter
       in
