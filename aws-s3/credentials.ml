@@ -25,7 +25,7 @@ module Make(Compat : Types.Compat) = struct
     let instance_data_host = "instance-data.ec2.internal"
     let get_role () =
       let inner () =
-        let uri = Uri.make ~host:instance_data_host ~scheme:"http" ~path:"/latest/meta-data/iam/security-credentials/" () in
+        let uri = Uri.make ~host:instance_data_host ~path:"/latest/meta-data/iam/security-credentials/" () in
         let request = Cohttp.Request.make ~meth:`GET uri in
         Cohttp_deferred.Client.request ~scheme:`Http request >>= fun (response, body) ->
         match Cohttp.Response.status response with
