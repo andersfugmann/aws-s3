@@ -37,6 +37,10 @@ module Cohttp_deferred = struct
         | `Https -> "https";
       in
       let uri = Uri.with_uri ~scheme:(Some scheme_str) (Cohttp.Request.uri request) in
-      Cohttp_async.Client.request ~uri ?body request
+      Cohttp_async.Client.call
+        ~headers:(Cohttp.Request.headers request)
+        ?body
+        (Cohttp.Request.meth request)
+        uri
   end
 end
