@@ -1,8 +1,11 @@
 -*- mode: fundamental -*-
 
-[ ] Zero copy support
+[ ] Zero copy support (data streaming)
+[ ] Support bigstring
 
 3.0.0: (unreleased)
+[x] Fix IAM handling for lwt version.
+[x] Always use http when accessing s3.
 [x] Support copying s3 -> s3
 [x] Support multipart upload
 [x] Support permanent/temporary redirect error code

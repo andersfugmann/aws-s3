@@ -19,6 +19,7 @@ depends: [
   "yojson"
   "ppx_protocol_conv_xml_light"
   "ppx_protocol_conv_json"
+  "cmdliner"
 ]
 
 available: [ ocaml-version >= "4.04.0" ]

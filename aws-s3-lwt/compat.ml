@@ -1,7 +1,6 @@
 open Lwt.Infix
-type 'a deferred = 'a Lwt.t
 module Deferred = struct
-  type 'a t = 'a deferred
+  type 'a t = 'a Lwt.t
 
   module Or_error = struct
     type nonrec 'a t = ('a, Base.Error.t) Lwt_result.t
@@ -40,8 +39,12 @@ module Cohttp_deferred = struct
   end
 
   module Client = struct
-    let request ?body request =
-      let uri = Uri.with_uri ~scheme:(Some "https") (Cohttp.Request.uri request) in
+    let request ~scheme ?body request =
+      let scheme_str = match scheme with
+        | `Http -> "http";
+        | `Https -> "https";
+      in
+      let uri = Uri.with_uri ~scheme:(Some scheme_str) (Cohttp.Request.uri request) in
       Cohttp_lwt_unix.Client.call
         ~headers:(Cohttp.Request.headers request)
         ?body

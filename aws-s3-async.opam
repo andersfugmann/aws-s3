@@ -13,7 +13,6 @@ depends: [
   "async_kernel" { >= "v0.9.0" }
   "core_kernel" { >= "v0.9.0" }
   "cohttp-async"
-  "cmdliner"
 ]
 
 available: [ ocaml-version >= "4.04.0" ]

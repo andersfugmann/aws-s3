@@ -32,6 +32,7 @@ module type Compat = sig
 
     module Client : sig
       val request :
+        scheme:[`Http|`Https] ->
         ?body:Body.t ->
         Cohttp.Request.t ->
         (Cohttp.Response.t * Body.t) Deferred.t

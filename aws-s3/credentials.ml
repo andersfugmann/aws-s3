@@ -27,7 +27,7 @@ module Make(Compat : Types.Compat) = struct
       let inner () =
         let uri = Uri.make ~host:instance_data_host ~scheme:"http" ~path:"/latest/meta-data/iam/security-credentials/" () in
         let request = Cohttp.Request.make ~meth:`GET uri in
-        Cohttp_deferred.Client.request request >>= fun (response, body) ->
+        Cohttp_deferred.Client.request ~scheme:`Http request >>= fun (response, body) ->
         match Cohttp.Response.status response with
         | #Code.success_status ->
           Cohttp_deferred.Body.to_string body >>= fun body ->
@@ -41,9 +41,9 @@ module Make(Compat : Types.Compat) = struct
     let get_credentials role =
       let inner () =
         let path = sprintf "/latest/meta-data/iam/security-credentials/%s" role in
-        let uri = Uri.make ~host:instance_data_host ~scheme:"http" ~path () in
+        let uri = Uri.make ~host:instance_data_host ~path () in
         let request = Cohttp.Request.make ~meth:`GET uri in
-        Cohttp_deferred.Client.request request >>= fun (response, body) ->
+        Cohttp_deferred.Client.request ~scheme:`Http request >>= fun (response, body) ->
         match Cohttp.Response.status response with
         | #Code.success_status -> begin
             Cohttp_deferred.Body.to_string body >>= fun body ->

@@ -35,6 +35,6 @@ module Cohttp_deferred = struct
   end
 
   module Client = struct
-    let request ?body:_ _request = failwith "Not implemented"
+    let request ~scheme:_ ?body:_ _request = failwith "Not implemented"
   end
 end

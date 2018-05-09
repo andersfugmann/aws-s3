@@ -44,11 +44,6 @@ module Make(Compat : Types.Compat) : sig
   type range = { first: int option; last:int option }
 
   (** Upload [key] to [bucket].
-
-      If gzip is true, the contents will be gzipped before uploading and
-      content-encoding set to gzip so client will automatically
-      decompress the content.
-
       Returns the etag of the object. The etag is the md5 checksum (RFC 1864)
   *)
   val put :

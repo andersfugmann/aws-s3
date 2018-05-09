@@ -10,7 +10,6 @@ version: "3.0.0"
 depends: [
   "jbuilder" { build }
   "aws-s3" { = "3.0.0" }
-  ("tls" | "ssl")
   "lwt"
   "cohttp-lwt-unix"
 ]
