@@ -10,7 +10,7 @@ module Make(Compat : Types.Compat) : sig
     | Not_found
 
   type nonrec 'a result = ('a, error) result Deferred.t
-  type 'a command = ?credentials:Credentials.t -> ?region:Util.region -> 'a
+  type 'a command = ?scheme:[`Http|`Https] -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
 
   module Ls : sig
     type storage_class = Standard | Standard_ia | Reduced_redundancy | Glacier
@@ -60,6 +60,9 @@ module Make(Compat : Types.Compat) : sig
       If [range] is specified, only a part of the file is retrieved.
       - If [first] is None, then start from the beginning of the object.
       - If [last] is None, then get to the end of the object.
+      Scheme defaults to http. If you are uploading across the internet.
+      to use https, please make sure that you have enabled ssl for cohttp
+      (opam package tls or lwt_ssl for lwt or async_ssl for async)
   *)
   val get :
     (?range:range -> bucket:string -> key:string -> unit -> string result) command

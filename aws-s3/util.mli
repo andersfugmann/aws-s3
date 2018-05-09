@@ -34,6 +34,7 @@ module Make : functor(Compat: Types.Compat) -> sig
   open Compat
 
   val make_request :
+    scheme:[`Http|`Https] ->
     ?body:String.t ->
     ?region:region ->
     ?credentials:Credentials.t ->

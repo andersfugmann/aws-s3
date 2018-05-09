@@ -98,11 +98,11 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     let credentials = Core.Or_error.ok_exn credentials in
     match paths with
     | [ key ] ->
-        S3.retry ~retries:5 ~f:(S3.delete ~credentials ~bucket ~key) ()
+        S3.retry ~retries:5 ~f:(S3.delete ~scheme:`Http ~credentials ~bucket ~key) ()
     | keys ->
       let objects : S3.Delete_multi.objekt list = List.map ~f:(fun key -> { S3.Delete_multi.key; version_id = None }) keys in
       S3.retry ~retries:5
-        ~f:(S3.delete_multi ~credentials ~bucket ~objects) () >>=? fun _deleted ->
+        ~f:(S3.delete_multi ~scheme:`Http ~credentials ~bucket ~objects) () >>=? fun _deleted ->
       Deferred.return (Ok ())
 
   let ls profile ratelimit bucket prefix =
@@ -121,7 +121,7 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = Core.Or_error.ok_exn credentials in
-    S3.retry ~retries:5 ~f:(S3.ls ?continuation_token:None ~credentials ?prefix ~bucket) () >>=? ls_all
+    S3.retry ~retries:5 ~f:(S3.ls ~scheme:`Http ?continuation_token:None ~credentials ?prefix ~bucket) () >>=? ls_all
   let exec ({ Cli.profile }, cmd) =
     begin
       match cmd with

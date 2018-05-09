@@ -303,7 +303,7 @@ end
 module Make(C : Types.Compat) = struct
   open C
 
-  let make_request ?body ?(region=Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
+  let make_request ~scheme ?body ?(region=Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
     let host_str = host_of_region region in
     let uri = Uri.make
         ~host:host_str
@@ -342,7 +342,7 @@ module Make(C : Types.Compat) = struct
     match meth with
     | `PUT | `POST->
       let body = Option.map ~f:(Cohttp_deferred.Body.of_string) body in
-      Cohttp_deferred.Client.request ~scheme:`Http ?body request
+      Cohttp_deferred.Client.request ~scheme ?body request
     | `GET | `DELETE-> Cohttp_deferred.Client.request ~scheme:`Http request
     | _ -> failwith "Unsupported http verb (method)"
 

@@ -168,7 +168,7 @@ module Make(Compat : Types.Compat) = struct
   type range = { first: int option; last: int option }
 
   type nonrec 'a result = ('a, error) result Deferred.t
-  type 'a command = ?credentials:Credentials.t -> ?region:Util.region -> 'a
+  type 'a command = ?scheme:[`Http|`Https] -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
 
   (**/**)
   let do_command ?region cmd =
@@ -204,7 +204,8 @@ module Make(Compat : Types.Compat) = struct
   (**/**)
 
   (** Upload a file to S3. *)
-  let put ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data () =
+  let put ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data () =
+    let scheme = Option.value ~default:`Http scheme in
     let path = sprintf "%s/%s" bucket key in
     let headers =
       let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
@@ -214,7 +215,7 @@ module Make(Compat : Types.Compat) = struct
       Core.List.filter_opt [ content_type; content_encoding; cache_control; acl ]
     in
     let cmd ?region () =
-      Util_deferred.make_request ?credentials ?region ~headers ~meth:`PUT ~path ~body:data ~query:[] ()
+      Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~body:data ~query:[] ()
     in
 
     do_command ?region cmd >>=? fun (headers, _body) ->
@@ -226,7 +227,9 @@ module Make(Compat : Types.Compat) = struct
     Deferred.return (Ok etag)
 
   (** Retrieve a file from s3. The range option can be specified to only retrieve a part of the file.*)
-  let get ?credentials ?region ?range ~bucket ~key () =
+  let get ?scheme ?credentials ?region ?range ~bucket ~key () =
+    let scheme = Option.value ~default:`Http scheme in
+
     let headers =
       let r_opt r = Option.value_map ~f:(string_of_int) ~default:"" r in
 
@@ -244,23 +247,25 @@ module Make(Compat : Types.Compat) = struct
     in
     let path = sprintf "%s/%s" bucket key in
     let cmd ?region () =
-      Util_deferred.make_request ?credentials ?region ~headers ~meth:`GET ~path ~query:[] ()
+      Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`GET ~path ~query:[] ()
     in
     do_command ?region cmd >>=? fun (_headers, body) ->
     Cohttp_deferred.Body.to_string body >>= fun body ->
     Deferred.return (Ok body)
 
   (* Delete a single file on S3 *)
-  let delete ?credentials ?region ~bucket ~key () =
+  let delete ?scheme ?credentials ?region ~bucket ~key () =
+    let scheme = Option.value ~default:`Http scheme in
     let path = sprintf "%s/%s" bucket key in
     let cmd ?region () =
-      Util_deferred.make_request ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query:[] ()
+      Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query:[] ()
     in
     do_command ?region cmd >>=? fun (_headers, _body) ->
     Deferred.return (Ok ())
 
   (* Delete a list of objects from s3, all residing in the same bucket *)
-  let delete_multi ?credentials ?region ~bucket ~objects () =
+  let delete_multi ?scheme ?credentials ?region ~bucket ~objects () =
+    let scheme = Option.value ~default:`Http scheme in
     match objects with
     | [] -> Delete_multi.{
         delete_marker = false;
@@ -279,7 +284,7 @@ module Make(Compat : Types.Compat) = struct
       in
       let headers = [ "Content-MD5", B64.encode (Caml.Digest.string request) ] in
       let cmd ?region () =
-        Util_deferred.make_request
+        Util_deferred.make_request ~scheme
           ~body:request ?credentials ?region ~headers
           ~meth:`POST ~query:["delete", ""] ~path:bucket ()
       in
@@ -289,20 +294,21 @@ module Make(Compat : Types.Compat) = struct
       Deferred.return (Ok result)
 
   (** List contents of bucket in s3. *)
-  let rec ls ?credentials ?region ?continuation_token ?prefix ~bucket () =
+  let rec ls ?scheme ?credentials ?region ?continuation_token ?prefix ~bucket () =
+    let scheme = Option.value ~default:`Http scheme in
     let query = [ Some ("list-type", "2");
                   Option.map ~f:(fun ct -> ("continuation-token", ct)) continuation_token;
                   Option.map ~f:(fun prefix -> ("prefix", prefix)) prefix;
                 ] |> List.filter_opt
     in
     let cmd ?region () =
-      Util_deferred.make_request ?credentials ?region ~headers:[] ~meth:`GET ~path:bucket ~query ()
+      Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`GET ~path:bucket ~query ()
     in
     do_command ?region cmd >>=? fun (_headers, body) ->
     Cohttp_deferred.Body.to_string body >>= fun body ->
     let result = Ls.result_of_xml_light (Xml.parse_string body) in
     let continuation = match Ls.(result.next_continuation_token) with
-      | Some ct -> Ls.More (ls ?credentials ?region ~continuation_token:ct ?prefix ~bucket)
+      | Some ct -> Ls.More (ls ~scheme ?credentials ?region ~continuation_token:ct ?prefix ~bucket)
       | None -> Ls.Done
     in
     Deferred.return (Ok (Ls.(result.contents, continuation)))
@@ -316,7 +322,8 @@ module Make(Compat : Types.Compat) = struct
              }
 
     (** Initiate a multipart upload *)
-    let init ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key  () =
+    let init ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key  () =
+      let scheme = Option.value ~default:`Http scheme in
       let path = sprintf "%s/%s" bucket key in
       let query = ["uploads", ""] in
       let headers =
@@ -326,7 +333,7 @@ module Make(Compat : Types.Compat) = struct
         Core.List.filter_opt [ content_type; content_encoding; cache_control; acl ]
       in
       let cmd ?region () =
-        Util_deferred.make_request ?credentials ?region ~headers ~meth:`POST ~path ~query ()
+        Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`POST ~path ~query ()
       in
 
       do_command ?region cmd >>=? fun (_headers, body) ->
@@ -343,14 +350,15 @@ module Make(Compat : Types.Compat) = struct
         [part_number] specifies the part numer. Parts will be assembled in order, but
         does not have to be consequtive
     *)
-    let upload_part ?credentials ?region t ~part_number ~data () =
+    let upload_part ?scheme ?credentials ?region t ~part_number ~data () =
+      let scheme = Option.value ~default:`Http scheme in
       let path = sprintf "%s/%s" t.bucket t.key in
       let query =
         [ "partNumber", string_of_int part_number;
           "uploadId", t.id ]
       in
       let cmd ?region () =
-        Util_deferred.make_request ?credentials ?region ~headers:[] ~meth:`PUT ~path ~body:data ~query ()
+        Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`PUT ~path ~body:data ~query ()
       in
 
       do_command ?region cmd >>=? fun (headers, _body) ->
@@ -365,7 +373,8 @@ module Make(Compat : Types.Compat) = struct
     (** Specify a part to be a file on s3.
         [range] can be used to only include a part of the s3 file
     *)
-    let copy_part ?credentials ?region t ~part_number ?range ~bucket ~key () =
+    let copy_part ?scheme ?credentials ?region t ~part_number ?range ~bucket ~key () =
+      let scheme = Option.value ~default:`Http scheme in
       let path = sprintf "%s/%s" t.bucket t.key in
       let query =
         [ "partNumber", string_of_int part_number;
@@ -377,7 +386,7 @@ module Make(Compat : Types.Compat) = struct
             [ "x-amz-copy-source-range", sprintf "bytes=%d-%d" first last ]) range
       in
       let cmd ?region () =
-        Util_deferred.make_request ?credentials ?region ~headers ~meth:`PUT ~path ~query ()
+        Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~query ()
       in
 
       do_command ?region cmd >>=? fun (_headers, body) ->
@@ -391,7 +400,8 @@ module Make(Compat : Types.Compat) = struct
     (** Complete the multipart upload.
         The returned etag is a opaque identifier (not md5)
     *)
-    let complete ?credentials ?region t () =
+    let complete ?scheme ?credentials ?region t () =
+      let scheme = Option.value ~default:`Http scheme in
       let path = sprintf "%s/%s" t.bucket t.key in
       let query = [ "uploadId", t.id ] in
       let request =
@@ -401,7 +411,7 @@ module Make(Compat : Types.Compat) = struct
         |> Xml.to_string_fmt
       in
       let cmd ?region () =
-        Util_deferred.make_request ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:request ()
+        Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:request ()
       in
       do_command ?region cmd >>=? fun (_headers, body) ->
       Cohttp_deferred.Body.to_string body >>| fun body ->
@@ -412,11 +422,12 @@ module Make(Compat : Types.Compat) = struct
       | _ -> Error (Unknown ((-1), "Bucket/key does not match"))
 
     (** Abort a multipart upload, deleting all specified parts *)
-    let abort ?credentials ?region t () =
+    let abort ?scheme ?credentials ?region t () =
+      let scheme = Option.value ~default:`Http scheme in
       let path = sprintf "%s/%s" t.bucket t.key in
       let query = [ "uploadId", t.id ] in
       let cmd ?region () =
-        Util_deferred.make_request ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query ()
+        Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query ()
       in
       do_command ?region cmd >>=? fun (_headers, _body) ->
       Deferred.return (Ok ())

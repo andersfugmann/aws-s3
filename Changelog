@@ -4,6 +4,7 @@
 [ ] Support bigstring
 
 3.0.0: (unreleased)
+[x] Add parameter to specify scheme(http|https)
 [x] Fix IAM handling for lwt version.
 [x] Always use http when accessing s3.
 [x] Support copying s3 -> s3
