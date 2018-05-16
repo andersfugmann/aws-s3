@@ -183,7 +183,7 @@ module Make(Compat : Types.Compat) = struct
         let open Error_response in
         Cohttp_deferred.Body.to_string body >>= fun body ->
         let xml = Xml.parse_string body in
-        match Error_response.t_of_xml_light xml with
+        match Error_response.of_xml_light xml with
         | { code = "PermanentRedirect"; endpoint = Some host; _ }
         | { code = "TemporaryRedirect"; endpoint = Some host; _ } ->
           let region = Util.region_of_host host in
@@ -199,7 +199,7 @@ module Make(Compat : Types.Compat) = struct
       Deferred.return (Error Throttled)
     | code ->
       Cohttp_deferred.Body.to_string body >>= fun body ->
-      let resp = Error_response.t_of_xml_light (Xml.parse_string body) in
+      let resp = Error_response.of_xml_light (Xml.parse_string body) in
       Deferred.return (Error (Unknown (code, resp.code)))
   (**/**)
 
@@ -506,7 +506,7 @@ module Test = struct
       |}
     in
     let xml = Xml.parse_string data in
-    let error = Protocol.Error_response.t_of_xml_light xml in
+    let error = Protocol.Error_response.of_xml_light xml in
     assert_equal ~msg:"Wrong code extracted" "PermanentRedirect" (error.Protocol.Error_response.code);
     ()
 

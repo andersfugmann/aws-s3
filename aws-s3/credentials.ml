@@ -48,7 +48,7 @@ module Make(Compat : Types.Compat) = struct
         | #Code.success_status -> begin
             Cohttp_deferred.Body.to_string body >>= fun body ->
             let json = Yojson.Safe.from_string body in
-            t_of_json json |> Or_error.return |> Deferred.return
+            of_json json |> Or_error.return |> Deferred.return
           end
         | _ ->
           Cohttp_deferred.Body.to_string body >>= fun body ->
