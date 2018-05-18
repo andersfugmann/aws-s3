@@ -2,6 +2,7 @@
 
 [ ] Zero copy support (data streaming)
 [ ] Support bigstring
+[ ] Support HEAD operation on objects.
 
 3.0.1: (unreleased)
 
