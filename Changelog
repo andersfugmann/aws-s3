@@ -3,7 +3,12 @@
 [ ] Zero copy support (data streaming)
 [ ] Support bigstring
 
-3.0.0: (unreleased)
+3.0.1: (unreleased)
+
+[x] Change signature to use string for etag rather than
+    Caml.Digest.t === string for clearer documentation
+
+3.0.0: Released 2018-05-16
 [x] Add parameter to specify scheme(http|https)
 [x] Fix IAM handling for lwt version.
 [x] Always use http when accessing s3.

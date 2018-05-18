@@ -19,7 +19,7 @@ module Make(Compat : Types.Compat) : sig
       size : int;
       last_modified : Time.t;
       key : string;
-      etag : Caml.Digest.t;
+      etag : string;
     }
     type t = (content list * cont) result
     and cont = More of (unit -> t) | Done
@@ -53,7 +53,7 @@ module Make(Compat : Types.Compat) : sig
      ?cache_control:string ->
      bucket:string ->
      key:string ->
-     data:string -> unit -> Caml.Digest.t result) command
+     data:string -> unit -> string result) command
 
 
   (** Download [key] from s3 in [bucket]
