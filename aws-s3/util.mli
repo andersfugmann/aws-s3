@@ -39,7 +39,7 @@ module Make : functor(Compat: Types.Compat) -> sig
     ?region:region ->
     ?credentials:Credentials.t ->
     headers:(string * string) list ->
-    meth:Code.meth ->
+    meth:[`GET | `PUT | `POST | `DELETE | `HEAD ] ->
     path:string ->
     query:(string * string) list ->
     unit ->

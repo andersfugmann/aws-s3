@@ -324,7 +324,7 @@ module Make(C : Types.Compat) = struct
       ("User-Agent", "aws-s3 ocaml client") :: ("Host", host_str) :: (List.filter_opt [ content_length ]) @ headers @ amz_headers
     in
 
-    let request = Request.make ~meth
+    let request = Request.make ~meth:(meth :> Code.meth)
         ~headers:(Header.of_list headers)
         uri in
 
@@ -340,10 +340,12 @@ module Make(C : Types.Compat) = struct
     let headers = (headers @ auth_header) |> Header.of_list in
     let request = {request with Cohttp.Request.headers} in
     match meth with
-    | `PUT | `POST->
+    | `PUT
+    | `POST ->
       let body = Option.map ~f:(Cohttp_deferred.Body.of_string) body in
       Cohttp_deferred.Client.request ~scheme ?body request
-    | `GET | `DELETE-> Cohttp_deferred.Client.request ~scheme:`Http request
-    | _ -> failwith "Unsupported http verb (method)"
+    | `GET
+    | `DELETE
+    | `HEAD -> Cohttp_deferred.Client.request ~scheme request
 
 end

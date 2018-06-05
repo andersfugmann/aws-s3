@@ -25,24 +25,24 @@ module Protocol(P: sig type 'a result end) = struct
   let time_of_xml_light t =
     Xml_light.to_string t |> Time.of_string
 
-  type etag = string [@@deriving protocol ~driver:(module Xml_light)]
+  type storage_class =
+    | Standard           [@key "STANDARD"]
+    | Standard_ia        [@key "STANDARD_IA"]
+    | Onezone_ia         [@key "ONEZONE_IA"]
+    | Reduced_redundancy [@key "REDUCED_REDUNDANCY"]
+    | Glacier            [@key "GLACIER"]
+  and content = {
+    storage_class: storage_class [@key "StorageClass"];
+    size: int [@key "Size"];
+    last_modified: time [@key "LastModified"];
+    key: string [@key "Key"];
+    etag: string [@key "ETag"];
+    (** Add expiration date option *)
+  } [@@deriving of_protocol ~driver:(module Xml_light)]
+
   module Ls = struct
 
-    type storage_class =
-      | Standard           [@key "STANDARD"]
-      | Standard_ia        [@key "STANDARD_IA"]
-      | Reduced_redundancy [@key "REDUCED_REDUNDANCY"]
-      | Glacier            [@key "GLACIER"]
-
-    and content = {
-      storage_class: storage_class [@key "StorageClass"];
-      size: int [@key "Size"];
-      last_modified: time [@key "LastModified"];
-      key: string [@key "Key"];
-      etag: etag [@key "ETag"];
-    }
-
-    and result = {
+    type result = {
       prefix: string option [@key "Prefix"];
       common_prefixes: string option [@key "CommonPrefixes"];
       delimiter: string option [@key "Delimiter"];
@@ -117,7 +117,7 @@ module Protocol(P: sig type 'a result end) = struct
 
   module Multipart = struct
     type part = { part_number: int [@key "PartNumber"];
-                  etag: etag [@key "ETag"];
+                  etag: string [@key "ETag"];
                 }
     [@@deriving to_protocol ~driver:(module Xml_light)]
 
@@ -138,13 +138,13 @@ module Protocol(P: sig type 'a result end) = struct
       type response = { location: string [@key "Location"];
                         bucket: string [@key "Bucket"];
                         key: string [@key "Key"];
-                        etag: etag [@key "ETag"];
+                        etag: string [@key "ETag"];
                       }
       [@@deriving of_protocol ~driver:(module Xml_light)]
     end
     module Copy = struct
       type t = {
-        etag: etag [@key "ETag"];
+        etag: string [@key "ETag"];
         last_modified: time [@key "LastModified"];
       }
       [@@deriving of_protocol ~driver:(module Xml_light)]
@@ -203,7 +203,6 @@ module Make(Compat : Types.Compat) = struct
       Deferred.return (Error (Unknown (code, resp.code)))
   (**/**)
 
-  (** Upload a file to S3. *)
   let put ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data () =
     let scheme = Option.value ~default:`Http scheme in
     let path = sprintf "%s/%s" bucket key in
@@ -226,10 +225,7 @@ module Make(Compat : Types.Compat) = struct
     in
     Deferred.return (Ok etag)
 
-  (** Retrieve a file from s3. The range option can be specified to only retrieve a part of the file.*)
-  let get ?scheme ?credentials ?region ?range ~bucket ~key () =
-    let scheme = Option.value ~default:`Http scheme in
-
+  let get ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key () =
     let headers =
       let r_opt r = Option.value_map ~f:(string_of_int) ~default:"" r in
 
@@ -253,7 +249,6 @@ module Make(Compat : Types.Compat) = struct
     Cohttp_deferred.Body.to_string body >>= fun body ->
     Deferred.return (Ok body)
 
-  (* Delete a single file on S3 *)
   let delete ?scheme ?credentials ?region ~bucket ~key () =
     let scheme = Option.value ~default:`Http scheme in
     let path = sprintf "%s/%s" bucket key in
@@ -263,7 +258,34 @@ module Make(Compat : Types.Compat) = struct
     do_command ?region cmd >>=? fun (_headers, _body) ->
     Deferred.return (Ok ())
 
-  (* Delete a list of objects from s3, all residing in the same bucket *)
+  let head ?(scheme=`Http) ?credentials ?region ~bucket ~key () =
+    let path = sprintf "%s/%s" bucket key in
+    let cmd ?region () =
+      Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`HEAD ~path ~query:[] ()
+    in
+    do_command ?region cmd >>=? fun (headers, _body) ->
+    let result =
+      let open Option.Monad_infix in
+      Header.get headers "content-length" >>= fun size ->
+      Header.get headers "etag" >>= fun etag ->
+      Header.get headers "last-modified" >>= fun last_modified ->
+      Printf.eprintf "Last-modified: '%s'\n%!" last_modified;
+      let last_modified = last_modified |> Time.of_string in (* This fails,
+                                                                as the string is
+                                                                'Fri, 18 May 2018 06:17:00 GMT *)
+      let size = size |> int_of_string in
+      let storage_class =
+        Header.get headers "x-amz-storage-class"
+        |> Option.value_map ~default:Standard ~f:(fun s ->
+            storage_class_of_xml_light (Xml.Element ("p", [], [Xml.PCData s]))
+          )
+      in
+      Some { storage_class; size; last_modified; key; etag }
+    in
+    match result with
+    | Some r -> Deferred.return (Ok r)
+    | None -> Deferred.return (Error (Unknown (1, "Result did not return correct headers")))
+
   let delete_multi ?scheme ?credentials ?region ~bucket ~objects () =
     let scheme = Option.value ~default:`Http scheme in
     match objects with
@@ -432,7 +454,6 @@ module Make(Compat : Types.Compat) = struct
       do_command ?region cmd >>=? fun (_headers, _body) ->
       Deferred.return (Ok ())
   end
-  (** Helper function to handle redirects and throttling *)
 
   let retry ?region ~retries ~f () =
     let delay n =

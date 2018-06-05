@@ -105,13 +105,24 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
         ~f:(S3.delete_multi ~scheme:`Http ~credentials ~bucket ~objects) () >>=? fun _deleted ->
       Deferred.return (Ok ())
 
+  let head profile path =
+    Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
+    let credentials = Core.Or_error.ok_exn credentials in
+    let { bucket; key } = objekt_of_uri (Uri.of_string path) in
+    S3.head ~credentials ~bucket ~key () >>= function
+    | Ok { S3.key; etag; size; _ } ->
+      Printf.printf "Key: %s, Size: %d, etag: %s\n"
+        key size etag;
+      Deferred.return (Ok ())
+    | Error _ as e -> Deferred.return e
+
   let ls profile ratelimit bucket prefix =
     let ratelimit_f = match ratelimit with
       | None -> fun () -> Deferred.return (Ok ())
       | Some n -> fun () -> after (1000. /. float n) >>= fun () -> Deferred.return (Ok ())
     in
     let rec ls_all (result, cont) =
-      Core.List.iter ~f:(fun { last_modified;  S3.Ls.key; size; etag; _ } -> Caml.Printf.printf "%s\t%d\t%s\t%s\n%!" (Time.to_string last_modified) size key etag) result;
+      Core.List.iter ~f:(fun { S3.last_modified; key; size; etag; _ } -> Caml.Printf.printf "%s\t%d\t%s\t%s\n%!" (Time.to_string last_modified) size key etag) result;
 
       match cont with
       | S3.Ls.More continuation -> ratelimit_f ()
@@ -122,15 +133,19 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = Core.Or_error.ok_exn credentials in
     S3.retry ~retries:5 ~f:(S3.ls ~scheme:`Http ?continuation_token:None ~credentials ?prefix ~bucket) () >>=? ls_all
+
+
   let exec ({ Cli.profile }, cmd) =
     begin
       match cmd with
       | Cli.Cp { src; dest; first; last; multi } ->
         cp profile ~use_multi:multi ?first ?last src dest
-      | Rm { bucket; paths }->
+      | Rm { bucket; paths } ->
         rm profile bucket paths
       | Ls { ratelimit; bucket; prefix } ->
         ls profile ratelimit bucket prefix
+      | Head { path } ->
+        head profile path
     end >>= function
     | Ok _ -> return 0
     | Error e ->

@@ -7,6 +7,7 @@ open Cmdliner
 
 type actions =
   | Ls of { bucket: string; prefix: string option; ratelimit: int option; }
+  | Head of { path: string; }
   | Rm of { bucket: string; paths : string list }
   | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool}
 
@@ -69,6 +70,17 @@ let parse exec =
     Term.info "rm" ~doc:"Delete files from s3"
   in
 
+  let head =
+    let path =
+      let doc = "object: <s3://<bucket>/<objname>" in
+      Arg.(required & pos 0 (some string) None & info [] ~docv:"PATH" ~doc)
+    in
+
+    let make opts path = opts, Head { path } in
+    Term.(const make $ common_opts $ path),
+    Term.info "head" ~doc:"Head  files from s3"
+  in
+
   let ls =
     let make opts ratelimit prefix bucket = opts, Ls { bucket; prefix; ratelimit } in
 
@@ -90,7 +102,7 @@ let parse exec =
   in
 
   let commands =
-    let cmds = [cp; rm; ls] in
+    let cmds = [cp; rm; ls; head] in
     Term.(eval_choice help cmds)
   in
   let run = function

@@ -9,18 +9,19 @@ module Make(Compat : Types.Compat) : sig
     | Unknown of int * string
     | Not_found
 
+  type storage_class = Standard | Standard_ia | Onezone_ia | Reduced_redundancy | Glacier
+  type content = {
+    storage_class : storage_class;
+    size : int;
+    last_modified : Time.t;
+    key : string;
+    etag : string;
+  }
+
   type nonrec 'a result = ('a, error) result Deferred.t
   type 'a command = ?scheme:[`Http|`Https] -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
 
   module Ls : sig
-    type storage_class = Standard | Standard_ia | Reduced_redundancy | Glacier
-    type content = {
-      storage_class : storage_class;
-      size : int;
-      last_modified : Time.t;
-      key : string;
-      etag : string;
-    }
     type t = (content list * cont) result
     and cont = More of (unit -> t) | Done
   end
@@ -66,6 +67,10 @@ module Make(Compat : Types.Compat) : sig
   *)
   val get :
     (?range:range -> bucket:string -> key:string -> unit -> string result) command
+
+  (** Call head on the object to retrieve info on a single object *)
+  val head :
+    (bucket:string -> key:string -> unit -> content result) command
 
   (** Delete [key] from [bucket]. *)
   val delete :
