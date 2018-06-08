@@ -258,6 +258,15 @@ module Make(Compat : Types.Compat) = struct
     do_command ?region cmd >>=? fun (_headers, _body) ->
     Deferred.return (Ok ())
 
+  let date_of_rcf1123_string s =
+    String.split ~on:' ' s
+    |> List.tl_exn
+    |> List.rev
+    |> List.tl_exn
+    |> List.rev
+    |> String.concat ~sep:" "
+    |> fun s -> Time.of_string (s ^ "Z")
+
   let head ?(scheme=`Http) ?credentials ?region ~bucket ~key () =
     let path = sprintf "%s/%s" bucket key in
     let cmd ?region () =
@@ -269,10 +278,7 @@ module Make(Compat : Types.Compat) = struct
       Header.get headers "content-length" >>= fun size ->
       Header.get headers "etag" >>= fun etag ->
       Header.get headers "last-modified" >>= fun last_modified ->
-      Printf.eprintf "Last-modified: '%s'\n%!" last_modified;
-      let last_modified = last_modified |> Time.of_string in (* This fails,
-                                                                as the string is
-                                                                'Fri, 18 May 2018 06:17:00 GMT *)
+      let last_modified = date_of_rcf1123_string last_modified in
       let size = size |> int_of_string in
       let storage_class =
         Header.get headers "x-amz-storage-class"

@@ -2,10 +2,9 @@
 
 [ ] Zero copy support (data streaming)
 [ ] Support bigstring
-[ ] Support HEAD operation on objects.
 
-3.0.1: (unreleased)
-
+3.1.0: (unreleased)
+[x] Support HEAD operation on objects.
 [x] Change signature to use string for etag rather than
     Caml.Digest.t === string for clearer documentation
 
