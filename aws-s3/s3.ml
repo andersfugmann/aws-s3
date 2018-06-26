@@ -233,7 +233,7 @@ module Make(Compat : Types.Compat) = struct
     let data = body_of_string data in
     put_body ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data ()
 
-  let get ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key () =
+  let get_body ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key () =
     let headers =
       let r_opt r = Option.value_map ~f:(string_of_int) ~default:"" r in
 
@@ -254,6 +254,10 @@ module Make(Compat : Types.Compat) = struct
       Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`GET ~path ~query:[] ()
     in
     do_command ?region cmd >>=? fun (_headers, body) ->
+    Deferred.return (Ok body)
+
+  let get ?scheme ?credentials ?region ?range ~bucket ~key () =
+    get_body ?scheme ?credentials ?region ?range ~bucket ~key () >>=? fun body ->
     Cohttp_deferred.Body.to_string body >>= fun body ->
     Deferred.return (Ok body)
 

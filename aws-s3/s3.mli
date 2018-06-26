@@ -95,6 +95,17 @@ module Make(Compat : Types.Compat) : sig
       to use https, please make sure that you have enabled ssl for cohttp
       (opam package tls or lwt_ssl for lwt or async_ssl for async)
   *)
+  val get_body :
+    (?range:range -> bucket:string -> key:string -> unit -> Cohttp_deferred.Body.t result) command
+
+  (** Download [key] from s3 in [bucket]
+      If [range] is specified, only a part of the file is retrieved.
+      - If [first] is None, then start from the beginning of the object.
+      - If [last] is None, then get to the end of the object.
+      Scheme defaults to http. If you are uploading across the internet.
+      to use https, please make sure that you have enabled ssl for cohttp
+      (opam package tls or lwt_ssl for lwt or async_ssl for async)
+  *)
   val get :
     (?range:range -> bucket:string -> key:string -> unit -> string result) command
 
