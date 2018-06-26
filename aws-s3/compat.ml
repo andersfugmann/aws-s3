@@ -30,6 +30,7 @@ end
 module Cohttp_deferred = struct
   module Body = struct
     type t = Cohttp.Body.t
+    let empty = Cohttp.Body.empty
     let to_string = Cohttp.Body.to_string
     let of_string = Cohttp.Body.of_string
   end

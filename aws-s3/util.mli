@@ -1,6 +1,5 @@
 (** Utilites *)
 
-open Core
 open Cohttp
 
 type region =
@@ -33,9 +32,19 @@ val region_of_host : string -> region
 module Make : functor(Compat: Types.Compat) -> sig
   open Compat
 
+  type body
+
+  val make_body :
+    content:Cohttp_deferred.Body.t ->
+    length:int ->
+    hash:Digestif.SHA256.Bytes.t ->
+    body
+
+  val body_of_string : string -> body
+
   val make_request :
     scheme:[`Http|`Https] ->
-    ?body:String.t ->
+    ?body:body ->
     ?region:region ->
     ?credentials:Credentials.t ->
     headers:(string * string) list ->

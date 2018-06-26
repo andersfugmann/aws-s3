@@ -26,6 +26,7 @@ end
 module Cohttp_deferred = struct
   module Body = struct
     type t = Cohttp_async.Body.t
+    let empty = Cohttp_async.Body.empty
     let to_string = Cohttp_async.Body.to_string
     let of_string = Cohttp_async.Body.of_string
   end

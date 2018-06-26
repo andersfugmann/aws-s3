@@ -203,7 +203,11 @@ module Make(Compat : Types.Compat) = struct
       Deferred.return (Error (Unknown (code, resp.code)))
   (**/**)
 
-  let put ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data () =
+  type body = Util_deferred.body
+  let make_body = Util_deferred.make_body
+  let body_of_string = Util_deferred.body_of_string
+
+  let put_body ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data () =
     let scheme = Option.value ~default:`Http scheme in
     let path = sprintf "%s/%s" bucket key in
     let headers =
@@ -224,6 +228,10 @@ module Make(Compat : Types.Compat) = struct
       |> String.strip ~drop:(function '"' -> true | _ -> false)
     in
     Deferred.return (Ok etag)
+
+  let put ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data () =
+    let data = body_of_string data in
+    put_body ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data ()
 
   let get ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key () =
     let headers =
@@ -313,7 +321,7 @@ module Make(Compat : Types.Compat) = struct
       let headers = [ "Content-MD5", B64.encode (Caml.Digest.string request) ] in
       let cmd ?region () =
         Util_deferred.make_request ~scheme
-          ~body:request ?credentials ?region ~headers
+          ~body:(Util_deferred.body_of_string request) ?credentials ?region ~headers
           ~meth:`POST ~query:["delete", ""] ~path:bucket ()
       in
       do_command ?region cmd >>=? fun (_headers, body) ->
@@ -378,7 +386,7 @@ module Make(Compat : Types.Compat) = struct
         [part_number] specifies the part numer. Parts will be assembled in order, but
         does not have to be consequtive
     *)
-    let upload_part ?scheme ?credentials ?region t ~part_number ~data () =
+    let upload_part_body ?scheme ?credentials ?region t ~part_number ~data () =
       let scheme = Option.value ~default:`Http scheme in
       let path = sprintf "%s/%s" t.bucket t.key in
       let query =
@@ -397,6 +405,9 @@ module Make(Compat : Types.Compat) = struct
       in
       t.parts <- { etag; part_number } :: t.parts;
       Deferred.return (Ok ())
+
+    let upload_part ?scheme ?credentials ?region t ~part_number ~data () =
+      upload_part_body ?scheme ?credentials ?region t ~part_number ~data:(body_of_string data) ()
 
     (** Specify a part to be a file on s3.
         [range] can be used to only include a part of the s3 file
@@ -437,6 +448,7 @@ module Make(Compat : Types.Compat) = struct
         let parts = Caml.List.sort (fun a b -> compare a.Multipart.part_number b.part_number) t.parts in
         Multipart.Complete.(xml_of_request { parts })
         |> Xml.to_string_fmt
+        |> Util_deferred.body_of_string
       in
       let cmd ?region () =
         Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:request ()
