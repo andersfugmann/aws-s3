@@ -2,6 +2,7 @@
 
 [ ] Zero copy support (data streaming)
 [ ] Support bigstring
+[x] Basic streaming via cohttp's backend-specific stream types
 
 3.1.0: (unreleased)
 [x] Support HEAD operation on objects.
