@@ -47,7 +47,7 @@ module Make(Compat : Types.Compat) : sig
   (** Upload [key] to [bucket].
       Returns the etag of the object. The etag is the md5 checksum (RFC 1864)
   *)
-  val put_body :
+  val put_stream :
     (?content_type:string ->
      ?content_encoding:string ->
      ?acl:string ->
@@ -81,7 +81,7 @@ module Make(Compat : Types.Compat) : sig
       to use https, please make sure that you have enabled ssl for cohttp
       (opam package tls or lwt_ssl for lwt or async_ssl for async)
   *)
-  val get_body :
+  val get_stream :
     (?range:range -> bucket:string -> key:string -> unit -> Cohttp_deferred.Body.t result) command
 
   (** Download [key] from s3 in [bucket]
@@ -133,7 +133,7 @@ module Make(Compat : Types.Compat) : sig
     (** Upload a part of the file. All parts except the last part must be
         at least 5Mb big. All parts must have a unique part number.
         The final file will be assembled from all parts ordered by part number *)
-    val upload_part_body :
+    val upload_part_stream :
       (t -> part_number:int -> data:Cohttp_deferred.Body.t -> data_length:int -> data_sha256:Digestif.SHA256.Bytes.t -> unit -> unit result) command
 
     (** Upload a part of the file. All parts except the last part must be

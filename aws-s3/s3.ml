@@ -203,7 +203,7 @@ module Make(Compat : Types.Compat) = struct
       Deferred.return (Error (Unknown (code, resp.code)))
   (**/**)
 
-  let put_body ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data ~data_length ~data_sha256 () =
+  let put_stream ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data ~data_length ~data_sha256 () =
     let body = Util_deferred.make_body ~content:data ~length:data_length ~hash:data_sha256 in
     let scheme = Option.value ~default:`Http scheme in
     let path = sprintf "%s/%s" bucket key in
@@ -228,11 +228,11 @@ module Make(Compat : Types.Compat) = struct
 
   let put ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data () =
     let { Util.content; length; hash } = Util_deferred.body_of_string data in
-    put_body
+    put_stream
       ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control
       ~bucket ~key ~data:content ~data_length:length ~data_sha256:hash ()
 
-  let get_body ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key () =
+  let get_stream ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key () =
     let headers =
       let r_opt r = Option.value_map ~f:(string_of_int) ~default:"" r in
 
@@ -256,7 +256,7 @@ module Make(Compat : Types.Compat) = struct
     Deferred.return (Ok body)
 
   let get ?scheme ?credentials ?region ?range ~bucket ~key () =
-    get_body ?scheme ?credentials ?region ?range ~bucket ~key () >>=? fun body ->
+    get_stream ?scheme ?credentials ?region ?range ~bucket ~key () >>=? fun body ->
     Cohttp_deferred.Body.to_string body >>= fun body ->
     Deferred.return (Ok body)
 
@@ -389,7 +389,7 @@ module Make(Compat : Types.Compat) = struct
         [part_number] specifies the part numer. Parts will be assembled in order, but
         does not have to be consequtive
     *)
-    let upload_part_body ?scheme ?credentials ?region t ~part_number ~data ~data_length ~data_sha256 () =
+    let upload_part_stream ?scheme ?credentials ?region t ~part_number ~data ~data_length ~data_sha256 () =
       let data = Util_deferred.make_body ~content:data ~length:data_length ~hash:data_sha256 in
       let scheme = Option.value ~default:`Http scheme in
       let path = sprintf "%s/%s" t.bucket t.key in
@@ -412,7 +412,7 @@ module Make(Compat : Types.Compat) = struct
 
     let upload_part ?scheme ?credentials ?region t ~part_number ~data () =
       let { Util.content; length; hash } = Util_deferred.body_of_string data in
-      upload_part_body ?scheme ?credentials ?region t
+      upload_part_stream ?scheme ?credentials ?region t
         ~part_number ~data:content ~data_length:length ~data_sha256:hash ()
 
     (** Specify a part to be a file on s3.
