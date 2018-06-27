@@ -29,22 +29,26 @@ val string_of_region : region -> string
 val region_of_string : string -> region
 val region_of_host : string -> region
 
+type 'content body = {
+  content: 'content;
+  length: int;
+  hash: Digestif.SHA256.Bytes.t;
+}
+
 module Make : functor(Compat: Types.Compat) -> sig
   open Compat
-
-  type body
 
   val make_body :
     content:Cohttp_deferred.Body.t ->
     length:int ->
     hash:Digestif.SHA256.Bytes.t ->
-    body
+    Cohttp_deferred.Body.t body
 
-  val body_of_string : string -> body
+  val body_of_string : string -> Cohttp_deferred.Body.t body
 
   val make_request :
     scheme:[`Http|`Https] ->
-    ?body:body ->
+    ?body:Cohttp_deferred.Body.t body ->
     ?region:region ->
     ?credentials:Credentials.t ->
     headers:(string * string) list ->

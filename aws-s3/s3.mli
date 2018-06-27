@@ -44,22 +44,6 @@ module Make(Compat : Types.Compat) : sig
 
   type range = { first: int option; last:int option }
 
-  (** A potentially streaming request or response body *)
-  type body
-
-  (** Create a body with pre-computed length and cryptographic hash information
-      specified.  This is mostly useful when setting up a content to stream
-      data to S3. *)
-  val make_body :
-    content:Cohttp_deferred.Body.t ->
-    length:int ->
-    hash:Digestif.SHA256.Bytes.t ->
-    body
-
-  (** Create a {!body} from a string, automatically calculating the length and
-      hash. *)
-  val body_of_string : string -> body
-
   (** Upload [key] to [bucket].
       Returns the etag of the object. The etag is the md5 checksum (RFC 1864)
   *)
@@ -70,7 +54,9 @@ module Make(Compat : Types.Compat) : sig
      ?cache_control:string ->
      bucket:string ->
      key:string ->
-     data:body ->
+     data:Cohttp_deferred.Body.t ->
+     data_length:int ->
+     data_sha256:Digestif.SHA256.Bytes.t ->
      unit -> string result) command
 
   (** Upload [key] to [bucket].
@@ -148,7 +134,7 @@ module Make(Compat : Types.Compat) : sig
         at least 5Mb big. All parts must have a unique part number.
         The final file will be assembled from all parts ordered by part number *)
     val upload_part_body :
-      (t -> part_number:int -> data:body -> unit -> unit result) command
+      (t -> part_number:int -> data:Cohttp_deferred.Body.t -> data_length:int -> data_sha256:Digestif.SHA256.Bytes.t -> unit -> unit result) command
 
     (** Upload a part of the file. All parts except the last part must be
         at least 5Mb big. All parts must have a unique part number.
