@@ -252,13 +252,23 @@ module Make(Compat : Types.Compat) = struct
     let cmd ?region () =
       Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`GET ~path ~query:[] ()
     in
-    do_command ?region cmd >>=? fun (_headers, body) ->
-    Deferred.return (Ok body)
+    do_command ?region cmd >>=? fun (headers, body) ->
+    let content_length =
+      Header.get headers "content-length"
+      |> Option.bind ~f:(fun length -> Option.try_with (fun () -> Int.of_string length))
+      |> (fun length -> Option.value_exn ~message:"Get reply did not contain a valid content-length header" length)
+    in
+    Deferred.return (Ok (body, content_length))
 
   let get ?scheme ?credentials ?region ?range ~bucket ~key () =
-    get_stream ?scheme ?credentials ?region ?range ~bucket ~key () >>=? fun body ->
+    get_stream ?scheme ?credentials ?region ?range ~bucket ~key () >>=? fun (body, length) ->
     Cohttp_deferred.Body.to_string body >>= fun body ->
-    Deferred.return (Ok body)
+    let actual_length = String.length body in
+    if actual_length = length then
+      Deferred.return (Ok body)
+    else
+      Error.createf "Get body length mismatch: actual %d, headers specified %d" actual_length length
+      |> Error.raise
 
   let delete ?scheme ?credentials ?region ~bucket ~key () =
     let scheme = Option.value ~default:`Http scheme in

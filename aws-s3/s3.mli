@@ -82,7 +82,7 @@ module Make(Compat : Types.Compat) : sig
       (opam package tls or lwt_ssl for lwt or async_ssl for async)
   *)
   val get_stream :
-    (?range:range -> bucket:string -> key:string -> unit -> Cohttp_deferred.Body.t result) command
+    (?range:range -> bucket:string -> key:string -> unit -> (Cohttp_deferred.Body.t * int) result) command
 
   (** Download [key] from s3 in [bucket]
       If [range] is specified, only a part of the file is retrieved.
