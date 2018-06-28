@@ -26,6 +26,7 @@ module type Compat = sig
   module Cohttp_deferred : sig
     module Body : sig
       type t
+      val empty: t
       val to_string: t -> string Deferred.t
       val of_string: string -> t
     end

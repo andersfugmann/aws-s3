@@ -47,6 +47,21 @@ module Make(Compat : Types.Compat) : sig
   (** Upload [key] to [bucket].
       Returns the etag of the object. The etag is the md5 checksum (RFC 1864)
   *)
+  val put_stream :
+    (?content_type:string ->
+     ?content_encoding:string ->
+     ?acl:string ->
+     ?cache_control:string ->
+     bucket:string ->
+     key:string ->
+     data:Cohttp_deferred.Body.t ->
+     data_length:int ->
+     data_sha256:Digestif.SHA256.Bytes.t ->
+     unit -> string result) command
+
+  (** Upload [key] to [bucket].
+      Returns the etag of the object. The etag is the md5 checksum (RFC 1864)
+  *)
   val put :
     (?content_type:string ->
      ?content_encoding:string ->
@@ -54,8 +69,20 @@ module Make(Compat : Types.Compat) : sig
      ?cache_control:string ->
      bucket:string ->
      key:string ->
-     data:string -> unit -> string result) command
+     data:string ->
+     unit -> string result) command
 
+
+  (** Download [key] from s3 in [bucket]
+      If [range] is specified, only a part of the file is retrieved.
+      - If [first] is None, then start from the beginning of the object.
+      - If [last] is None, then get to the end of the object.
+      Scheme defaults to http. If you are uploading across the internet.
+      to use https, please make sure that you have enabled ssl for cohttp
+      (opam package tls or lwt_ssl for lwt or async_ssl for async)
+  *)
+  val get_stream :
+    (?range:range -> bucket:string -> key:string -> unit -> (Cohttp_deferred.Body.t * int) result) command
 
   (** Download [key] from s3 in [bucket]
       If [range] is specified, only a part of the file is retrieved.
@@ -102,6 +129,12 @@ module Make(Compat : Types.Compat) : sig
       ?acl:string ->
       ?cache_control:string ->
       bucket:string -> key:string -> unit -> t result) command
+
+    (** Upload a part of the file. All parts except the last part must be
+        at least 5Mb big. All parts must have a unique part number.
+        The final file will be assembled from all parts ordered by part number *)
+    val upload_part_stream :
+      (t -> part_number:int -> data:Cohttp_deferred.Body.t -> data_length:int -> data_sha256:Digestif.SHA256.Bytes.t -> unit -> unit result) command
 
     (** Upload a part of the file. All parts except the last part must be
         at least 5Mb big. All parts must have a unique part number.

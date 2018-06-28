@@ -157,9 +157,21 @@ let region_of_host host =
 let host_of_region region =
     string_of_region region |> sprintf "s3.%s.amazonaws.com"
 
+type 'content body = {
+  content: 'content;
+  length: int;
+  hash: Digestif.SHA256.Bytes.t;
+}
+
 module Auth = struct
   (** AWS S3 Authorization *)
-  let digest (s : string) =
+  let digest_body (body : _ body) =
+    let open Digestif.SHA256.Bytes in
+    body.hash
+    |> to_hex
+    |> Caml.Bytes.to_string
+
+  let digest s =
     let open Digestif.SHA256.Bytes in
     Caml.Bytes.of_string s
     |> digest
@@ -183,7 +195,7 @@ module Auth = struct
     let hashed_payload =
       match body with
         None -> empty_digest
-      | Some s -> digest s
+      | Some s -> digest_body s
     in
     let token_header = match credentials with
       | Some { Credentials.aws_token = Some token; _ } ->
@@ -303,6 +315,17 @@ end
 module Make(C : Types.Compat) = struct
   open C
 
+  type nonrec body = Cohttp_deferred.Body.t body
+
+  let make_body ~content ~length ~hash : body =
+    { content; length; hash }
+
+  let body_of_string s : body = {
+    content = Cohttp_deferred.Body.of_string s;
+    length = String.length s;
+    hash = Digestif.SHA256.Bytes.digest (Caml.Bytes.of_string s);
+  }
+
   let make_request ~scheme ?body ?(region=Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
     let host_str = host_of_region region in
     let uri = Uri.make
@@ -315,7 +338,9 @@ module Make(C : Types.Compat) = struct
     (* If PUT|POST add content length *)
     let content_length = match meth with
       | `PUT | `POST ->
-        let length = Option.value_map ~f:(String.length) ~default:0 body in
+        let length =
+          Option.value_map ~f:(fun (body: body) -> body.length) ~default:0 body
+        in
         Some ("Content-Length", Int.to_string length)
       | _ -> None
     in
@@ -342,7 +367,7 @@ module Make(C : Types.Compat) = struct
     match meth with
     | `PUT
     | `POST ->
-      let body = Option.map ~f:(Cohttp_deferred.Body.of_string) body in
+      let body = Option.map ~f:(fun { content; _} -> content) body in
       Cohttp_deferred.Client.request ~scheme ?body request
     | `GET
     | `DELETE
