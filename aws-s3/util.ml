@@ -160,22 +160,11 @@ let host_of_region region =
 module Auth = struct
   (** AWS S3 Authorization *)
   let digest (s : string) =
-    let open Digestif.SHA256.Bytes in
-    Caml.Bytes.of_string s
-    |> digest
-    |> to_hex
-    |> Caml.Bytes.to_string
+    Digestif.SHA256.digest_string s
+    |> Digestif.SHA256.to_hex
 
   let mac ~key v =
-    let key = Caml.Bytes.of_string key in
-    let v = Caml.Bytes.of_string v in
-    Digestif.SHA256.Bytes.hmac ~key v
-    |> Caml.Bytes.to_string
-
-  let to_hex (k : string) =
-    let k = Caml.Bytes.of_string k in
-    let h = Digestif.SHA256.Bytes.to_hex k |> Caml.Bytes.to_string in
-    h
+    Digestif.SHA256.hmac_string ~key v
 
   let empty_digest = digest ""
   let make_amz_headers ?credentials ?body time =
@@ -254,10 +243,10 @@ module Auth = struct
 
     let make ~date ~region ~secret_access_key =
       let date_key = mac ~key:("AWS4" ^ secret_access_key) date in
-      let date_region_key = mac ~key:date_key (string_of_region region) in
-      let date_region_service_key = mac ~key:date_region_key "s3" in
-      let signing_key = mac ~key:date_region_service_key "aws4_request" in
-      signing_key
+      let date_region_key = mac ~key:(date_key :> string) (string_of_region region) in
+      let date_region_service_key = mac ~key:(date_region_key :> string) "s3" in
+      let signing_key = mac ~key:(date_region_service_key :> string) "aws4_request" in
+      (signing_key :> string)
     in
 
     fun ?date ~region ~secret_access_key ->
@@ -289,7 +278,7 @@ module Auth = struct
         aws_access_key (Date.to_string_iso8601_basic date)
         (string_of_region region)
     in
-    let signature = mac ~key:signing_key string_to_sign |> to_hex in
+    let signature = mac ~key:signing_key string_to_sign |> Digestif.SHA256.to_hex in
 
     let auth_header = sprintf
         "AWS4-HMAC-SHA256 Credential=%s,SignedHeaders=%s,Signature=%s"

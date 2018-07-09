@@ -14,7 +14,7 @@ depends: [
   "ounit"
   "cohttp"
   "ocaml-inifiles"
-  "digestif"
+  "digestif" { >= "0.6" }
   "xml-light"
   "yojson"
   "ppx_protocol_conv_xml_light"
