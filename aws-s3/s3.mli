@@ -4,7 +4,7 @@ module Make(Compat : Types.Compat) : sig
   open Core
 
   type error =
-    | Redirect of Util.region
+    | Redirect of Region.t
     | Throttled
     | Unknown of int * string
     | Not_found
@@ -19,7 +19,7 @@ module Make(Compat : Types.Compat) : sig
   }
 
   type nonrec 'a result = ('a, error) result Deferred.t
-  type 'a command = ?scheme:[`Http|`Https] -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
+  type 'a command = ?scheme:[`Http|`Https] -> ?credentials:Credentials.t -> ?region:Region.t -> 'a
 
   module Ls : sig
     type t = (content list * cont) result
@@ -123,8 +123,8 @@ module Make(Compat : Types.Compat) : sig
   (** Helper function to handle error codes.
       The function handle redirects and throttling.
   *)
-  val retry : ?region:Util.region -> retries:int ->
-    f:(?region:Util.region -> unit -> ('a, error) Result.t Deferred.t) -> unit ->
+  val retry : ?region:Region.t -> retries:int ->
+    f:(?region:Region.t -> unit -> ('a, error) Result.t Deferred.t) -> unit ->
     ('a, error) Result.t Deferred.t
 end
 

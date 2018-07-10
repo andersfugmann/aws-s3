@@ -1,18 +1,18 @@
 (** Loading credentials locally or from IAM service. *)
 type t = {
-  aws_access_key: string;
-  aws_secret_key: string;
-  aws_token: string option;
+  access_key: string;
+  secret_key: string;
+  token: string option;
   expiration: Core.Time.t option;
 }
 
+(** Make credentials *)
+val make_credentials :
+  access_key:string -> secret_key:string ->
+  ?token:string -> ?expiration:Core.Time.t -> unit -> t
+
 module Make(Compat : Types.Compat) : sig
   open Compat
-
-  (** Make credentials *)
-  val make_credentials :
-    access_key:string -> secret_key:string ->
-    ?token:string -> ?expiration:Core.Time.t -> unit -> t
 
   module Iam : sig
 

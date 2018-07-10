@@ -8,6 +8,18 @@ BUKCET=aws-s3-test1
 TEMP=$(mktemp)
 BIN="jbuilder exec aws-cli-async --"
 
+function test {
+    echo -n "$1: "
+    shift
+    $@
+    if [ $? -eq 0 ]; then
+        echo "ok"
+    else
+        echo "fail"
+        exit 1
+    fi
+}
+
 function fail {
     echo Failed: $1
     exit 1
@@ -17,31 +29,21 @@ function cleanup {
 }
 trap cleanup EXIT
 
-echo "Test Simple put"
-${BIN} cp $0 s3://${BUKCET}/test || fail "upload"
-${BIN} cp s3://${BUKCET}/test ${TEMP} || fail "download"
-diff $0 ${TEMP} || "wrong data"
+test "upload1" ${BIN} cp $0 s3://${BUKCET}/test
+test "download1" ${BIN} cp s3://${BUKCET}/test ${TEMP}
+test "wrong data1" diff $0 ${TEMP}
 
+test "multi_upload" ${BIN} cp -m $0 s3://${BUKCET}/test
+test "download" ${BIN} cp s3://${BUKCET}/test ${TEMP}
+test "wrong data" diff $0 ${TEMP}
 
-echo "Test Multi put"
-${BIN} cp -m $0 s3://${BUKCET}/test || fail "multi_upload"
-${BIN} cp s3://${BUKCET}/test ${TEMP} || fail "download"
-diff $0 ${TEMP} || "wrong data"
+test "partial get" ${BIN} cp --first=10 --last=19 s3://${BUKCET}/test ${TEMP}
+test "partial result" [ "$(wc -c ${TEMP} | cut -f 1 -d' ')" -eq "10" ]
 
-
-echo "Test Partial get"
-${BIN} cp $0 s3://${BUKCET}/test
-${BIN} cp --first=10 --last=19 s3://${BUKCET}/test ${TEMP}
-[ "$(wc -c ${TEMP} | cut -f 1 -d' ')" -eq "10" ]
-
-echo "Test ls"
 MD5=$(md5sum $0 | cut -f 1 -d' ')
-${BIN} ls ${BUKCET} | grep -q "${MD5}" || fail "ls"
+test "ls" ${BIN} ls ${BUKCET} | grep -q "${MD5}"
 
-echo "Test head"
-${BIN} head s3://${BUKCET}/test | grep -q "${MD5}" || fail "head"
+test "head" ${BIN} head s3://${BUKCET}/test | grep -q "${MD5}"
 
-echo "Test rm"
-${BIN} rm ${BUKCET} test || fail "rm"
-${BIN} ls ${BUKCET} > /dev/null || fail "ls"
-echo All OK
+test "rm" ${BIN} rm ${BUKCET} test
+test "ls" ${BIN} ls ${BUKCET} > /dev/null

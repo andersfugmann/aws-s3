@@ -7,19 +7,19 @@ let time_of_json t =
   Json.to_string t |> Time.of_string
 
 type t = {
-  aws_access_key: string [@key "AccessKeyId"];
-  aws_secret_key: string [@key "SecretAccessKey"];
-  aws_token: string option [@key "Token"];
+  access_key: string [@key "AccessKeyId"];
+  secret_key: string [@key "SecretAccessKey"];
+  token: string option [@key "Token"];
   expiration: time option [@key "Expiration"];
 } [@@deriving of_protocol ~driver:(module Json)]
+
+let make_credentials ~access_key ~secret_key ?token ?expiration () =
+  { access_key; secret_key; token; expiration }
 
 
 module Make(Compat : Types.Compat) = struct
   open Compat
   open Deferred.Infix
-
-  let make_credentials ~access_key ~secret_key ?token ?expiration () =
-    { aws_access_key=access_key; aws_secret_key=secret_key; aws_token=token; expiration }
 
   module Iam = struct
     let instance_data_host = "instance-data.ec2.internal"

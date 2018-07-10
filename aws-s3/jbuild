@@ -7,6 +7,7 @@
   (libraries (core oUnit cohttp inifiles digestif.c
               ppx_protocol_conv_json
               ppx_protocol_conv_xml_light ))
-  (preprocess (pps (ppx_protocol_conv ppx_driver.runner)))
+  (preprocess (pps (ppx_inline_test ppx_protocol_conv ppx_driver.runner)))
+  (inline_tests)
  )
 )
