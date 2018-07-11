@@ -13,12 +13,18 @@ let hmac_sha256 ~key v =
 let to_hex str = Digestif.SHA256.to_hex str
 
 (** This should be caching within 24h *)
-let make_signing_key ~date ~region ~secret_key ~service =
-  let date_key = hmac_sha256 ~key:("AWS4" ^ secret_key) date in
-  let date_region_key = hmac_sha256 ~key:(date_key :> string) region in
-  let date_region_service_key = hmac_sha256 ~key:(date_region_key :> string) service in
-  let signing_key = hmac_sha256 ~key:(date_region_service_key :> string) "aws4_request" in
-  signing_key
+let make_signing_key =
+  let cache = Hashtbl.create (module String) in
+  fun ~date ~region ~credentials ~service ->
+    match Hashtbl.find cache credentials.Credentials.access_key with
+    | Some (d, signing_key) when d = date -> signing_key
+    | Some _ | None ->
+      let date_key = hmac_sha256 ~key:("AWS4" ^ credentials.Credentials.secret_key) date in
+      let date_region_key = hmac_sha256 ~key:(date_key :> string) region in
+      let date_region_service_key = hmac_sha256 ~key:(date_region_key :> string) service in
+      let signing_key = hmac_sha256 ~key:(date_region_service_key :> string) "aws4_request" in
+      Hashtbl.set cache ~key:credentials.Credentials.access_key ~data:(date, signing_key);
+      signing_key
 
 let string_to_sign ~date ~time ~verb ~path ~query ~headers ~payload_sha ~region ~service =
   assert (HeaderMap.length headers > 0);
@@ -63,7 +69,7 @@ let string_to_sign ~date ~time ~verb ~path ~query ~headers ~payload_sha ~region 
   (string_to_sign, signed_headers)
 
 let make_authorization ~date ~time ~verb ~credentials ~path ~headers ~query ~region ~service ~payload_sha =
-  let signing_key = make_signing_key ~date ~region ~service ~secret_key:credentials.Credentials.secret_key in
+  let signing_key = make_signing_key ~date ~region ~service ~credentials in
   let (string_to_sign, signed_headers) =
     string_to_sign ~region ~date ~time ~verb ~path ~query ~headers ~payload_sha ~service
   in
@@ -79,7 +85,7 @@ let make_authorization ~date ~time ~verb ~credentials ~path ~headers ~query ~reg
   auth
 
 let%test _ =
-  let creds = Credentials.make_credentials
+  let credentials = Credentials.make_credentials
       ~access_key:"AKIAIOSFODNN7EXAMPLE"
       ~secret_key:"wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
       ()
@@ -88,7 +94,7 @@ let%test _ =
   let region = "us-east-1" in
   let service = "iam" in
   let signing_key =
-    make_signing_key ~date ~region ~service ~secret_key:creds.Credentials.secret_key
+    make_signing_key ~date ~region ~service ~credentials
     |> to_hex
   in
   let expected = "f4780e2d9f65fa895f9c67b32ce1baf0b0d8a43505a000a1a9e090d414db404d" in

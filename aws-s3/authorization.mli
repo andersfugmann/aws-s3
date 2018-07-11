@@ -6,7 +6,9 @@ val to_hex : Digestif.SHA256.t -> string
 
 val make_signing_key :
   date:string ->
-  region:string -> secret_key:string -> service:string -> Digestif.SHA256.t
+  region:string ->
+  credentials:Credentials.t ->
+  service:string -> Digestif.SHA256.t
 
 val string_to_sign :
   date:string ->
