@@ -42,20 +42,21 @@ let string_to_sign ~time ~verb ~path ~query ~headers ~payload_sha ~region ~servi
     ) ~init:(0,0) headers
   in
   let canonical_headers = Buffer.create(key_size + value_size + ( 1 + 1 (*:\n*) ) * HeaderMap.length headers) in
-  let signed_headers = Buffer.create (key_size + HeaderMap.length headers) in
+  let signed_headers = Buffer.create (key_size + (HeaderMap.length headers - 1)) in
 
+  let first = ref true in
   HeaderMap.iteri ~f:(fun ~key ~data ->
       let lower_header = String.lowercase key in
+      if (not !first) then Buffer.add_string signed_headers ";";
       Buffer.add_string signed_headers lower_header;
-      Buffer.add_string signed_headers ";";
       Buffer.add_string canonical_headers lower_header;
       Buffer.add_string canonical_headers ":";
       Buffer.add_string canonical_headers data;
       Buffer.add_string canonical_headers "\n";
+      first := false;
     ) headers;
 
   (* Strip the trailing from signed_headers *)
-  Buffer.truncate signed_headers (Buffer.length signed_headers - 1);
   let signed_headers = Buffer.contents signed_headers in
 
   let canonical_request = sprintf "%s\n%s\n%s\n%s\n%s\n%s"
