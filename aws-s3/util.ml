@@ -91,7 +91,11 @@ module Make(C : Types.Compat) = struct
 
     let headers =
       let change ~key ~f map = Authorization.HeaderMap.change map key ~f in
-      let add = Authorization.HeaderMap.add_exn in
+      let add ~key ~data map =
+        match Authorization.HeaderMap.add map ~key ~data with
+        | `Duplicate -> failwith "Duplicate header fields not supported."
+        | `Ok map -> map
+      in
       let add_opt ~key ~data map = Option.value_map ~default:map ~f:(fun data -> add ~key ~data map) data in
 
       let headers =
