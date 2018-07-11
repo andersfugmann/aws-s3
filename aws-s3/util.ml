@@ -17,9 +17,24 @@
   }}}*)
 
 open Core
-module Auth' = Auth
 open Cohttp
-module Auth = Auth'
+
+let yyymmdd_of_time time =
+  Date.of_time ~zone:Time.Zone.utc time
+  |> Date.to_string_iso8601_basic
+
+let iso8601_of_time time =
+  let {Time.Span.Parts.hr; min; sec; _} =
+    Time.to_ofday ~zone:Time.Zone.utc time
+    |> Time.Ofday.to_parts
+  in
+  (yyymmdd_of_time time, sprintf "%.2d%.2d%.2d" hr min sec)
+
+let%test _ =
+  let date, time = Time.(Span.of_int_sec 1369353600 |> of_span_since_epoch)
+                   |> iso8601_of_time
+  in
+  "20130524T000000Z" = sprintf "%sT%sZ" date time
 
 let encode_string s =
   (* Percent encode the path as s3 wants it. Uri doesn't
@@ -50,14 +65,14 @@ let encode_string s =
   done;
   Buffer.contents buf
 
-let empty_sha = Auth.hash_sha256 "" |> Auth.to_hex
+let empty_sha = Authorization.hash_sha256 "" |> Authorization.to_hex
 
 module Make(C : Types.Compat) = struct
   open C
   let make_request ~scheme ?body ?(region=Region.Us_east_1) ?(credentials:Credentials.t option) ~headers
       ~(meth:[ `DELETE | `GET | `HEAD | `POST | `PUT ]) ~path ~query () =
     let host_str = Region.to_host region in
-    let time = Time.now () in
+    let (date, time)  = Time.now () |> iso8601_of_time in
 
     (* Create headers structure *)
     let content_length =
@@ -67,7 +82,7 @@ module Make(C : Types.Compat) = struct
     in
     let payload_sha = match body with
       | None -> empty_sha
-      | Some body -> Auth.hash_sha256 body |> Auth.to_hex
+      | Some body -> Authorization.hash_sha256 body |> Authorization.to_hex
     in
     let token = match credentials with
       | Some { Credentials.token ; _ } -> token
@@ -75,15 +90,15 @@ module Make(C : Types.Compat) = struct
     in
 
     let headers =
-      let change ~key ~f map = Auth.HeaderMap.change map key ~f in
-      let add = Auth.HeaderMap.add_exn in
+      let change ~key ~f map = Authorization.HeaderMap.change map key ~f in
+      let add = Authorization.HeaderMap.add_exn in
       let add_opt ~key ~data map = Option.value_map ~default:map ~f:(fun data -> add ~key ~data map) data in
 
       let headers =
-        Auth.HeaderMap.of_alist_exn headers
+        Authorization.HeaderMap.of_alist_exn headers
         |> add     ~key:"Host"                 ~data:host_str
         |> add     ~key:"x-amz-content-sha256" ~data:payload_sha
-        |> add     ~key:"x-amz-date"           ~data:(Auth.iso8601_of_time time)
+        |> add     ~key:"x-amz-date"           ~data:(sprintf "%sT%sZ" date time)
         |> add_opt ~key:"x-amz-security-token" ~data:token
         |> add_opt ~key:"Content-Length"       ~data:content_length
         |> change  ~key:"User-Agent" ~f:(function Some _ as r -> r | None -> Some "aws-s3 ocaml client")
@@ -96,8 +111,8 @@ module Make(C : Types.Compat) = struct
             List.map query ~f:(fun (k, v) -> sprintf "%s=%s" (encode_string k) (encode_string v))
             |> String.concat ~sep:"&"
           in
-          Auth.make_authorization
-            ~time ~verb ~credentials ~path ~headers
+          Authorization.make_authorization
+            ~date ~time ~verb ~credentials ~path ~headers
             ~query ~region ~service:"s3" ~payload_sha:payload_sha
         )
       in
@@ -112,7 +127,7 @@ module Make(C : Types.Compat) = struct
     in
 
     let request = Request.make ~meth:(meth :> Code.meth)
-        ~headers:(Header.of_list (Auth.HeaderMap.to_alist headers))
+        ~headers:(Header.of_list (Authorization.HeaderMap.to_alist headers))
         uri
     in
     (* Dont use request at all. *)

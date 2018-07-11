@@ -3,15 +3,14 @@ module HeaderMap : Map.S with type Key.t = string
 val hash_sha256 : string -> Digestif.SHA256.t
 val hmac_sha256 : key:string -> string -> Digestif.SHA256.t
 val to_hex : Digestif.SHA256.t -> string
-val yyymmdd_of_time : Time.t -> Base.string
-val iso8601_of_time : Time.t -> string
 
 val make_signing_key :
-  time:Time.t ->
+  date:string ->
   region:string -> secret_key:string -> service:string -> Digestif.SHA256.t
 
 val string_to_sign :
-  time:Time.t ->
+  date:string ->
+  time:string ->
   verb:string ->
   path:string ->
   query:string ->
@@ -19,7 +18,8 @@ val string_to_sign :
   payload_sha:string -> region:string -> service:string -> string * string
 
 val make_authorization :
-  time:Time.t ->
+  date:string ->
+  time:string ->
   verb:string ->
   credentials:Credentials.t ->
   path:string ->
