@@ -1,26 +1,36 @@
+open Async_kernel
 module Deferred = struct
   type 'a t = 'a Async_kernel.Deferred.t
 
   module Or_error = struct
-    type nonrec 'a t = 'a Async_kernel.Deferred.Or_error.t
-    let return = Async_kernel.Deferred.Or_error.return
-    let fail = Async_kernel.Deferred.Or_error.fail
-    let catch f = Async_kernel.Deferred.Or_error.try_with_join f
+    type nonrec 'a t = ('a, exn) result t
+    let return v = Async_kernel.Deferred.return (Ok v)
+    let fail exn = Async_kernel.Deferred.return (Error exn)
+    let catch f =
+      Async_kernel.Monitor.try_with f >>= function
+      | Ok v -> Async_kernel.return v
+      | Error exn -> Async_kernel.return (Error exn)
 
     module Infix = struct
-      let (>>=) = Async_kernel.Deferred.Or_error.(>>=)
+      let (>>=) : 'a t -> ('a -> 'b t) -> 'b t = fun v f ->
+        v >>= function
+        | Ok v -> f v
+        | Error exn -> Async_kernel.return (Error exn)
     end
   end
 
   module Infix = struct
     let (>>=) = Async_kernel.(>>=)
     let (>>|) = Async_kernel.(>>|)
-    let (>>=?) = Async_kernel.(>>=?)
+    let (>>=?) v f =
+      v >>= function
+      | Ok v -> f v
+      | Error exn -> return (Error exn)
   end
 
   let return = Async_kernel.return
   let after delay = Async_kernel.after (Core_kernel.Time_ns.Span.of_sec delay)
-  let catch f = Async_kernel.Monitor.try_with_or_error f
+  let catch f = Async_kernel.Monitor.try_with f
 end
 
 module Cohttp_deferred = struct

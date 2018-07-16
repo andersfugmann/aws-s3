@@ -3,11 +3,11 @@ module Deferred = struct
   type 'a t = 'a Lwt.t
 
   module Or_error = struct
-    type nonrec 'a t = ('a, Base.Error.t) Lwt_result.t
+    type nonrec 'a t = ('a, exn) Lwt_result.t
     let return = Lwt_result.return
     let fail = Lwt_result.fail
     let catch : (unit -> 'a t) -> 'a t = fun f ->
-      Lwt.catch f (fun exn -> Core.Error.of_exn exn |> Lwt_result.fail)
+      Lwt.catch f Lwt_result.fail
 
     module Infix = struct
       let (>>=) a b =
@@ -28,7 +28,7 @@ module Deferred = struct
   let catch f =
     Lwt.catch
       (fun () -> f () >>= Or_error.return)
-      (fun exn -> Or_error.fail (Core.Error.of_exn exn))
+      (fun exn -> Or_error.fail exn)
 end
 
 module Cohttp_deferred = struct

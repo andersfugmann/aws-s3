@@ -1,12 +1,15 @@
 module Deferred = struct
-  open Core
   type 'a t = 'a
 
   module Or_error = struct
-    type nonrec 'a t = 'a Or_error.t
-    let return = Or_error.return
-    let fail e = Result.Error e
-    let catch f = Or_error.try_with_join f
+    type nonrec 'a t = ('a, exn) result
+    let return v = Ok v
+    let fail exn = Error exn
+    let catch f =
+      try
+        f ()
+      with
+        exn -> fail exn
 
     module Infix = struct
       let (>>=) a b =
@@ -23,8 +26,8 @@ module Deferred = struct
   end
 
   let return a = a
-  let after delay = Unix.nanosleep delay |> ignore
-  let catch f = Core.Or_error.try_with f
+  let after delay = Thread.delay delay |> ignore
+  let catch f = Or_error.catch (fun () -> f () |> Or_error.return)
 end
 
 module Cohttp_deferred = struct

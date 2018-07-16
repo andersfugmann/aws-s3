@@ -1,8 +1,13 @@
 (* Auth based on aws papers
    https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
 *)
-open Core
-module HeaderMap = Map.Make(String.Caseless)
+(* Maybe we should just hold the lowercased values as key *)
+open StdLabels
+let sprintf = Printf.sprintf
+module HeaderMap = Map.Make(struct
+    type t = string
+    let compare a b = String.(compare (lowercase_ascii a) (lowercase_ascii b))
+  end)
 
 let hash_sha256 s =
   Digestif.SHA256.digest_string s
@@ -14,32 +19,33 @@ let to_hex str = Digestif.SHA256.to_hex str
 
 (** This should be caching within 24h *)
 let make_signing_key =
-  let cache = Hashtbl.create (module String) in
+  let cache = Hashtbl.create 0 in
   fun ~date ~region ~credentials ~service ->
-    match Hashtbl.find cache credentials.Credentials.access_key with
+    match Hashtbl.find_opt cache credentials.Credentials.access_key with
     | Some (d, signing_key) when d = date -> signing_key
     | Some _ | None ->
       let date_key = hmac_sha256 ~key:("AWS4" ^ credentials.Credentials.secret_key) date in
       let date_region_key = hmac_sha256 ~key:(date_key :> string) region in
       let date_region_service_key = hmac_sha256 ~key:(date_region_key :> string) service in
       let signing_key = hmac_sha256 ~key:(date_region_service_key :> string) "aws4_request" in
-      Hashtbl.set cache ~key:credentials.Credentials.access_key ~data:(date, signing_key);
+      Hashtbl.replace cache credentials.Credentials.access_key (date, signing_key);
       signing_key
 
 let string_to_sign ~date ~time ~verb ~path ~query ~headers ~payload_sha ~region ~service =
-  assert (HeaderMap.length headers > 0);
+  assert (HeaderMap.cardinal headers > 0);
   (* Count sizes of headers *)
   let (key_size, value_size) =
-    HeaderMap.fold ~f:(
-      fun ~key ~data (h, v) -> (h + String.length key, v + String.length data)
-    ) ~init:(0,0) headers
+    HeaderMap.fold (
+      fun key data (h, v) -> (h + String.length key, v + String.length data)
+    ) headers (0,0)
   in
-  let canonical_headers = Buffer.create(key_size + value_size + ( 2 (*:\n*) ) * HeaderMap.length headers) in
-  let signed_headers = Buffer.create (key_size + (HeaderMap.length headers - 1)) in
+  let header_count = HeaderMap.cardinal headers in
+  let canonical_headers = Buffer.create (key_size + value_size + (2 (*:\n*) * header_count)) in
+  let signed_headers = Buffer.create (key_size + (HeaderMap.cardinal headers - 1)) in
 
   let first = ref true in
-  HeaderMap.iteri ~f:(fun ~key ~data ->
-      let lower_header = String.lowercase key in
+  HeaderMap.iter (fun key data ->
+      let lower_header = String.lowercase_ascii key in
       if (not !first) then Buffer.add_string signed_headers ";";
       Buffer.add_string signed_headers lower_header;
       Buffer.add_string canonical_headers lower_header;
@@ -110,12 +116,13 @@ let%test _ =
   let region = "us-east-1" in
   let path = "/test.txt" in
   let service = "s3" in
-  let headers = HeaderMap.of_alist_exn
+  let headers =
       [ ("Host","examplebucket.s3.amazonaws.com");
         ("Range", "bytes=0-9");
         ("x-amz-content-sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
         ("x-amz-date", "20130524T000000Z")
       ]
+      |> List.fold_left ~f:(fun acc (key, value) -> HeaderMap.add key value acc) ~init:HeaderMap.empty
   in
   let verb = "GET" in
   let query = "" in

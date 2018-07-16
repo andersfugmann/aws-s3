@@ -1,6 +1,4 @@
 (** Utilites *)
-
-open Core
 open Cohttp
 
 module Make : functor(Compat: Types.Compat) -> sig
@@ -19,10 +17,3 @@ module Make : functor(Compat: Types.Compat) -> sig
     (Response.t * Cohttp_deferred.Body.t) Deferred.t
 
 end
-
-(*
-module Test : sig
-  open OUnit2
-  val unit_test : ((test_ctxt -> unit Deferred.t) -> test_ctxt -> unit) -> test
-end
-*)

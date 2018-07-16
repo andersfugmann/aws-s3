@@ -1,4 +1,19 @@
-open Core
+open StdLabels
+let sprintf = Printf.sprintf
+let ok_exn = function
+  | Ok v -> v
+  | Error exn -> raise exn
+
+module Option = struct
+  let value ~default = function
+    | Some v -> v
+    | None -> default
+
+  let value_exn ~message = function
+    | Some v -> v
+    | None -> failwith message
+end
+
 (* We need to make a functor over deferred *)
 module Make(Compat: Aws_s3.Types.Compat) = struct
   module S3 = Aws_s3.S3.Make(Compat)
@@ -21,8 +36,11 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     Core.Out_channel.(with_file file ~f:(fun c -> output_string c contents))
 
   type objekt = { bucket: string; key: string }
-  let objekt_of_uri u = { bucket = (Option.value_exn ~message:"No Host in uri" (Uri.host u));
-                          key = String.drop_prefix (Uri.path u) 1 (* Remove the beginning '/' *) }
+  let objekt_of_uri u =
+    let path = Uri.path u in
+    { bucket = (Option.value_exn ~message:"No Host in uri" (Uri.host u));
+      key = String.sub ~pos:1 ~len:(String.length path - 1) path;
+    }
 
 
   let string_of_error = function
@@ -63,7 +81,7 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
   let cp profile ?(use_multi=false) ?first ?last src dst =
     let range = { S3.first; last } in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
-    let credentials = Core.Or_error.ok_exn credentials in
+    let credentials = ok_exn credentials in
     match determine_paths src dst with
     | S3toLocal (src, dst) ->
       S3.retry ~retries:5
@@ -95,7 +113,7 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
 
   let rm profile bucket paths =
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
-    let credentials = Core.Or_error.ok_exn credentials in
+    let credentials = ok_exn credentials in
     match paths with
     | [ key ] ->
         S3.retry ~retries:5 ~f:(S3.delete ~scheme:`Http ~credentials ~bucket ~key) ()
@@ -107,7 +125,7 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
 
   let head profile path =
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
-    let credentials = Core.Or_error.ok_exn credentials in
+    let credentials = ok_exn credentials in
     let { bucket; key } = objekt_of_uri (Uri.of_string path) in
     S3.head ~credentials ~bucket ~key () >>= function
     | Ok { S3.key; etag; size; _ } ->
@@ -122,7 +140,7 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
       | Some n -> fun () -> after (1000. /. float n) >>= fun () -> Deferred.return (Ok ())
     in
     let rec ls_all (result, cont) =
-      Core.List.iter ~f:(fun { S3.last_modified; key; size; etag; _ } -> Caml.Printf.printf "%s\t%d\t%s\t%s\n%!" (Time.to_string last_modified) size key etag) result;
+      Core.List.iter ~f:(fun { S3.last_modified; key; size; etag; _ } -> Caml.Printf.printf "%s\t%d\t%s\t%s\n%!" (string_of_float last_modified) size key etag) result;
 
       match cont with
       | S3.Ls.More continuation -> ratelimit_f ()
@@ -131,7 +149,7 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
       | S3.Ls.Done -> Deferred.return (Ok ())
     in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
-    let credentials = Core.Or_error.ok_exn credentials in
+    let credentials = ok_exn credentials in
     S3.retry ~retries:5 ~f:(S3.ls ~scheme:`Http ?continuation_token:None ~credentials ?prefix ~bucket) () >>=? ls_all
 
 

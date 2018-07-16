@@ -1,7 +1,6 @@
 (** S3 commands *)
 module Make(Compat : Types.Compat) : sig
   open Compat
-  open Core
 
   type error =
     | Redirect of Region.t
@@ -13,7 +12,7 @@ module Make(Compat : Types.Compat) : sig
   type content = {
     storage_class : storage_class;
     size : int;
-    last_modified : Time.t;
+    last_modified : float;
     key : string;
     etag : string;
   }
@@ -124,11 +123,5 @@ module Make(Compat : Types.Compat) : sig
       The function handle redirects and throttling.
   *)
   val retry : ?region:Region.t -> retries:int ->
-    f:(?region:Region.t -> unit -> ('a, error) Result.t Deferred.t) -> unit ->
-    ('a, error) Result.t Deferred.t
-end
-
-module Test : sig
-  open OUnit2
-  val unit_test : test
+    f:(?region:Region.t -> unit -> 'a result) -> unit -> 'a result
 end

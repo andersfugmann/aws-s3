@@ -1,5 +1,4 @@
 (** Parse command line options *)
-open Core
 open Cmdliner
 (* When executing, we take a function to do the work,
    so we need a descr of what to do.

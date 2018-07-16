@@ -1,4 +1,6 @@
-open Core
+open !StdLabels
+let sprintf = Printf.sprintf
+
 type t =
  | Ap_northeast_1  (* Asia Pacific (Tokyo) *)
  | Ap_northeast_2  (* Asia Pacific (Seoul) *)
@@ -64,14 +66,19 @@ let of_string = function
 
 
 let of_host host =
-  match String.split ~on:'.' host |> List.rev with
+  match String.split_on_char ~sep:'.' host |> List.rev with
   | "com" :: "amazonaws" :: "s3" :: _  ->
     Us_east_1
-  | "com" :: "amazonaws" :: host :: _ ->
-    String.chop_prefix host ~prefix:"s3-"
-    |> Option.value ~default:host
+  | "com" :: "amazonaws" :: host :: _ when
+      String.length host > 3 &&
+      host.[0] = 's' &&
+      host.[1] = '3' &&
+      host.[2] = '-' ->
+    String.sub ~pos:3 ~len:(String.length host - 3) host
     |> of_string
+  | "com" :: "amazonaws" :: host :: _ ->
+    host |> of_string
   | _ -> failwith "Cannot parse region from host"
 
 let to_host region =
-    to_string region |> sprintf "s3.%s.amazonaws.com"
+  to_string region |> sprintf "s3.%s.amazonaws.com"

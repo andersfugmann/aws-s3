@@ -1,10 +1,11 @@
-open Core
+open !StdLabels
+let sprintf = Printf.sprintf
 open Cohttp
 open Protocol_conv_json
 
-type time = Time.t
+type time = float
 let time_of_json t =
-  Json.to_string t |> Time.of_string
+  Json.to_string t |> Time.parse_rcf1123_string
 
 type t = {
   access_key: string [@key "AccessKeyId"];
@@ -34,7 +35,7 @@ module Make(Compat : Types.Compat) = struct
           Deferred.return (Ok body)
         | _ ->
           Cohttp_deferred.Body.to_string body >>= fun body ->
-          Deferred.return (Or_error.errorf "Failed to get role from %s. Response was: %s" (Uri.to_string uri) body)
+          failwith (sprintf "Failed to get role from %s. Response was: %s" (Uri.to_string uri) body)
       in
       Deferred.Or_error.catch inner
 
@@ -48,18 +49,18 @@ module Make(Compat : Types.Compat) = struct
         | #Code.success_status -> begin
             Cohttp_deferred.Body.to_string body >>= fun body ->
             let json = Yojson.Safe.from_string body in
-            of_json json |> Or_error.return |> Deferred.return
+            of_json json |> Deferred.Or_error.return
           end
         | _ ->
           Cohttp_deferred.Body.to_string body >>= fun body ->
-          Deferred.return (Or_error.errorf "Failed to get credentials from %s. Response was: %s" (Uri.to_string uri) body)
+          failwith (sprintf "Failed to get credentials from %s. Response was: %s" (Uri.to_string uri) body)
       in
       Deferred.Or_error.catch inner
   end
 
   module Local = struct
     let get_credentials ?(profile="default") () =
-      let home = Sys.getenv "HOME" |> Option.value ~default:"." in
+      let home = Sys.getenv_opt "HOME" |> function Some v -> v | None -> "." in
       let creds_file = Printf.sprintf "%s/.aws/credentials" home in
       Deferred.Or_error.catch @@
       fun () ->

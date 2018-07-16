@@ -3,9 +3,9 @@ module type Compat = sig
   module Deferred : sig
     type 'a t
     module Or_error: sig
-      type nonrec 'a t = ('a, Base.Error.t) result t
+      type nonrec 'a t = ('a, exn) result t
       val return: 'a -> 'a t
-      val fail: Base.Error.t -> 'a t
+      val fail: exn -> 'a t
       val catch: (unit -> 'a t) -> 'a t
       module Infix: sig
         val (>>=): 'a t -> ('a -> 'b t) -> 'b t
@@ -19,7 +19,7 @@ module type Compat = sig
     module Infix: sig
       val (>>=): 'a t -> ('a -> 'b t) -> 'b t
       val (>>|): 'a t -> ('a -> 'b) -> 'b t
-      val (>>=?): ('a, 'c) result t -> ('a -> ('b, 'c) result t ) -> ('b, 'c) result t
+      val (>>=?): ('a, 'c) result t -> ('a -> ('b, 'c) result t) -> ('b, 'c) result t
     end
   end
 

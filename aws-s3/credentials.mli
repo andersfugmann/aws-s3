@@ -3,13 +3,13 @@ type t = {
   access_key: string;
   secret_key: string;
   token: string option;
-  expiration: Core.Time.t option;
+  expiration: float option;
 }
 
 (** Make credentials *)
 val make_credentials :
   access_key:string -> secret_key:string ->
-  ?token:string -> ?expiration:Core.Time.t -> unit -> t
+  ?token:string -> ?expiration:float -> unit -> t
 
 module Make(Compat : Types.Compat) : sig
   open Compat

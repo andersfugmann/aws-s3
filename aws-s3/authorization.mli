@@ -1,5 +1,4 @@
-open Core
-module HeaderMap : Map.S with type Key.t = string
+module HeaderMap : Map.S with type key = string
 val hash_sha256 : string -> Digestif.SHA256.t
 val hmac_sha256 : key:string -> string -> Digestif.SHA256.t
 val to_hex : Digestif.SHA256.t -> string

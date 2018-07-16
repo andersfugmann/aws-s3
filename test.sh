@@ -6,7 +6,7 @@
 # Simple tests using the awscli
 BUKCET=aws-s3-test1
 TEMP=$(mktemp)
-BIN="jbuilder exec aws-cli-async --"
+BIN="jbuilder exec aws-cli-lwt --"
 
 function test {
     echo -n "$1: "
@@ -45,5 +45,5 @@ test "ls" ${BIN} ls ${BUKCET} | grep -q "${MD5}"
 
 test "head" ${BIN} head s3://${BUKCET}/test | grep -q "${MD5}"
 
-test "rm" ${BIN} rm ${BUKCET} test
-test "ls" ${BIN} ls ${BUKCET} > /dev/null
+test "ls" ${BIN} ls ${BUKCET}
+test "rm" ${BIN} rm ${BUKCET} "test"
