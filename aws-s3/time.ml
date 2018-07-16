@@ -1,7 +1,9 @@
 open !StdLabels
 let sprintf = Printf.sprintf
+
+(* Use ptime for time conversions. This is error prone as we fiddle with the environment *)
 let parse_iso8601_string str =
-  let prev_tz = try Unix.unsafe_getenv "TZ" with Not_found -> "" in
+  let prev_tz = try Unix.getenv "TZ" with Not_found -> "" in
   Unix.putenv "TZ" "GMT";
 
   let time = Scanf.sscanf str "%d-%d-%dT%d:%d:%fZ"
@@ -38,7 +40,7 @@ let parse_rcf1123_string date_str =
     | "Dec" -> 11
     | _ -> failwith "Unknown month"
   in
-  let prev_tz = try Unix.unsafe_getenv "TZ" with Not_found -> "" in
+  let prev_tz = try Unix.getenv "TZ" with Not_found -> "" in
   Unix.putenv "TZ" "GMT";
   let r = Scanf.sscanf date_str "%s %d %s %d %d:%d:%d %s"
       (fun _dayname tm_mday month_str year tm_hour tm_min tm_sec _zone ->
