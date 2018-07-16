@@ -9,11 +9,9 @@ env:
   - TESTS=true
   matrix:
   - PACKAGE="core-v0_9-compat" PINS="ppx_protocol_conv ppx_protocol_conv_json ppx_protocol_conv_xml_light aws-s3:. aws-s3-lwt:. aws-s3-async:. core-v0_9-compat:." OCAML_VERSION=4.06
-  - PACKAGE="aws-s3-async"     PINS="ppx_protocol_conv ppx_protocol_conv_json ppx_protocol_conv_xml_light aws-s3:. aws-s3-async:." OCAML_VERSION=4.04
   - PACKAGE="aws-s3-async"     PINS="ppx_protocol_conv ppx_protocol_conv_json ppx_protocol_conv_xml_light aws-s3:. aws-s3-async:." OCAML_VERSION=4.05
-  - PACKAGE="aws-s3-async"     PINS="ppx_protocol_conv ppx_protocol_conv_json ppx_protocol_conv_xml_light aws-s3:. aws-s3-async:." OCAML_VERSION=4.06
-  - PACKAGE="aws-s3-lwt"       PINS="ppx_protocol_conv ppx_protocol_conv_json ppx_protocol_conv_xml_light aws-s3:. aws-s3-lwt:."   OCAML_VERSION=4.04
   - PACKAGE="aws-s3-lwt"       PINS="ppx_protocol_conv ppx_protocol_conv_json ppx_protocol_conv_xml_light aws-s3:. aws-s3-lwt:."   OCAML_VERSION=4.05
+  - PACKAGE="aws-s3-async"     PINS="ppx_protocol_conv ppx_protocol_conv_json ppx_protocol_conv_xml_light aws-s3:. aws-s3-async:." OCAML_VERSION=4.06
   - PACKAGE="aws-s3-lwt"       PINS="ppx_protocol_conv ppx_protocol_conv_json ppx_protocol_conv_xml_light aws-s3:. aws-s3-lwt:."   OCAML_VERSION=4.06
 
 os:
