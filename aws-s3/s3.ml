@@ -377,7 +377,7 @@ module Make(Compat : Types.Compat) = struct
         let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
         let cache_control    = Option.map ~f:(fun cc -> ("Cache-Control", cc)) cache_control in
         let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
-        Core.List.filter_opt [ content_type; content_encoding; cache_control; acl ]
+        filter_map ~f:(fun x -> x) [ content_type; content_encoding; cache_control; acl ]
       in
       let cmd ?region () =
         Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`POST ~path ~query ()

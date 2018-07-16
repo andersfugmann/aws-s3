@@ -23,8 +23,13 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
   open Compat.Deferred.Infix
 
   let read_file ?first ?last file =
-    let data = Core.In_channel.(with_file file ~f:input_all) in
-    let len = String.length data in
+    let data, len =
+      let ic = open_in file in
+      let len = in_channel_length ic in
+      let data = really_input_string ic len in
+      close_in ic;
+      data, len
+    in
     match (first, last) with
     | None, None -> data
     | first, last ->
@@ -33,7 +38,9 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
       String.sub ~pos:first ~len:(last - first + 1) data
 
   let save_file file contents =
-    Core.Out_channel.(with_file file ~f:(fun c -> output_string c contents))
+    let oc = open_out file in
+    output_string oc contents;
+    close_out oc
 
   type objekt = { bucket: string; key: string }
   let objekt_of_uri u =
@@ -139,8 +146,13 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
       | None -> fun () -> Deferred.return (Ok ())
       | Some n -> fun () -> after (1000. /. float n) >>= fun () -> Deferred.return (Ok ())
     in
+    let string_of_time time =
+      Ptime.of_float_s time |> function
+      | None -> "<Error>"
+      | Some t -> Ptime.to_rfc3339 ~space:false t
+    in
     let rec ls_all (result, cont) =
-      Core.List.iter ~f:(fun { S3.last_modified; key; size; etag; _ } -> Caml.Printf.printf "%s\t%d\t%s\t%s\n%!" (string_of_float last_modified) size key etag) result;
+      List.iter ~f:(fun { S3.last_modified; key; size; etag; _ } -> Caml.Printf.printf "%s\t%d\t%s\t%s\n%!" (string_of_time last_modified) size key etag) result;
 
       match cont with
       | S3.Ls.More continuation -> ratelimit_f ()

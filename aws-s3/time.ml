@@ -3,68 +3,56 @@ let sprintf = Printf.sprintf
 
 (* Use ptime for time conversions. This is error prone as we fiddle with the environment *)
 let parse_iso8601_string str =
-  let prev_tz = try Unix.getenv "TZ" with Not_found -> "" in
-  Unix.putenv "TZ" "GMT";
-
-  let time = Scanf.sscanf str "%d-%d-%dT%d:%d:%fZ"
-      (fun year month tm_mday tm_hour tm_min sec ->
-         let tm_mon = month - 1 in
-         let tm_year = year - 1900 in
-         let res =
-           { Unix.tm_sec = 0; tm_min; tm_hour; tm_mday; tm_mon; tm_year;
-             tm_wday = 0; tm_yday = 0; tm_isdst = false; (* These are ignored *) }
-           |> Unix.mktime
-           |> fst
-         in
-         res +. sec)
-  in
-  Unix.putenv "TZ" prev_tz;
-  time
+  (*
+  Scanf.sscanf str "%d-%d-%dT%d:%d:%d.%s"
+    (fun year month day hour min sec _frac ->
+       match Ptime.of_date_time ((year, month, day), ((hour, min, sec), 0)) with
+       | None -> failwith "Illegal time format"
+       | Some t -> Ptime.to_float_s t)
+  *)
+  Ptime.of_rfc3339 str
+  |> function
+  | Ok (t, _, _) -> Ptime.to_float_s t
+  | Error _ -> failwith "Could not parse date string"
 
 let%test _ =
   parse_iso8601_string "2018-02-27T13:39:35.000Z" = 1519738775.0
 
 let parse_rcf1123_string date_str =
   let int_of_month = function
-    | "Jan" -> 0
-    | "Feb" -> 1
-    | "Mar" -> 2
-    | "Apr" -> 3
-    | "May" -> 4
-    | "Jun" -> 5
-    | "Jul" -> 6
-    | "Aug" -> 7
-    | "Sep" -> 8
-    | "Oct" -> 9
-    | "Nov" -> 10
-    | "Dec" -> 11
+    | "Jan" -> 1
+    | "Feb" -> 2
+    | "Mar" -> 3
+    | "Apr" -> 4
+    | "May" -> 5
+    | "Jun" -> 6
+    | "Jul" -> 7
+    | "Aug" -> 8
+    | "Sep" -> 9
+    | "Oct" -> 10
+    | "Nov" -> 11
+    | "Dec" -> 12
     | _ -> failwith "Unknown month"
   in
-  let prev_tz = try Unix.getenv "TZ" with Not_found -> "" in
-  Unix.putenv "TZ" "GMT";
-  let r = Scanf.sscanf date_str "%s %d %s %d %d:%d:%d %s"
-      (fun _dayname tm_mday month_str year tm_hour tm_min tm_sec _zone ->
-         let tm_mon = int_of_month month_str in
-         let tm_year = year - 1900 in
-         { Unix.tm_sec; tm_min; tm_hour; tm_mday; tm_mon; tm_year;
-           tm_wday = 0; tm_yday = 0; tm_isdst = false; (* These are ignored *) }
-         |> Unix.mktime
-         |> fst)
-  in
-  Unix.putenv "TZ" prev_tz;
-  r
-
+  Scanf.sscanf date_str "%s %d %s %d %d:%d:%d %s"
+    (fun _dayname day month_str year hour min sec _zone ->
+       let month = int_of_month month_str in
+       match Ptime.of_date_time ((year, month, day), ((hour, min, sec), 0)) with
+       | None -> failwith "Illegal time format"
+       | Some t -> Ptime.to_float_s t)
 
 let%test _ =
   parse_rcf1123_string "Mon, 16 Jul 2018 10:31:41 GMT" = 1531737101.0
 
 let iso8601_of_time time =
-  let
-    { Unix.tm_sec; tm_min; tm_hour;
-      tm_mday; tm_mon; tm_year; _ } = Unix.gmtime time
+  let t =
+    Ptime.of_float_s time
+    |> function Some t -> t | None -> failwith "Time out of range"
   in
-  let date_str = sprintf "%.4d%.2d%.2d" (tm_year + 1900) (tm_mon + 1) tm_mday in
-  let time_str = sprintf "%.2d%.2d%.2d" tm_hour tm_min tm_sec in
+
+  let (year, month, day), ((hour, min, sec), _) = Ptime.to_date_time t in
+  let date_str = sprintf "%.4d%.2d%.2d" year month day in
+  let time_str = sprintf "%.2d%.2d%.2d" hour min sec in
   (date_str, time_str)
 
 let%test _ =

@@ -26,7 +26,8 @@ module Deferred = struct
   end
 
   let return a = a
-  let after delay = Thread.delay delay |> ignore
+
+  let after delay = Unix.sleepf delay |> ignore
   let catch f = Or_error.catch (fun () -> f () |> Or_error.return)
 end
 

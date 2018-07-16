@@ -2,11 +2,18 @@
 
 [ ] Zero copy support (data streaming)
 [ ] Support bigstring
+[ ] Support 100-expect
+[ ] Support chunked transfer (put)
+
 
 3.1.0: (unreleased)
 [x] Support HEAD operation on objects.
 [x] Change signature to use string for etag rather than
     Caml.Digest.t === string for clearer documentation
+[x] Support Digest 0.6
+[x] Remove dependency to Core
+[x] Rewrite authentication code
+[x] Switch to use Ptime for time conversion routines
 
 3.0.0: Released 2018-05-16
 [x] Add parameter to specify scheme(http|https)
