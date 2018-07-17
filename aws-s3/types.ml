@@ -23,20 +23,32 @@ module type Compat = sig
     end
   end
 
+  module Pipe : sig
+
+    type 'a writer
+
+    type 'a reader
+
+    val create_reader : f:('a writer -> unit Deferred.t) -> 'a reader
+    val flush : 'a writer -> unit Deferred.t
+    val write: 'a writer -> 'a -> unit Deferred.t
+    val close: 'a writer -> unit
+
+  end
+
   module Cohttp_deferred : sig
     module Body : sig
       type t
       val to_string: t -> string Deferred.t
       val of_string: string -> t
+      val of_pipe: string Pipe.reader -> t
+      val to_pipe: t -> string Pipe.reader
     end
 
-    module Client : sig
-      val request :
-        scheme:[`Http|`Https] ->
-        ?body:Body.t ->
-        Cohttp.Request.t ->
-        (Cohttp.Response.t * Body.t) Deferred.t
-    end
+    val call:
+      ?headers:Cohttp.Header.t -> ?body:Body.t ->
+      Cohttp.Code.meth -> Uri.t ->
+      (Cohttp.Response.t * Body.t) Deferred.t
   end
 end
 

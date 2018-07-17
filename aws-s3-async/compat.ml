@@ -32,25 +32,27 @@ module Deferred = struct
   let after delay = Async_kernel.after (Core_kernel.Time_ns.Span.of_sec delay)
   let catch f = Async_kernel.Monitor.try_with f
 end
+module Pipe = struct
+  open Async_kernel
+  open Deferred
+
+  type 'a writer = 'a Pipe.Writer.t
+  type 'a reader = 'a Pipe.Reader.t
+
+  let flush writer = Pipe.downstream_flushed writer >>= fun _ -> return ()
+  let write writer data = Pipe.write writer data
+  let close writer = Pipe.close writer
+  let create_reader ~f = Pipe.create_reader ~close_on_exception:true f
+end
 
 module Cohttp_deferred = struct
   module Body = struct
     type t = Cohttp_async.Body.t
     let to_string = Cohttp_async.Body.to_string
     let of_string = Cohttp_async.Body.of_string
+    let of_pipe = Cohttp_async.Body.of_pipe
+    let to_pipe = Cohttp_async.Body.to_pipe
   end
 
-  module Client = struct
-    let request ~scheme ?body request =
-      let scheme_str = match scheme with
-        | `Http -> "http";
-        | `Https -> "https";
-      in
-      let uri = Uri.with_uri ~scheme:(Some scheme_str) (Cohttp.Request.uri request) in
-      Cohttp_async.Client.call
-        ~headers:(Cohttp.Request.headers request)
-        ?body
-        (Cohttp.Request.meth request)
-        uri
-  end
+  let call ?headers ?body meth uri = Cohttp_async.Client.call ?headers ?body meth uri
 end

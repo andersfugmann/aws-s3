@@ -8,8 +8,10 @@ BUKCET=aws-s3-test1
 TEMP=$(mktemp)
 BIN="jbuilder exec aws-cli-lwt --"
 
+TEST=0
 function test {
-    echo -n "$1: "
+    TEST=$(( TEST + 1))
+    echo -n "$TEST. $1: "
     shift
     $@
     if [ $? -eq 0 ]; then
@@ -29,13 +31,13 @@ function cleanup {
 }
 trap cleanup EXIT
 
-test "upload1" ${BIN} cp $0 s3://${BUKCET}/test
-test "download1" ${BIN} cp s3://${BUKCET}/test ${TEMP}
-test "wrong data1" diff $0 ${TEMP}
+test "upload" ${BIN} cp $0 s3://${BUKCET}/test
+test "download" ${BIN} cp s3://${BUKCET}/test ${TEMP}
+test "data" diff $0 ${TEMP}
 
 test "multi_upload" ${BIN} cp -m $0 s3://${BUKCET}/test
 test "download" ${BIN} cp s3://${BUKCET}/test ${TEMP}
-test "wrong data" diff $0 ${TEMP}
+test "data" diff $0 ${TEMP}
 
 test "partial get" ${BIN} cp --first=10 --last=19 s3://${BUKCET}/test ${TEMP}
 test "partial result" [ "$(wc -c ${TEMP} | cut -f 1 -d' ')" -eq "10" ]

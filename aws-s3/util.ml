@@ -112,27 +112,21 @@ module Make(C : Types.Compat) = struct
     in
 
     let uri = Uri.make
+        ~scheme:(match scheme with `Http -> "http"
+                                 | `Https -> "https")
         ~host:host_str
         ~path
         ~query:(List.map ~f:(fun (k,v) -> k, [v]) query)
         ()
     in
 
-    let request =
-      Request.make ~meth:(meth :> Code.meth)
-        ~headers:(Header.of_list (Authorization.HeaderMap.bindings headers))
-        uri
+    let body = match body with
+      | Some body -> Some (Cohttp_deferred.Body.of_string body)
+      | None -> None
     in
-    (* Dont use request at all. *)
-    match meth with
-    | `PUT
-    | `POST ->
-      let body = match body with
-        | Some body -> Some (Cohttp_deferred.Body.of_string body)
-        | None -> None
-      in
-      Cohttp_deferred.Client.request ~scheme ?body request
-    | `GET
-    | `DELETE
-    | `HEAD -> Cohttp_deferred.Client.request ~scheme request
+    Cohttp_deferred.call
+      ~headers:(Header.of_list (Authorization.HeaderMap.bindings headers))
+      ?body
+      (meth :> Code.meth)
+      uri
 end
