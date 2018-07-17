@@ -7,7 +7,7 @@ type t = {
 }
 
 (** Make credentials *)
-val make_credentials :
+val make :
   access_key:string -> secret_key:string ->
   ?token:string -> ?expiration:float -> unit -> t
 

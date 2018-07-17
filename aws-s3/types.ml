@@ -51,15 +51,3 @@ module type Compat = sig
       (Cohttp.Response.t * Body.t) Deferred.t
   end
 end
-
-(*
-module Deferred_or_error (Deferred: Compat.Deferred) = struct
-  open Deferred
-  type nonrec 'a t = ('a, Base.Error.t) result t
-  let return v = Result.Ok v |> return
-  let fail e = Result.Error e |> return
-  let (>>=) a b = a >>= function
-    | Error _ as e -> return e
-    | Ok v -> b v
-end
-*)

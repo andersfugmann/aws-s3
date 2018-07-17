@@ -14,7 +14,7 @@ type t = {
   expiration: time option [@key "Expiration"];
 } [@@deriving of_protocol ~driver:(module Json)]
 
-let make_credentials ~access_key ~secret_key ?token ?expiration () =
+let make ~access_key ~secret_key ?token ?expiration () =
   { access_key; secret_key; token; expiration }
 
 
@@ -65,7 +65,7 @@ module Make(Compat : Types.Compat) = struct
       let ini = new Inifiles.inifile creds_file in
       let access_key = ini#getval profile "aws_access_key_id" in
       let secret_key = ini#getval profile "aws_secret_access_key" in
-      make_credentials ~access_key ~secret_key () |> Deferred.Or_error.return
+      make ~access_key ~secret_key () |> Deferred.Or_error.return
   end
 
   module Helper = struct

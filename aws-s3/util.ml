@@ -75,7 +75,11 @@ module Make(C : Types.Compat) = struct
 
     let headers =
       let module HeaderMap = Authorization.HeaderMap in
-      let change ~key ~f map = HeaderMap.update key f map in
+      let change ~key ~f map =
+        match f (HeaderMap.find_opt key map) with
+        | None -> HeaderMap.remove key map
+        | Some v -> HeaderMap.add key v map
+      in
       let add ~key ~data map = HeaderMap.add key data map in
       let add_opt ~key ~data map =
         match data with
@@ -101,9 +105,13 @@ module Make(C : Types.Compat) = struct
             List.map query ~f:(fun (k, v) -> sprintf "%s=%s" (encode_string k) (encode_string v))
             |> String.concat ~sep:"&"
           in
-          let auth = Authorization.make_authorization
+          let signing_key =
+            Authorization.make_signing_key ~date ~region ~service:"s3" ~credentials ()
+          in
+          let scope = Authorization.make_scope ~date ~region ~service:"s3" in
+          let auth:string = Authorization.make_authorization
               ~date ~time ~verb ~credentials ~path ~headers
-              ~query ~region ~service:"s3" ~payload_sha:payload_sha
+              ~query ~scope ~signing_key ~payload_sha:payload_sha
           in
           Some auth
         | None -> None
