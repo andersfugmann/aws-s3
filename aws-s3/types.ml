@@ -33,7 +33,7 @@ module type Compat = sig
     val flush : 'a writer -> unit Deferred.t
     val write: 'a writer -> 'a -> unit Deferred.t
     val close: 'a writer -> unit
-
+    val read: 'a reader -> 'a option Deferred.t
   end
 
   module Cohttp_deferred : sig

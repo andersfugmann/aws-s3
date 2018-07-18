@@ -167,7 +167,7 @@ let chunk_signature ~signing_key ~date_time ~scope ~previous_signature ~sha =
   (hmac_sha256 ~key:signing_key string_to_sign |> to_hex)
 
 let chunk_header ~length ~signature =
-  sprintf "%s;chunk-signature=%s\n" length signature
+  sprintf "%x;chunk-signature=%s\n" length signature
 
 let%test "chunk_signature" =
   let credentials = Credentials.make

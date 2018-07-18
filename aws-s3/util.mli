@@ -16,4 +16,10 @@ module Make : functor(Compat: Types.Compat) -> sig
     unit ->
     (Response.t * Cohttp_deferred.Body.t) Deferred.t
 
+  val chunked_body :
+    signing_key:string ->
+    scope:string ->
+    initial_signature:string ->
+    date_time:string ->
+    chunk_size:int -> string Pipe.reader -> string Pipe.reader
 end

@@ -54,6 +54,9 @@ module Pipe = struct
     writer.closed <- true;
     Lwt_condition.signal writer.cond ()
 
+  let read reader =
+    Lwt_stream.get reader
+
   let create_reader: f:('a writer -> unit Lwt.t) -> 'a reader = fun ~f ->
     let writer = { cond = Lwt_condition.create (); queue = Queue.create (); closed = false; } in
     let rec producer: unit -> 'a option Lwt.t = fun () ->

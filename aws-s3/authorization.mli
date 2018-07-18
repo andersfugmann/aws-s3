@@ -41,4 +41,4 @@ val chunk_signature:
   previous_signature:string ->
   sha:Digestif.SHA256.t -> string
 
-val chunk_header: length:string -> signature:string -> string
+val chunk_header: length:int -> signature:string -> string

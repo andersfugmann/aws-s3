@@ -40,6 +40,10 @@ module Pipe = struct
   type 'a reader = 'a Pipe.Reader.t
 
   let flush writer = Pipe.downstream_flushed writer >>= fun _ -> return ()
+  let read reader = Pipe.read reader >>= function
+    | `Eof -> return None
+    | `Ok v -> return (Some v)
+
   let write writer data = Pipe.write writer data
   let close writer = Pipe.close writer
   let create_reader ~f = Pipe.create_reader ~close_on_exception:true f

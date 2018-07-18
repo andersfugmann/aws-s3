@@ -19,6 +19,22 @@ open StdLabels
 let sprintf = Printf.sprintf
 open Cohttp
 
+(* @see https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-streaming.html
+   public static String UriEncode(CharSequence input, boolean encodeSlash) {
+          StringBuilder result = new StringBuilder();
+          for (int i = 0; i < input.length(); i++) {
+              char ch = input.charAt(i);
+              if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '~' || ch == '.') {
+                  result.append(ch);
+              } else if (ch == '/') {
+                  result.append(encodeSlash ? "%2F" : ch);
+              } else {
+                  result.append(toHexUTF8(ch));
+              }
+          }
+          return result.toString();
+      }
+*)
 let encode_string s =
   (* Percent encode the path as s3 wants it. Uri doesn't
        encode $, or the other sep characters in a path.
@@ -36,7 +52,7 @@ let encode_string s =
       (* Sigh. Annoying we're expecting already escaped strings so ignore the escapes *)
       begin
         let is_hex = function
-          | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' -> true
+          | 'a' .. 'f' | 'A' .. 'F' | '0' .. '9' -> true
           | _ -> false in
         if (i + 2) < n then
           if is_hex(String.get s (i+1)) && is_hex(String.get s (i+2)) then
@@ -137,4 +153,67 @@ module Make(C : Types.Compat) = struct
       ?body
       (meth :> Code.meth)
       uri
+
+  let chunked_body ~signing_key ~scope ~initial_signature ~date_time ~chunk_size reader =
+    let open Deferred in
+    let open Deferred.Infix in
+    let sub ~pos ?len str =
+      match pos, len with
+      | 0, None -> str
+      | 0, Some len when len = String.length str -> str
+      | pos, None ->
+        String.sub ~pos ~len:(String.length str - pos) str
+      | pos, Some len ->
+        String.sub ~pos ~len str
+    in
+    let send writer previous_signature elements length =
+      let sha = Digestif.SHA256.digesti_string
+          (fun f -> List.iter ~f elements)
+      in
+      let signature = Authorization.chunk_signature ~signing_key ~date_time ~scope
+          ~previous_signature ~sha in
+      let header = Authorization.chunk_header ~length ~signature in
+      C.Pipe.write writer header >>= fun () ->
+      C.Pipe.write writer "\n\r" >>= fun () ->
+      List.fold_left
+        ~init:(Deferred.return ()) ~f:(fun x data -> x >>= fun () -> C.Pipe.write writer data)
+        elements >>= fun () ->
+      C.Pipe.write writer "\n\r" >>= fun () ->
+      return signature
+    in
+    let rec transfer previous_signature (buffered:int) queue current writer =
+      begin
+        match current with
+        | Some v -> return (Some v)
+        | None -> C.Pipe.read reader >>= function
+          | None -> return None
+          | Some v -> return (Some (v, 0))
+      end >>= function
+      | None ->
+        send writer previous_signature (List.rev queue) buffered >>= fun signature ->
+        send writer signature [] 0 >>= fun _signature ->
+        Deferred.return ()
+      | Some (data, offset) -> begin
+          let remain = buffered - chunk_size in
+          match (String.length data) - offset with
+          | n when n >= remain ->
+            let elem = sub data ~pos:offset ~len:remain in
+            let elements = elem :: (List.rev queue) in
+            send writer previous_signature elements chunk_size >>= fun signature ->
+            (* Recursive call. *)
+            let data = match String.length data > remain with
+              | true ->
+                Some (data, offset + remain)
+              | false ->
+                None
+            in
+            transfer signature 0 [] data writer
+          | _ ->
+            let elem = sub ~pos:offset data in
+            transfer previous_signature
+              (buffered + String.length elem)
+              (elem :: queue) None writer
+        end
+    in
+    C.Pipe.create_reader ~f:(transfer initial_signature 0 [] None)
 end
