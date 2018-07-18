@@ -106,8 +106,12 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
       Deferred.return (Ok ())
     | LocaltoS3 (src, dst) ->
       let data = read_file ?first ?last src in
-      S3.retry ~retries:5
-        ~f:(fun ?region () -> S3.put ?region ~credentials ~bucket:dst.bucket ~key:dst.key ~data ()) () >>=? fun _etag ->
+      let reader =
+        Compat.Pipe.create_reader ~f:(fun writer -> Compat.Pipe.write writer data)
+      in
+      S3.retry ~retries:0
+        ~f:(fun ?region () -> S3.put_stream ?region ~credentials ~bucket:dst.bucket ~key:dst.key
+               ~data:reader ~chunk_size:(64*1024) ~length:(String.length data) ()) () >>=? fun _etag ->
       Deferred.return (Ok ())
     | S3toS3 (src, dst) ->
       S3.retry ~retries:5

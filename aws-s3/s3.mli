@@ -55,6 +55,18 @@ module Make(Compat : Types.Compat) : sig
      key:string ->
      data:string -> unit -> string result) command
 
+  val put_stream :
+    (?content_type:string ->
+     ?content_encoding:string ->
+     ?acl:string ->
+     ?cache_control:string ->
+     bucket:string ->
+     key:string ->
+     data:string Compat.Pipe.reader ->
+     chunk_size:int ->
+     length:int ->
+     unit -> string result) command
+
 
   (** Download [key] from s3 in [bucket]
       If [range] is specified, only a part of the file is retrieved.

@@ -243,7 +243,29 @@ module Make(Compat : Types.Compat) = struct
       filter_map ~f:(fun x -> x) [ content_type; content_encoding; cache_control; acl ]
     in
     let cmd ?region () =
-      Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~body:data ~query:[] ()
+      Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~body:(Util_deferred.String data) ~query:[] ()
+    in
+
+    do_command ?region cmd >>=? fun (headers, _body) ->
+    let etag =
+      match Header.get headers "etag" with
+      | None -> failwith "Put reply did not conatin an etag header"
+      | Some etag -> String.sub ~pos:1 ~len:(String.length etag - 2) etag
+    in
+    Deferred.return (Ok etag)
+
+  let put_stream ?(scheme=`Http) ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data ~chunk_size ~length () =
+    let path = sprintf "/%s/%s" bucket key in
+    let headers =
+      let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
+      let content_encoding = Option.map ~f:(fun ct -> ("Content-Encoding", ct)) content_encoding in
+      let cache_control    = Option.map ~f:(fun cc -> ("Cache-Control", cc)) cache_control in
+      let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
+      filter_map ~f:(fun x -> x) [ content_type; content_encoding; cache_control; acl ]
+    in
+    let body = Util_deferred.Chunked { length; chunk_size; pipe=data } in
+    let cmd ?region () =
+      Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~body ~query:[] ()
     in
 
     do_command ?region cmd >>=? fun (headers, _body) ->
@@ -334,7 +356,7 @@ module Make(Compat : Types.Compat) = struct
       let headers = [ "Content-MD5", B64.encode (Caml.Digest.string request) ] in
       let cmd ?region () =
         Util_deferred.make_request ~scheme
-          ~body:request ?credentials ?region ~headers
+          ~body:(Util_deferred.String request) ?credentials ?region ~headers
           ~meth:`POST ~query:["delete", ""] ~path:("/" ^ bucket) ()
       in
       do_command ?region cmd >>=? fun (_headers, body) ->
@@ -404,7 +426,8 @@ module Make(Compat : Types.Compat) = struct
           "uploadId", t.id ]
       in
       let cmd ?region () =
-        Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`PUT ~path ~body:data ~query ()
+        Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`PUT ~path
+          ~body:(Util_deferred.String data) ~query ()
       in
 
       do_command ?region cmd >>=? fun (headers, _body) ->
@@ -455,7 +478,7 @@ module Make(Compat : Types.Compat) = struct
         |> Xml.to_string_fmt
       in
       let cmd ?region () =
-        Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:request ()
+        Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:(Util_deferred.String request) ()
       in
       do_command ?region cmd >>=? fun (_headers, body) ->
       Cohttp_deferred.Body.to_string body >>| fun body ->

@@ -24,11 +24,8 @@ module type Compat = sig
   end
 
   module Pipe : sig
-
     type 'a writer
-
     type 'a reader
-
     val create_reader : f:('a writer -> unit Deferred.t) -> 'a reader
     val flush : 'a writer -> unit Deferred.t
     val write: 'a writer -> 'a -> unit Deferred.t

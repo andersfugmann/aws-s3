@@ -77,19 +77,19 @@ let string_to_sign ~date ~time ~verb ~path ~query ~headers ~payload_sha ~scope =
   in
   (string_to_sign, signed_headers)
 
-let make_authorization ~date ~time ~verb ~credentials ~path
+let make_signature ~date ~time ~verb ~path
     ~headers ~query ~scope ~(signing_key:Digestif.SHA256.t) ~payload_sha =
   let (string_to_sign, signed_headers) =
     string_to_sign ~date ~time ~verb ~path ~query ~headers ~payload_sha ~scope
   in
-  let signature = hmac_sha256 ~key:(signing_key :> string) string_to_sign |> to_hex in
-  let auth = sprintf "AWS4-HMAC-SHA256 Credential=%s/%s,SignedHeaders=%s,Signature=%s"
-      credentials.Credentials.access_key
-      scope
-      signed_headers
-      signature
-  in
-  auth
+  (hmac_sha256 ~key:(signing_key :> string) string_to_sign |> to_hex, signed_headers)
+
+let make_auth_header ~credentials ~scope ~signed_headers ~signature =
+  sprintf "AWS4-HMAC-SHA256 Credential=%s/%s,SignedHeaders=%s,Signature=%s"
+    credentials.Credentials.access_key
+    scope
+    signed_headers
+    signature
 
 let%test _ =
   let credentials = Credentials.make
@@ -130,44 +130,30 @@ let%test _ =
   let payload_sha = hash_sha256 "" |> to_hex in
   let scope = make_scope ~date ~region ~service in
   let signing_key = make_signing_key ~date ~region ~service ~credentials () in
-  let auth = make_authorization
-      ~date ~time:"000000" ~verb ~credentials ~path ~headers ~query ~signing_key ~scope ~payload_sha
+  let signature, signed_headers =
+    make_signature ~date ~time:"000000" ~verb ~path ~headers ~query ~signing_key ~scope ~payload_sha
   in
+  let auth = make_auth_header ~credentials ~signature ~scope ~signed_headers in
 
   let expected =
     "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,SignedHeaders=host;range;x-amz-content-sha256;x-amz-date,Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41"
   in
   auth = expected
 
-(* Should be a function to calculate next signature *)
-let get_chunked_length ~chunk_size payload_length =
-  let lengths =
-    (sprintf "%x" payload_length |> String.length) * (payload_length / chunk_size) + (match payload_length mod chunk_size with
-        | 0 -> 0
-        | n -> (sprintf "%x" n |> String.length))
-  in
-  let chunks = (payload_length + (chunk_size - 1)) / chunk_size + 1 in
-  chunks * (4 + 17 + 64) + lengths + 1 +
-  payload_length
-
-let%test "get_chunk_length" =
-  get_chunked_length ~chunk_size:(64*1024) (65*1024) = 66824
-
-
 let empty_sha_hex = hash_sha256 "" |> to_hex
-let chunk_signature ~signing_key ~date_time ~scope ~previous_signature ~sha =
+let chunk_signature ~(signing_key: Digestif.SHA256.t)  ~date ~time ~scope ~previous_signature ~sha =
   let _initial = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD" in
-  let string_to_sign = sprintf "AWS4-HMAC-SHA256-PAYLOAD\n%s\n%s\n%s\n%s\n%s"
-      date_time
+  let string_to_sign = sprintf "AWS4-HMAC-SHA256-PAYLOAD\n%sT%sZ\n%s\n%s\n%s\n%s"
+      date time
       scope
       previous_signature
       empty_sha_hex
       (to_hex sha)
   in
-  (hmac_sha256 ~key:signing_key string_to_sign |> to_hex)
+  hmac_sha256 ~key:(signing_key :> string) string_to_sign
 
 let chunk_header ~length ~signature =
-  sprintf "%x;chunk-signature=%s\n" length signature
+  sprintf "%x;chunk-signature=%s" length signature
 
 let%test "chunk_signature" =
   let credentials = Credentials.make
@@ -179,11 +165,12 @@ let%test "chunk_signature" =
   let previous_signature =
     "4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9"
   in
-  let date_time = "20130524T000000Z" in
+  let date = "20130524" in
+  let time = "000000" in
   let scope = "20130524/us-east-1/s3/aws4_request" in
   let signing_key = make_signing_key
       ~bypass_cache:true
-      ~date:"20130524"
+      ~date
       ~region:"us-east-1"
       ~service:"s3"
       ~credentials
@@ -191,11 +178,11 @@ let%test "chunk_signature" =
   in
   let sha = String.make 65536 'a' |> hash_sha256 in
   let signature = chunk_signature
-      ~signing_key:(signing_key :> string)
-      ~date_time
+      ~signing_key
+      ~date ~time
       ~scope
       ~previous_signature
       ~sha
   in
   let expect = "ad80c730a21e5b8d04586a2213dd63b9a0e99e0e2307b0ade35a65485a288648" in
-  signature = expect
+  signature |> to_hex = expect

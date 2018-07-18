@@ -22,23 +22,30 @@ val string_to_sign :
   payload_sha:string -> scope:string ->
   string * string
 
-val make_authorization :
+val make_signature :
   date:string ->
   time:string ->
   verb:string ->
-  credentials:Credentials.t ->
   path:string ->
   headers:string HeaderMap.t ->
   query:string ->
   scope:string ->
   signing_key:Digestif.SHA256.t ->
-  payload_sha:string -> string
+  payload_sha:string ->
+  string * string
+
+val make_auth_header :
+  credentials:Credentials.t ->
+  scope:string ->
+  signed_headers:string ->
+  signature:string -> string
 
 val chunk_signature:
-  signing_key:string ->
-  date_time:string ->
+  signing_key:Digestif.SHA256.t ->
+  date:string ->
+  time:string ->
   scope:string ->
   previous_signature:string ->
-  sha:Digestif.SHA256.t -> string
+  sha:Digestif.SHA256.t -> Digestif.SHA256.t
 
 val chunk_header: length:int -> signature:string -> string
