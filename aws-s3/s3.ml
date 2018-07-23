@@ -17,7 +17,6 @@
   }}}*)
 open StdLabels
 let sprintf = Printf.sprintf
-open Cohttp
 open Protocol_conv_xml
 
 module Option = struct
@@ -182,11 +181,11 @@ module Protocol(P: sig type 'a result end) = struct
   end
 end
 
-module Make(Compat : Types.Compat) = struct
-  module Util_deferred = Util.Make(Compat)
-  open Compat
-  open Deferred.Infix
-
+module Make(Io : Types.Io) = struct
+  module Aws = Aws.Make(Io)
+  module Body = Body.Make(Io)
+  open Io
+  open Deferred
   type error =
     | Redirect of Region.t
     | Throttled
@@ -202,16 +201,15 @@ module Make(Compat : Types.Compat) = struct
 
   (**/**)
   let do_command ?region cmd =
-    cmd ?region () >>= fun (resp, body) ->
-    let status = Cohttp.Response.status resp in
-    match Code.code_of_status status with
+    cmd ?region () >>= (function Ok r -> Deferred.return r | Error exn -> raise exn)
+    >>= fun (code, _message, headers, body) ->
+    match code with
     | code when 200 <= code && code < 300 ->
-      let headers = Cohttp.Response.headers resp in
       Deferred.return (Ok (headers, body))
     | 404 -> Deferred.return (Error (Not_found))
     | c when 300 <= c && c < 500 -> begin
         let open Error_response in
-        Cohttp_deferred.Body.to_string body >>= fun body ->
+        Body.to_string body >>= fun body ->
         let xml = Xml.parse_string body in
         match Error_response.of_xml_light xml with
         | { code = "PermanentRedirect"; endpoint = Some host; _ }
@@ -228,7 +226,7 @@ module Make(Compat : Types.Compat) = struct
       (* 500, InternalError | 503, SlowDown | 503, ServiceUnavailable -> Throttle *)
       Deferred.return (Error Throttled)
     | code ->
-      Cohttp_deferred.Body.to_string body >>= fun body ->
+      Body.to_string body >>= fun body ->
       let resp = Error_response.of_xml_light (Xml.parse_string body) in
       Deferred.return (Error (Unknown (code, resp.code)))
   (**/**)
@@ -243,12 +241,12 @@ module Make(Compat : Types.Compat) = struct
       filter_map ~f:(fun x -> x) [ content_type; content_encoding; cache_control; acl ]
     in
     let cmd ?region () =
-      Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~body:(Util_deferred.String data) ~query:[] ()
+      Aws.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~body:(Body.String data) ~query:[] ()
     in
 
     do_command ?region cmd >>=? fun (headers, _body) ->
     let etag =
-      match Header.get headers "etag" with
+      match Headers.find_opt "etag" headers with
       | None -> failwith "Put reply did not conatin an etag header"
       | Some etag -> String.sub ~pos:1 ~len:(String.length etag - 2) etag
     in
@@ -263,14 +261,14 @@ module Make(Compat : Types.Compat) = struct
       let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
       filter_map ~f:(fun x -> x) [ content_type; content_encoding; cache_control; acl ]
     in
-    let body = Util_deferred.Chunked { length; chunk_size; pipe=data } in
+    let body = Body.Chunked { length; chunk_size; pipe=data } in
     let cmd ?region () =
-      Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~body ~query:[] ()
+      Aws.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~body ~query:[] ()
     in
 
     do_command ?region cmd >>=? fun (headers, _body) ->
     let etag =
-      match Header.get headers "etag" with
+      match Headers.find_opt "etag" headers with
       | None -> failwith "Put reply did not conatin an etag header"
       | Some etag -> String.sub ~pos:1 ~len:(String.length etag - 2) etag
     in
@@ -294,16 +292,16 @@ module Make(Compat : Types.Compat) = struct
     in
     let path = sprintf "/%s/%s" bucket key in
     let cmd ?region () =
-      Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`GET ~path ~query:[] ()
+      Aws.make_request ~scheme ?credentials ?region ~headers ~meth:`GET ~path ~query:[] ()
     in
     do_command ?region cmd >>=? fun (_headers, body) ->
-    Cohttp_deferred.Body.to_string body >>= fun body ->
+    Body.to_string body >>= fun body ->
     Deferred.return (Ok body)
 
   let delete ?(scheme=`Http) ?credentials ?region ~bucket ~key () =
     let path = sprintf "/%s/%s" bucket key in
     let cmd ?region () =
-      Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query:[] ()
+      Aws.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query:[] ()
     in
     do_command ?region cmd >>=? fun (_headers, _body) ->
     Deferred.return (Ok ())
@@ -312,7 +310,7 @@ module Make(Compat : Types.Compat) = struct
   let head ?(scheme=`Http) ?credentials ?region ~bucket ~key () =
     let path = sprintf "/%s/%s" bucket key in
     let cmd ?region () =
-      Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`HEAD ~path ~query:[] ()
+      Aws.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`HEAD ~path ~query:[] ()
     in
     do_command ?region cmd >>=? fun (headers, _body) ->
     let result =
@@ -320,13 +318,13 @@ module Make(Compat : Types.Compat) = struct
         | Some x -> f x
         | None -> None
       in
-      Header.get headers "content-length" >>= fun size ->
-      Header.get headers "etag" >>= fun etag ->
-      Header.get headers "last-modified" >>= fun last_modified ->
+      Headers.find_opt "content-length" headers >>= fun size ->
+      Headers.find_opt "etag" headers >>= fun etag ->
+      Headers.find_opt "last-modified" headers >>= fun last_modified ->
       let last_modified = Time.parse_rcf1123_string last_modified in
       let size = size |> int_of_string in
       let storage_class =
-        Header.get headers "x-amz-storage-class"
+        Headers.find_opt "x-amz-storage-class" headers
         |> Option.value_map ~default:Standard ~f:(fun s ->
             storage_class_of_xml_light (Xml.Element ("p", [], [Xml.PCData s])))
       in
@@ -355,12 +353,12 @@ module Make(Compat : Types.Compat) = struct
       in
       let headers = [ "Content-MD5", B64.encode (Caml.Digest.string request) ] in
       let cmd ?region () =
-        Util_deferred.make_request ~scheme
-          ~body:(Util_deferred.String request) ?credentials ?region ~headers
+        Aws.make_request ~scheme
+          ~body:(Body.String request) ?credentials ?region ~headers
           ~meth:`POST ~query:["delete", ""] ~path:("/" ^ bucket) ()
       in
       do_command ?region cmd >>=? fun (_headers, body) ->
-      Cohttp_deferred.Body.to_string body >>= fun body ->
+      Body.to_string body >>= fun body ->
       let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
       Deferred.return (Ok result)
 
@@ -372,10 +370,10 @@ module Make(Compat : Types.Compat) = struct
                 ] |> filter_map ~f:(fun x -> x)
     in
     let cmd ?region () =
-      Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`GET ~path:("/" ^ bucket) ~query ()
+      Aws.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`GET ~path:("/" ^ bucket) ~query ()
     in
     do_command ?region cmd >>=? fun (_headers, body) ->
-    Cohttp_deferred.Body.to_string body >>= fun body ->
+    Body.to_string body >>= fun body ->
     let result = Ls.result_of_xml_light (Xml.parse_string body) in
     let continuation = match Ls.(result.next_continuation_token) with
       | Some ct -> Ls.More (ls ~scheme ?credentials ?region ~continuation_token:ct ?prefix ~bucket)
@@ -402,17 +400,18 @@ module Make(Compat : Types.Compat) = struct
         filter_map ~f:(fun x -> x) [ content_type; content_encoding; cache_control; acl ]
       in
       let cmd ?region () =
-        Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`POST ~path ~query ()
+        Aws.make_request ~scheme ?credentials ?region ~headers ~meth:`POST ~path ~query ()
       in
 
       do_command ?region cmd >>=? fun (_headers, body) ->
-      Cohttp_deferred.Body.to_string body >>| fun body ->
+      Body.to_string body >>= fun body ->
       let resp = Multipart.Initiate.of_xml_light (Xml.parse_string body) in
       Ok { id = resp.Multipart.Initiate.upload_id;
            parts = [];
            bucket;
            key;
          }
+      |> Deferred.return
 
     (** Upload a part of the file.
         Parts must be at least 5Mb except for the last part
@@ -426,13 +425,13 @@ module Make(Compat : Types.Compat) = struct
           "uploadId", t.id ]
       in
       let cmd ?region () =
-        Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`PUT ~path
-          ~body:(Util_deferred.String data) ~query ()
+        Aws.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`PUT ~path
+          ~body:(Body.String data) ~query ()
       in
 
       do_command ?region cmd >>=? fun (headers, _body) ->
       let etag =
-        Header.get headers "etag"
+        Headers.find_opt "etag" headers
         |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
         |> fun etag -> String.sub ~pos:1 ~len:(String.length etag - 2) etag
       in
@@ -454,16 +453,16 @@ module Make(Compat : Types.Compat) = struct
             [ "x-amz-copy-source-range", sprintf "bytes=%d-%d" first last ]) range
       in
       let cmd ?region () =
-        Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~query ()
+        Aws.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~query ()
       in
 
       do_command ?region cmd >>=? fun (_headers, body) ->
-      Cohttp_deferred.Body.to_string body >>| fun body ->
+      Body.to_string body >>= fun body ->
       let xml = Xml.parse_string body in
       match Multipart.Copy.of_xml_light xml with
       | { Multipart.Copy.etag; _ } ->
         t.parts <- { etag; part_number } :: t.parts;
-        (Ok ())
+        Deferred.return (Ok ())
 
     (** Complete the multipart upload.
         The returned etag is a opaque identifier (not md5)
@@ -478,22 +477,25 @@ module Make(Compat : Types.Compat) = struct
         |> Xml.to_string_fmt
       in
       let cmd ?region () =
-        Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:(Util_deferred.String request) ()
+        Aws.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:(Body.String request) ()
       in
       do_command ?region cmd >>=? fun (_headers, body) ->
-      Cohttp_deferred.Body.to_string body >>| fun body ->
+      Body.to_string body >>= fun body ->
       let xml = Xml.parse_string body in
       match Multipart.Complete.response_of_xml_light xml with
       | { location=_; etag; bucket; key } when bucket = t.bucket && key = t.key ->
-        Ok etag
-      | _ -> Error (Unknown ((-1), "Bucket/key does not match"))
+        Ok etag |> Deferred.return
+      | _ ->
+        Error (Unknown ((-1), "Bucket/key does not match"))
+        |> Deferred.return
+
 
     (** Abort a multipart upload, deleting all specified parts *)
     let abort ?(scheme=`Http) ?credentials ?region t () =
       let path = sprintf "/%s/%s" t.bucket t.key in
       let query = [ "uploadId", t.id ] in
       let cmd ?region () =
-        Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query ()
+        Aws.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query ()
       in
       do_command ?region cmd >>=? fun (_headers, _body) ->
       Deferred.return (Ok ())

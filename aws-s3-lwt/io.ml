@@ -17,11 +17,9 @@ module Deferred = struct
     end
   end
 
-  module Infix = struct
-    let (>>=) = Lwt.Infix.(>>=)
-    let (>>|) a b = a >>= fun v -> Lwt.return (b v)
-    let (>>=?) = Lwt_result.Infix.(>>=)
-  end
+  let (>>=) = Lwt.Infix.(>>=)
+  let (>>|) a b = a >>= fun v -> Lwt.return (b v)
+  let (>>=?) = Lwt_result.Infix.(>>=)
 
   let return = Lwt.return
   let after delay = Lwt_unix.sleep delay
@@ -32,6 +30,9 @@ module Deferred = struct
 end
 
 module Pipe = struct
+  (* Use Home-grown pipe, which must support flush et. al.
+     Streams will not do.
+  *)
   open Lwt.Infix
   type 'a elem = Flush of unit Lwt_mvar.t
                | Data of 'a
@@ -54,6 +55,9 @@ module Pipe = struct
     writer.closed <- true;
     Lwt_condition.signal writer.cond ()
 
+  let close_reader _=
+    failwith "Not implemented"
+
   let read reader =
     Lwt_stream.get reader
 
@@ -75,17 +79,21 @@ module Pipe = struct
     in
     Lwt.async (fun () -> f writer >>= fun () -> close writer; Lwt.return_unit);
     Lwt_stream.from producer
+
+  (* We need the flush to pass through *)
+  let rec transfer reader writer =
+    read reader >>= function
+    | Some v -> write writer v >>= fun () -> transfer reader writer
+    | None -> Lwt.return ()
+
+  let create () = failwith "Not implemented"
+  let closed ~f reader =
+    ignore (f, reader);
+    failwith "Not implemented"
 end
 
-module Cohttp_deferred = struct
-  module Body = struct
-    type t = Cohttp_lwt.Body.t
-    let to_string = Cohttp_lwt.Body.to_string
-    let of_string = Cohttp_lwt.Body.of_string
-    let to_pipe = Cohttp_lwt.Body.to_stream
-    let of_pipe = Cohttp_lwt.Body.of_stream
-  end
-
-  let call ?headers ?body meth uri =
-    Cohttp_lwt_unix.Client.call ?headers ?body meth uri
+module Net = struct
+  let connect ~host ~scheme =
+    ignore (host, scheme);
+    failwith "Not implemented"
 end

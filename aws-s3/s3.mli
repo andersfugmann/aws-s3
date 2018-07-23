@@ -1,6 +1,6 @@
 (** S3 commands *)
-module Make(Compat : Types.Compat) : sig
-  open Compat
+module Make(Io : Types.Io) : sig
+  open Io
 
   type error =
     | Redirect of Region.t
@@ -62,7 +62,7 @@ module Make(Compat : Types.Compat) : sig
      ?cache_control:string ->
      bucket:string ->
      key:string ->
-     data:string Compat.Pipe.reader ->
+     data:string Io.Pipe.reader ->
      chunk_size:int ->
      length:int ->
      unit -> string result) command

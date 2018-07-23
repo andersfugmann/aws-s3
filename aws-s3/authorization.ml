@@ -1,13 +1,8 @@
 (* Auth based on aws papers
    https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
 *)
-(* Maybe we should just hold the lowercased values as key *)
 open StdLabels
 let sprintf = Printf.sprintf
-module HeaderMap = Map.Make(struct
-    type t = string
-    let compare a b = String.(compare (lowercase_ascii a) (lowercase_ascii b))
-  end)
 
 let hash_sha256 s =
   Digestif.SHA256.digest_string s
@@ -35,19 +30,19 @@ let make_scope ~date ~region ~service =
   sprintf "%s/%s/%s/aws4_request" date region service
 
 let string_to_sign ~date ~time ~verb ~path ~query ~headers ~payload_sha ~scope =
-  assert (HeaderMap.cardinal headers > 0);
+  assert (Headers.cardinal headers > 0);
   (* Count sizes of headers *)
   let (key_size, value_size) =
-    HeaderMap.fold (
+    Headers.fold (
       fun key data (h, v) -> (h + String.length key, v + String.length data)
     ) headers (0,0)
   in
-  let header_count = HeaderMap.cardinal headers in
+  let header_count = Headers.cardinal headers in
   let canonical_headers = Buffer.create (key_size + value_size + (2 (*:\n*) * header_count)) in
-  let signed_headers = Buffer.create (key_size + (HeaderMap.cardinal headers - 1)) in
+  let signed_headers = Buffer.create (key_size + (Headers.cardinal headers - 1)) in
 
   let first = ref true in
-  HeaderMap.iter (fun key data ->
+  Headers.iter (fun key data ->
       let lower_header = String.lowercase_ascii key in
       if (not !first) then Buffer.add_string signed_headers ";";
       Buffer.add_string signed_headers lower_header;
@@ -91,7 +86,7 @@ let make_auth_header ~credentials ~scope ~signed_headers ~signature =
     signed_headers
     signature
 
-let%test _ =
+let%test "signing key" =
   let credentials = Credentials.make
       ~access_key:"AKIAIOSFODNN7EXAMPLE"
       ~secret_key:"wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
@@ -107,7 +102,7 @@ let%test _ =
   let expected = "f4780e2d9f65fa895f9c67b32ce1baf0b0d8a43505a000a1a9e090d414db404d" in
   signing_key = expected
 
-let%test _ =
+let%test "auth header" =
   let credentials = Credentials.make
       ~access_key:"AKIAIOSFODNN7EXAMPLE"
       ~secret_key:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
@@ -123,7 +118,7 @@ let%test _ =
         ("x-amz-content-sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
         ("x-amz-date", "20130524T000000Z")
       ]
-      |> List.fold_left ~f:(fun acc (key, value) -> HeaderMap.add key value acc) ~init:HeaderMap.empty
+      |> List.fold_left ~f:(fun acc (key, value) -> Headers.add ~key ~value acc) ~init:Headers.empty
   in
   let verb = "GET" in
   let query = "" in
@@ -151,9 +146,6 @@ let chunk_signature ~(signing_key: Digestif.SHA256.t)  ~date ~time ~scope ~previ
       (to_hex sha)
   in
   hmac_sha256 ~key:(signing_key :> string) string_to_sign
-
-let chunk_header ~length ~signature =
-  sprintf "%x;chunk-signature=%s" length signature
 
 let%test "chunk_signature" =
   let credentials = Credentials.make

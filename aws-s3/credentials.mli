@@ -11,8 +11,8 @@ val make :
   access_key:string -> secret_key:string ->
   ?token:string -> ?expiration:float -> unit -> t
 
-module Make(Compat : Types.Compat) : sig
-  open Compat
+module Make(Io : Types.Io) : sig
+  open Io
 
   module Iam : sig
 

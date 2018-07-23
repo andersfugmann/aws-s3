@@ -10,7 +10,6 @@ build-test: [["jbuilder" "runtest" "-p" name "-j" jobs]]
 version: "3.1.0"
 depends: [
   "jbuilder" { build }
-  "cohttp"
   "ocaml-inifiles"
   "digestif" { >= "0.6" }
   "ptime"
@@ -20,6 +19,7 @@ depends: [
   "ppx_protocol_conv_json"
   "cmdliner"
   "ppx_inline_test"
+  "base64"
 ]
 
 available: [ ocaml-version >= "4.05.0" ]

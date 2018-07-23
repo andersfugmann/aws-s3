@@ -17,7 +17,6 @@
   }}}*)
 open StdLabels
 let sprintf = Printf.sprintf
-open Cohttp
 
 (* @see https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-streaming.html
    public static String UriEncode(CharSequence input, boolean encodeSlash) {
@@ -80,17 +79,15 @@ let get_chunked_length ~chunk_size payload_length =
 let%test "get_chunk_length" =
   get_chunked_length ~chunk_size:(64*1024) (65*1024) = 66824
 
-module Make(C : Types.Compat) = struct
-  open C
-  type body =
-  | String of string
-  | Empty
-  | Chunked of { pipe: string Pipe.reader; length: int; chunk_size: int }
+module Make(Io : Types.Io) = struct
+  module Body = Body.Make(Io)
+  module Http = Http.Make(Io)
+  open Io
+  open Deferred
 
   (* TODO: Calculate sha while retrieving data *)
-  let chunked_body ~signing_key ~scope ~initial_signature ~date ~time ~chunk_size reader =
+  let chunk_writer ~signing_key ~scope ~initial_signature ~date ~time ~chunk_size reader =
     let open Deferred in
-    let open Deferred.Infix in
     let sub ~pos ?len str =
       let res = match pos, len with
         | 0, None -> str
@@ -104,25 +101,26 @@ module Make(C : Types.Compat) = struct
 
     in
     let send writer previous_signature elements length =
+      let flush_done = Pipe.flush writer in
       let sha = Digestif.SHA256.digesti_string
           (fun f -> List.iter ~f elements)
       in
       let signature = Authorization.chunk_signature ~signing_key ~date ~time ~scope
           ~previous_signature ~sha |> Authorization.to_hex in
-      let header = Authorization.chunk_header ~length ~signature in
-      C.Pipe.write writer header >>= fun () ->
-      C.Pipe.write writer "\r\n" >>= fun () ->
+      Io.Pipe.write writer
+        (Printf.sprintf "%x;chunk-signature=%s\r\n" length signature) >>= fun () ->
       List.fold_left
-        ~init:(Deferred.return ()) ~f:(fun x data -> x >>= fun () -> C.Pipe.write writer data)
+        ~init:(Deferred.return ()) ~f:(fun x data -> x >>= fun () -> Io.Pipe.write writer data)
         elements >>= fun () ->
-      C.Pipe.write writer "\r\n" >>= fun () ->
+      Io.Pipe.write writer "\r\n" >>= fun () ->
+      flush_done >>= fun () ->
       return signature
     in
     let rec transfer previous_signature (buffered:int) queue current writer =
       begin
         match current with
         | Some v -> return (Some v)
-        | None -> C.Pipe.read reader >>= function
+        | None -> Io.Pipe.read reader >>= function
           | None -> return None
           | Some v -> return (Some (v, 0))
       end >>= function
@@ -154,24 +152,23 @@ module Make(C : Types.Compat) = struct
     in
     Pipe.create_reader ~f:(transfer initial_signature 0 [] None)
 
-  let make_request ~scheme ?(body=Empty) ?(region=Region.Us_east_1) ?(credentials:Credentials.t option) ~headers
-      ~(meth:[ `DELETE | `GET | `HEAD | `POST | `PUT ]) ~path ~query () =
+  let make_request ~scheme ?(body=Body.Empty) ?(region=Region.Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
     let host_str = Region.to_host region in
     let (date, time)  = Unix.gettimeofday () |> Time.iso8601_of_time in
 
     (* Create headers structure *)
     let content_length =
       match meth, body with
-      | (`PUT | `POST), String body -> Some (String.length body |> string_of_int)
-      | (`PUT | `POST), Chunked { length; chunk_size; _ } ->
+      | (`PUT | `POST), Body.String body -> Some (String.length body |> string_of_int)
+      | (`PUT | `POST), Body.Chunked { length; chunk_size; _ } ->
         Some (get_chunked_length ~chunk_size length |> string_of_int )
-      | (`PUT | `POST), Empty -> Some "0"
+      | (`PUT | `POST), Body.Empty -> Some "0"
       | _ -> None
     in
     let payload_sha = match body with
-      | Empty -> empty_sha
-      | String body -> Authorization.hash_sha256 body |> Authorization.to_hex
-      | Chunked _ -> "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
+      | Body.Empty -> empty_sha
+      | Body.String body -> Authorization.hash_sha256 body |> Authorization.to_hex
+      | Body.Chunked _ -> "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
     in
     let token = match credentials with
       | Some { Credentials.token ; _ } -> token
@@ -179,40 +176,29 @@ module Make(C : Types.Compat) = struct
     in
 
     let headers, body =
-      let module HeaderMap = Authorization.HeaderMap in
-      let change ~key ~f map =
-        match f (HeaderMap.find_opt key map) with
-        | None -> HeaderMap.remove key map
-        | Some v -> HeaderMap.add key v map
-      in
-      let add ~key ~data map = HeaderMap.add key data map in
-      let add_opt ~key ~data map =
-        match data with
-        | Some data -> add ~key ~data map
-        | None -> map
-      in
       let decoded_content_length = match body with
-        | Chunked { length; _ } -> Some (string_of_int length)
+        | Body.Chunked { length; _ } -> Some (string_of_int length)
         | _ -> None
       in
+      let open Headers in
       let headers =
-        List.fold_left ~init:HeaderMap.empty ~f:(fun m (k, v) -> HeaderMap.add k v m) headers
-        |> add     ~key:"Host"                 ~data:host_str
-        |> add     ~key:"x-amz-content-sha256" ~data:payload_sha
-        |> add     ~key:"x-amz-date"           ~data:(sprintf "%sT%sZ" date time)
-        |> add_opt ~key:"x-amz-security-token" ~data:token
-        |> add_opt ~key:"Content-Length"       ~data:content_length
+        List.fold_left ~init:empty ~f:(fun m (key, value) -> add ~key ~value m) headers
+        |> add     ~key:"Host"                 ~value:host_str
+        |> add     ~key:"x-amz-content-sha256" ~value:payload_sha
+        |> add     ~key:"x-amz-date"           ~value:(sprintf "%sT%sZ" date time)
+        |> add_opt ~key:"x-amz-security-token" ~value:token
+        |> add_opt ~key:"Content-Length"       ~value:content_length
         |> change  ~key:"User-Agent" ~f:(function Some _ as r -> r | None -> Some "aws-s3 ocaml client")
-        |> add_opt ~key:"x-amz-decoded-content-length" ~data:decoded_content_length
+        |> add_opt ~key:"x-amz-decoded-content-length" ~value:decoded_content_length
         |> change  ~key:"Content-Encoding" ~f:(fun v -> match body, v with
-            | Chunked _, Some v -> Some ("aws-chunked," ^ v)
-            | Chunked _, None -> Some "aws-chunked"
+            | Body.Chunked _, Some v -> Some ("aws-chunked," ^ v)
+            | Body.Chunked _, None -> Some "aws-chunked"
             | _, v -> v)
       in
       let auth, body =
         match credentials with
         | Some credentials ->
-          let verb = Code.string_of_method (meth :> Code.meth) in
+          let verb = Http.string_of_method meth in
           let region = Region.to_string region in
           let path = encode_string path in
           let query =
@@ -227,44 +213,39 @@ module Make(C : Types.Compat) = struct
             Authorization.make_signature ~date ~time ~verb ~path
               ~headers ~query ~scope ~signing_key ~payload_sha
           in
-          let auth_header = Authorization.make_auth_header ~credentials ~scope ~signed_headers ~signature in
+          let auth = (Authorization.make_auth_header ~credentials ~scope ~signed_headers ~signature)in
           let body = match body with
-            | String body -> Some (Cohttp_deferred.Body.of_string body)
-            | Empty -> None
-            | Chunked { pipe; chunk_size; _ } ->
+            | Body.String body ->
+              let reader, writer = Pipe.create () in
+              Pipe.write writer body >>= fun () ->
+              Pipe.close writer;
+              return (Some reader)
+            | Body.Empty -> return None
+            | Body.Chunked { pipe; chunk_size; _ } ->
               let pipe =
-                chunked_body ~signing_key ~scope
+                chunk_writer ~signing_key ~scope
                   ~initial_signature:signature ~date ~time ~chunk_size pipe
               in
-              Some (Cohttp_deferred.Body.of_pipe pipe)
+              return (Some pipe)
           in
-          Some auth_header, body
-
-
+          Some auth, body
         | None ->
           let body = match body with
-            | String body -> Some (Cohttp_deferred.Body.of_string body)
-            | Empty -> None
-            | Chunked { pipe; _ } -> Some (Cohttp_deferred.Body.of_pipe pipe)
+            | Body.String body ->
+              let reader, writer = Pipe.create () in
+              Pipe.write writer body >>= fun () ->
+              Pipe.close writer;
+              return (Some reader)
+            | Body.Empty -> return None
+            | Body.Chunked { pipe; _} ->
+              return (Some pipe)
           in
           None, body
       in
-      add_opt ~key:"Authorization" ~data:auth headers, body
+      (Headers.add_opt ~key:"Authorization" ~value:auth headers), body
     in
-
-    let uri = Uri.make
-        ~scheme:(match scheme with `Http -> "http"
-                                 | `Https -> "https")
-        ~host:host_str
-        ~path
-        ~query:(List.map ~f:(fun (k,v) -> k, [v]) query)
-        ()
-    in
-
-    Cohttp_deferred.call
-      ~headers:(Header.of_list (Authorization.HeaderMap.bindings headers))
-      ?body
-      (meth :> Code.meth)
-      uri
-
+    body >>= fun body ->
+    Http.call ~scheme ~host:host_str ~path ~query ~headers ?body meth >>=? fun (code, msg, headers, body) ->
+    (* Convert the body into a string.  *)
+    Deferred.Or_error.return (code, msg, headers, body)
 end

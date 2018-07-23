@@ -1,4 +1,3 @@
-module HeaderMap : Map.S with type key = string
 val hash_sha256 : string -> Digestif.SHA256.t
 val hmac_sha256 : key:string -> string -> Digestif.SHA256.t
 val to_hex : Digestif.SHA256.t -> string
@@ -18,7 +17,7 @@ val string_to_sign :
   verb:string ->
   path:string ->
   query:string ->
-  headers:string HeaderMap.t ->
+  headers:string Headers.t ->
   payload_sha:string -> scope:string ->
   string * string
 
@@ -27,7 +26,7 @@ val make_signature :
   time:string ->
   verb:string ->
   path:string ->
-  headers:string HeaderMap.t ->
+  headers:string Headers.t ->
   query:string ->
   scope:string ->
   signing_key:Digestif.SHA256.t ->
@@ -47,5 +46,3 @@ val chunk_signature:
   scope:string ->
   previous_signature:string ->
   sha:Digestif.SHA256.t -> Digestif.SHA256.t
-
-val chunk_header: length:int -> signature:string -> string

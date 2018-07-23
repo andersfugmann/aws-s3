@@ -14,13 +14,13 @@ module Option = struct
     | None -> failwith message
 end
 
-(* We need to make a functor over deferred *)
-module Make(Compat: Aws_s3.Types.Compat) = struct
-  module S3 = Aws_s3.S3.Make(Compat)
-  module Credentials = Aws_s3.Credentials.Make(Compat)
-  open Compat
-  open Compat.Deferred
-  open Compat.Deferred.Infix
+let retries = 0
+
+module Make(Io : Aws_s3.Types.Io) = struct
+  module S3 = Aws_s3.S3.Make(Io)
+  module Credentials = Aws_s3.Credentials.Make(Io)
+  open Io
+  open Deferred
 
   let read_file ?first ?last file =
     let data, len =
@@ -44,11 +44,10 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
 
   type objekt = { bucket: string; key: string }
   let objekt_of_uri u =
-    let path = Uri.path u in
-    { bucket = (Option.value_exn ~message:"No Host in uri" (Uri.host u));
-      key = String.sub ~pos:1 ~len:(String.length path - 1) path;
-    }
-
+    match String.split_on_char ~sep:'/' u with
+    | ["s3:"; ""; bucket; key] ->
+      { bucket; key }
+    | _ -> failwith ("Illegal uri: " ^ u)
 
   let string_of_error = function
     | S3.Redirect _ -> "Redirect"
@@ -62,12 +61,14 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     | S3toS3 of objekt * objekt
 
   let determine_paths src dst =
-    let src = Uri.of_string src in
-    let dst = Uri.of_string dst in
-    let is_s3 u = Uri.scheme u = Some "s3" in
+    let is_s3 u =
+      String.split_on_char ~sep:'/' u
+      |> List.hd
+      |> fun scheme -> scheme = "s3:"
+    in
     match is_s3 src, is_s3 dst with
-    | (true, false) -> S3toLocal (objekt_of_uri src, Uri.path dst)
-    | (false, true) -> LocaltoS3 (Uri.path src, objekt_of_uri dst)
+    | (true, false) -> S3toLocal (objekt_of_uri src, dst)
+    | (false, true) -> LocaltoS3 (src, objekt_of_uri dst)
     | (true, true) -> S3toS3 (objekt_of_uri src, objekt_of_uri dst)
     | (false, false) -> failwith "Use cp(1)"
 
@@ -77,12 +78,12 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     | n when n > 5*1024*1024 ->
       let len = 5*1024*1024 in
       let part = String.sub ~pos:offset ~len data in
-      (S3.retry ~retries:5
+      (S3.retry ~retries
          ~f:(fun ?region -> S3.Multipart_upload.upload_part ?region ~credentials t ~part_number ~data:part) ()) ::
       upload_parts t ~credentials ~offset:(offset + 5*1024*1024) ~part_number:(part_number + 1) data
     | len ->
       let part = String.sub ~pos:offset ~len data in
-      [ S3.retry ~retries:5
+      [ S3.retry ~retries
          ~f:(fun ?region -> S3.Multipart_upload.upload_part ?region ~credentials t ~part_number ~data:part) () ]
 
   let cp profile ?(use_multi=false) ?first ?last src dst =
@@ -91,34 +92,34 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     let credentials = ok_exn credentials in
     match determine_paths src dst with
     | S3toLocal (src, dst) ->
-      S3.retry ~retries:5
+      S3.retry ~retries
         ~f:(fun ?region () -> S3.get ?region ~credentials ~range ~bucket:src.bucket ~key:src.key ()) () >>=? fun data ->
       save_file dst data;
       Deferred.return (Ok ())
     | LocaltoS3 (src, dst) when use_multi ->
       let data = read_file ?first ?last src in
-      S3.retry ~retries:5
+      S3.retry ~retries
         ~f:(fun ?region () -> S3.Multipart_upload.init ?region ~credentials ~bucket:dst.bucket ~key:dst.key ()) () >>=? fun t ->
       let uploads = upload_parts t ~credentials data in
       List.fold_left ~init:(Deferred.return (Ok ())) ~f:(fun acc x -> acc >>=? fun () -> x) uploads >>=?
-      S3.retry ~retries:5
+      S3.retry ~retries
         ~f:(fun ?region () -> S3.Multipart_upload.complete ?region ~credentials t ()) >>=? fun _md5 ->
       Deferred.return (Ok ())
     | LocaltoS3 (src, dst) ->
       let data = read_file ?first ?last src in
       let reader =
-        Compat.Pipe.create_reader ~f:(fun writer -> Compat.Pipe.write writer data)
+        Io.Pipe.create_reader ~f:(fun writer -> Io.Pipe.write writer data)
       in
-      S3.retry ~retries:0
+      S3.retry ~retries
         ~f:(fun ?region () -> S3.put_stream ?region ~credentials ~bucket:dst.bucket ~key:dst.key
                ~data:reader ~chunk_size:(64*1024) ~length:(String.length data) ()) () >>=? fun _etag ->
       Deferred.return (Ok ())
     | S3toS3 (src, dst) ->
-      S3.retry ~retries:5
+      S3.retry ~retries
         ~f:(fun ?region () -> S3.Multipart_upload.init ?region ~credentials ~bucket:dst.bucket ~key:dst.key ()) () >>=? fun t ->
-      S3.retry ~retries:5
+      S3.retry ~retries
         ~f:(fun ?region () -> S3.Multipart_upload.copy_part ?region ~credentials t ~bucket:src.bucket ~key:src.key ~part_number:1 ()) () >>=?
-      S3.retry ~retries:5
+      S3.retry ~retries
         ~f:(fun ?region () -> S3.Multipart_upload.complete ?region ~credentials t ()) >>=? fun _md5 ->
       Deferred.return (Ok ())
 
@@ -127,17 +128,17 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
     let credentials = ok_exn credentials in
     match paths with
     | [ key ] ->
-        S3.retry ~retries:5 ~f:(S3.delete ~scheme:`Http ~credentials ~bucket ~key) ()
+        S3.retry ~retries ~f:(S3.delete ~scheme:`Http ~credentials ~bucket ~key) ()
     | keys ->
       let objects : S3.Delete_multi.objekt list = List.map ~f:(fun key -> { S3.Delete_multi.key; version_id = None }) keys in
-      S3.retry ~retries:5
+      S3.retry ~retries
         ~f:(S3.delete_multi ~scheme:`Http ~credentials ~bucket ~objects) () >>=? fun _deleted ->
       Deferred.return (Ok ())
 
   let head profile path =
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
-    let { bucket; key } = objekt_of_uri (Uri.of_string path) in
+    let { bucket; key } = objekt_of_uri path in
     S3.head ~credentials ~bucket ~key () >>= function
     | Ok { S3.key; etag; size; _ } ->
       Printf.printf "Key: %s, Size: %d, etag: %s\n"
@@ -160,13 +161,13 @@ module Make(Compat: Aws_s3.Types.Compat) = struct
 
       match cont with
       | S3.Ls.More continuation -> ratelimit_f ()
-        >>=? S3.retry ~retries:5 ~f:(fun ?region:_ () -> continuation ())
+        >>=? S3.retry ~retries ~f:(fun ?region:_ () -> continuation ())
         >>=? ls_all
       | S3.Ls.Done -> Deferred.return (Ok ())
     in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
-    S3.retry ~retries:5 ~f:(S3.ls ~scheme:`Http ?continuation_token:None ~credentials ?prefix ~bucket) () >>=? ls_all
+    S3.retry ~retries ~f:(S3.ls ~scheme:`Http ?continuation_token:None ~credentials ?prefix ~bucket) () >>=? ls_all
 
 
   let exec ({ Cli.profile }, cmd) =

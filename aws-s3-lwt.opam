@@ -11,7 +11,7 @@ depends: [
   "jbuilder" { build }
   "aws-s3" { = "3.1.0" }
   "lwt"
-  "cohttp-lwt-unix"
+  "conduit-lwt-unix"
 ]
 
 available: [ ocaml-version >= "4.04.0" ]
