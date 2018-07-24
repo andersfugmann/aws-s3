@@ -14,6 +14,7 @@
 [x] Support chunked transfer (put)
 [ ] Add streaming API
 [x] Remove dependency on Cohttp
+[x] Switch to dune
 
 3.0.0: Released 2018-05-16
 [x] Add parameter to specify scheme(http|https)

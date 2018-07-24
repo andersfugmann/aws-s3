@@ -6,7 +6,7 @@
 # Simple tests using the awscli
 BUKCET=aws-s3-test1
 TEMP=$(mktemp)
-BIN="jbuilder exec aws-cli-async --"
+BIN="dune exec aws-cli-async --"
 
 FILE=/tmp/aaas
 dd if=/dev/zero ibs=1k count=65 | tr "\000" "A" > $FILE
@@ -54,4 +54,4 @@ test "ls" ${BIN} ls ${BUKCET}
 test "rm" ${BIN} rm ${BUKCET} "test"
 test "upload" ${BIN} cp $FILE s3://${BUKCET}/test1
 test "upload" ${BIN} cp $FILE s3://${BUKCET}/test2
-test "rm" ${BIN} rm ${BUKCET} "test1" "test2"
+test "multi rm" ${BIN} rm ${BUKCET} "test1" "test2"

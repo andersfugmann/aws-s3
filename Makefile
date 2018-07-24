@@ -1,18 +1,18 @@
 .PHONY: build
 build:
-	jbuilder build @install --dev
+	dune build @install
 
 .PHONY: install
 install: build
-	jbuilder install
+	dune install
 
 .PHONY: clean
 clean:
-	jbuilder clean
+	dune clean
 
 .PHONY: test
 test: build
-	jbuilder runtest --dev
+	dune runtest
 
 update-version: VERSION=$(shell cat Changelog | grep -E '^[0-9]' | head -n 1 | cut -f1 -d':' )
 update-version:
@@ -25,7 +25,7 @@ release:
 	@./release.sh $(VERSION)
 
 doc:
-	jbuilder build --dev @doc
+	dune build --dev @doc
 
 gh-pages: doc
 	git clone `git config --get remote.origin.url` .gh-pages --reference .
