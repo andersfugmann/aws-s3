@@ -11,32 +11,36 @@ type actions =
   | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool}
 
 type options =
-  { profile: string option; }
+  { profile: string option; https: bool; }
 
 let parse exec =
   let profile =
     let doc = "Specify profile to use." in
-    Arg.(value & opt (some string) None & info ["profile"; "p"] ~docv:"PROFILE" ~doc)
+    Arg.(value & opt (some string) None & info ["profile"; "p"] ~docv:"NAME" ~doc)
   in
 
   let ratelimit =
     let doc = "Limit requests to N/sec." in
-    Arg.(value & opt (some int) None & info ["ratelimit"; "r"] ~docv:"RATELIMIT" ~doc)
+    Arg.(value & opt (some int) None & info ["ratelimit"; "r"] ~docv:"INT" ~doc)
+  in
+
+  let https =
+    let doc = "Enable/disable https." in
+    Arg.(value & opt bool false & info ["https"] ~docv:"BOOL" ~doc)
   in
 
   let common_opts =
-    let make profile = { profile } in
-    Term.(const make $ profile)
+    let make profile https = { profile; https } in
+    Term.(const make $ profile $ https)
   in
 
   let bucket n =
     let doc = "S3 bucket name" in
-    Arg.(required & pos n (some string) None & info [] ~docv:"BUCKET" ~doc)
+    Arg.(required & pos n (some string) None & info [] ~docv:"NAME" ~doc)
   in
 
-
   let path n name =
-    let doc = "path: <local_path>|<s3://<bucket>/<objname>" in
+    let doc = "path: <local_path>|s3://<bucket>/<objname>" in
     Arg.(required & pos n (some string) None & info [] ~docv:name ~doc)
   in
 
@@ -44,11 +48,11 @@ let parse exec =
     let make opts first last multi src dest = opts, Cp { src; dest; first; last; multi } in
     let first =
       let doc = "first byte of the source object to copy. If omitted means from the start." in
-      Arg.(value & opt (some int) None & info ["first"; "f"] ~docv:"BYTE" ~doc)
+      Arg.(value & opt (some int) None & info ["first"; "f"] ~docv:"INT" ~doc)
     in
     let last =
       let doc = "last byte of the source object to copy. If omitted means to the end" in
-      Arg.(value & opt (some int) None & info ["last"; "l"] ~docv:"BYTE" ~doc)
+      Arg.(value & opt (some int) None & info ["last"; "l"] ~docv:"INT" ~doc)
     in
     let multi =
       let doc = "Use multipart upload" in
@@ -71,7 +75,7 @@ let parse exec =
 
   let head =
     let path =
-      let doc = "object: <s3://<bucket>/<objname>" in
+      let doc = "object: s3://<bucket>/<objname>" in
       Arg.(required & pos 0 (some string) None & info [] ~docv:"PATH" ~doc)
     in
 

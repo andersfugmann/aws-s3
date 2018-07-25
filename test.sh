@@ -6,8 +6,7 @@
 # Simple tests using the awscli
 BUKCET=aws-s3-test1
 TEMP=$(mktemp)
-BIN="_build/install/default/bin/aws-cli-lwt"
-dune build $BIN
+BINS="_build/install/default/bin/aws-cli-async _build/install/default/bin/aws-cli-lwt"
 
 FILE=/tmp/aaas
 dd if=/dev/zero ibs=1k count=65 | tr "\000" "A" > $FILE
@@ -38,21 +37,34 @@ trap cleanup EXIT
 
 MD5=$(md5sum $FILE | cut -f 1 -d' ')
 
-test "upload" ${BIN} cp $FILE s3://${BUKCET}/test
-test "head" ${BIN} head s3://${BUKCET}/test
-#| grep -q ${MD5}"
-test "download" ${BIN} cp s3://${BUKCET}/test ${TEMP}
-test "data" diff -u $FILE ${TEMP}
+function suite () {
+    BIN=$1
+    HTTPS=$2
+    echo "TEST $(basename $BIN) https=$HTTPS"
 
-test "multi_upload" ${BIN} cp -m $FILE s3://${BUKCET}/test
-test "download" ${BIN} cp s3://${BUKCET}/test ${TEMP}
-test "data" diff -u $FILE ${TEMP}
+    test "upload" ${BIN} cp --https=${HTTPS} $FILE s3://${BUKCET}/test
+    test "head" ${BIN} head --https=${HTTPS} s3://${BUKCET}/test
+    #| grep -q ${MD5}"
+    test "download" ${BIN} cp --https=${HTTPS} s3://${BUKCET}/test ${TEMP}
+    test "data" diff -u $FILE ${TEMP}
 
-test "partial get" ${BIN} cp --first=10 --last=19 s3://${BUKCET}/test ${TEMP}
-test "partial result" [ "$(wc -c ${TEMP} | cut -f 1 -d' ')" -eq "10" ]
+    test "multi_upload" ${BIN} cp --https=${HTTPS} -m $FILE s3://${BUKCET}/test
+    test "download" ${BIN} cp --https=${HTTPS} s3://${BUKCET}/test ${TEMP}
+    test "data" diff -u $FILE ${TEMP}
 
-test "ls" ${BIN} ls ${BUKCET}
-test "rm" ${BIN} rm ${BUKCET} "test"
-test "upload" ${BIN} cp $FILE s3://${BUKCET}/test1
-test "upload" ${BIN} cp $FILE s3://${BUKCET}/test2
-test "multi rm" ${BIN} rm ${BUKCET} "test1" "test2"
+    test "partial get" ${BIN} cp --https=${HTTPS} --first=10 --last=19 s3://${BUKCET}/test ${TEMP}
+    test "partial result" [ "$(wc -c ${TEMP} | cut -f 1 -d' ')" -eq "10" ]
+
+    test "ls" ${BIN} ls --https=${HTTPS} ${BUKCET}
+    test "rm" ${BIN} rm --https=${HTTPS} ${BUKCET} "test"
+    test "upload" ${BIN} cp --https=${HTTPS} $FILE s3://${BUKCET}/test1
+    test "upload" ${BIN} cp --https=${HTTPS} $FILE s3://${BUKCET}/test2
+    test "multi rm" ${BIN} rm --https=${HTTPS} ${BUKCET} "test1" "test2"
+}
+
+for BIN in ${BINS}; do
+    echo "XXX: $BIN"
+    dune build $BIN
+    suite $BIN false
+    suite $BIN true
+done
