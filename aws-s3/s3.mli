@@ -73,7 +73,7 @@ module Make(Io : Types.Io) : sig
       - If [first] is None, then start from the beginning of the object.
       - If [last] is None, then get to the end of the object.
       Scheme defaults to http. If you are uploading across the internet.
-      to use https, please make sure that you have enabled ssl for cohttp
+      to use https, please make sure that you have enabled ssl for conduit
       (opam package tls or lwt_ssl for lwt or async_ssl for async)
   *)
   val get :
