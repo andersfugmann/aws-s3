@@ -83,8 +83,6 @@ module Make(Io : Types.Io) = struct
       | false -> Body.of_pipe ~length:content_length ~start:remain reader
     in
     (* We need to register a function to close all pipes once the body has been closed. *)
-    Pipe.closed body
-      ~f:(fun () -> Pipe.close writer; Pipe.close_reader reader; return ());
+    async (Pipe.closed body >>= fun () -> Pipe.close writer; Pipe.close_reader reader; return ());
     Or_error.return (int_of_string status_code, status_message, headers, body)
-
 end

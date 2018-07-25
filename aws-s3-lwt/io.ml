@@ -9,12 +9,10 @@ module Deferred = struct
     let catch : (unit -> 'a t) -> 'a t = fun f ->
       Lwt.catch f Lwt_result.fail
 
-    module Infix = struct
-      let (>>=) a b =
-        a >>= function
-        | Ok v -> b v
-        | Error _ as err -> Lwt.return err
-    end
+    let (>>=) a b =
+      a >>= function
+      | Ok v -> b v
+      | Error _ as err -> Lwt.return err
   end
 
   let (>>=) = Lwt.Infix.(>>=)
@@ -27,6 +25,7 @@ module Deferred = struct
     Lwt.catch
       (fun () -> f () >>= Or_error.return)
       (fun exn -> Or_error.fail exn)
+  let async t = Lwt.async (fun () -> t)
 end
 
 module Pipe = struct
@@ -125,8 +124,7 @@ module Pipe = struct
           transfer reader writer
       end
 
-  let closed ~f reader =
-    Lwt.async (fun () -> fst reader.closer >>= fun () -> f ())
+  let closed reader = fst reader.closer
 end
 
 module Net = struct
@@ -162,7 +160,7 @@ module Net = struct
         read ()
     in
     (* We close input and output when input is closed *)
-    Pipe.closed ~f:(fun () -> Lwt_io.close oc) reader;
+    Lwt.async (fun () -> Pipe.closed reader >>= fun () -> Lwt_io.close oc);
     Lwt.async read;
 
     let output, writer = Pipe.create () in

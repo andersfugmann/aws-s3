@@ -7,14 +7,13 @@ module type Io = sig
       val return: 'a -> 'a t
       val fail: exn -> 'a t
       val catch: (unit -> 'a t) -> 'a t
-      module Infix: sig
-        val (>>=): 'a t -> ('a -> 'b t) -> 'b t
-      end
+      val (>>=): 'a t -> ('a -> 'b t) -> 'b t
     end
 
     val return: 'a -> 'a t
     val after: float -> unit t
     val catch: (unit -> 'a t) -> 'a Or_error.t
+    val async: unit t -> unit
 
     val (>>=): 'a t -> ('a -> 'b t) -> 'b t
     val (>>|): 'a t -> ('a -> 'b) -> 'b t
@@ -32,7 +31,7 @@ module type Io = sig
     val close_reader: 'a reader -> unit
     val read: 'a reader -> 'a option Deferred.t
     val transfer: 'a reader -> 'a writer -> unit Deferred.t
-    val closed : f:(unit -> unit Deferred.t) -> 'a reader -> unit
+    val closed : 'a reader -> unit Deferred.t
   end
 
   module Net : sig

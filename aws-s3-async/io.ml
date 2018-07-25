@@ -11,12 +11,10 @@ module Deferred = struct
       | Ok v -> Async_kernel.return v
       | Error exn -> Async_kernel.return (Error exn)
 
-    module Infix = struct
-      let (>>=) : 'a t -> ('a -> 'b t) -> 'b t = fun v f ->
-        v >>= function
-        | Ok v -> f v
-        | Error exn -> Async_kernel.return (Error exn)
-    end
+    let (>>=) : 'a t -> ('a -> 'b t) -> 'b t = fun v f ->
+      v >>= function
+      | Ok v -> f v
+      | Error exn -> Async_kernel.return (Error exn)
   end
 
   let (>>=) = Async_kernel.(>>=)
@@ -29,6 +27,7 @@ module Deferred = struct
   let return = Async_kernel.return
   let after delay = Async_kernel.after (Core_kernel.Time_ns.Span.of_sec delay)
   let catch f = Async_kernel.Monitor.try_with f
+  let async = don't_wait_for
 end
 
 module Pipe = struct
@@ -51,8 +50,7 @@ module Pipe = struct
   let create_reader ~f = Pipe.create_reader ~close_on_exception:true f
   let transfer reader writer = Pipe.transfer_id reader writer
   let create () = Pipe.create ()
-  let closed ~f reader =
-    don't_wait_for (Pipe.closed reader >>= fun () -> f ())
+  let closed reader = Pipe.closed reader
 end
 
 module Net = struct
