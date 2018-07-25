@@ -44,11 +44,11 @@ module Make(Io : Types.Io) = struct
     end >>= fun () ->
     Pipe.close writer;
 
+    (* Start reading the reply *)
     Body.read_until ~sep:" " reader "" >>=? fun (_http_version, remain) ->
     Body.read_until ~sep:" " reader remain >>=? fun (status_code, remain) ->
     Body.read_until ~sep:"\r\n" reader remain >>=? fun (status_message, remain) ->
 
-    (* Start reading the reply *)
     let rec read_headers (acc: string Headers.t) remain =
       Body.read_until ~sep:"\r\n" reader remain >>=? function
       | ("", remain) -> Or_error.return (acc, remain)
@@ -67,7 +67,8 @@ module Make(Io : Types.Io) = struct
     let content_length =
       match Headers.find_opt "content-length" headers with
       | None -> 0
-      | Some length -> int_of_string length
+      | Some length ->
+        int_of_string length
     in
     (* Test if the reply is chunked *)
     let chunked_transfer =

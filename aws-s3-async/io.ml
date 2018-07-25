@@ -49,8 +49,7 @@ module Pipe = struct
   let close writer = Pipe.close writer
   let close_reader reader = Pipe.close_read reader
   let create_reader ~f = Pipe.create_reader ~close_on_exception:true f
-  let transfer reader writer =
-    Pipe.transfer_id reader writer
+  let transfer reader writer = Pipe.transfer_id reader writer
   let create () = Pipe.create ()
   let closed ~f reader =
     don't_wait_for (Pipe.closed reader >>= fun () -> f ())
@@ -67,9 +66,6 @@ module Net = struct
       Deferred.Or_error.return (Ipaddr_unix.of_inet_addr addr)
     | _ -> Deferred.Or_error.fail (failwith ("Failed to resolve host: " ^ host))
 
-  (* Dont need a port, as we only use 80 or 443 *)
-  (* Need to return a handle to close the connection, as lwt_streams cannot be closed
-     from the consumer end - Which would be preferable. - But we are not tied to use Lwt_streams. *)
   let connect ~host ~scheme =
     lookup host >>=? fun addr ->
     let endp = match scheme with

@@ -30,70 +30,158 @@ module Deferred = struct
 end
 
 module Pipe = struct
-  (* Use Home-grown pipe, which must support flush et. al.
-     Streams will not do.
-  *)
   open Lwt.Infix
-  type 'a elem = Flush of unit Lwt_mvar.t
+  type 'a elem = Flush of unit Lwt.u
                | Data of 'a
 
-  type 'a reader = 'a Lwt_stream.t
-  type 'a writer = { cond: unit Lwt_condition.t; queue: 'a elem Queue.t; mutable closed: bool }
+  type ('a, 'phantom) pipe =
+    { cond: unit Lwt_condition.t;
+      queue: 'a elem Queue.t;
+      mutable closed: bool;
+      closer: (unit Lwt.t * unit Lwt.u);
+    }
+
+  type 'a reader = ('a, [`Reader]) pipe
+  type 'a writer = ('a, [`Writer]) pipe
+
+  let on_close pipe =
+    match Lwt.is_sleeping (fst pipe.closer) with
+    | true -> Lwt.wakeup_later (snd pipe.closer) ()
+    | false -> ()
 
   let write writer data =
-    Queue.add (Data data) writer.queue;
-    if Queue.length writer.queue = 1 then Lwt_condition.signal writer.cond ();
-    Lwt.return_unit
+    match writer.closed with
+    | false ->
+      Queue.add (Data data) writer.queue;
+      if Queue.length writer.queue = 1 then Lwt_condition.signal writer.cond ();
+      Lwt.return_unit
+    | true ->
+      failwith (__LOC__ ^ ": Closed")
 
   let flush writer =
-    let mvar = Lwt_mvar.create_empty () in
-    Queue.add (Flush mvar) writer.queue;
+    let waiter, wakeup = Lwt.wait () in
+    Queue.add (Flush wakeup) writer.queue;
     if Queue.length writer.queue = 1 then Lwt_condition.signal writer.cond ();
-    Lwt_mvar.take mvar
+    waiter
 
-  let close writer =
+  let close (writer : 'a writer) =
     writer.closed <- true;
-    Lwt_condition.signal writer.cond ()
+    Lwt_condition.broadcast writer.cond ();
+    on_close writer
 
-  let close_reader _=
-    failwith "Not implemented"
+  let close_reader (reader : 'a reader) =
+    reader.closed <- true;
+    Queue.clear (reader.queue);
+    Lwt_condition.broadcast reader.cond ();
+    on_close reader
 
-  let read reader =
-    Lwt_stream.get reader
+  let rec read (reader : 'a reader) =
+    match Queue.take reader.queue with
+    | Data data -> Lwt.return (Some data)
+    | Flush wakeup ->
+      Lwt.wakeup_later wakeup ();
+      read reader
+    | exception Queue.Empty when reader.closed ->
+      Lwt.return None
+    | exception Queue.Empty ->
+      Lwt_condition.wait reader.cond >>= fun () ->
+      read reader
+
+  let create : unit -> 'a reader * 'a writer = fun () ->
+    let pipe = { cond = Lwt_condition.create ();
+                 queue = Queue.create ();
+                 closed = false;
+                 closer = Lwt.wait ();
+               }
+    in
+    pipe, pipe
 
   let create_reader: f:('a writer -> unit Lwt.t) -> 'a reader = fun ~f ->
-    let writer = { cond = Lwt_condition.create (); queue = Queue.create (); closed = false; } in
-    let rec producer: unit -> 'a option Lwt.t = fun () ->
-      match Queue.pop writer.queue with
-      | Data data -> Lwt.return (Some data)
-      | Flush mvar ->
-        Lwt_mvar.put mvar () >>= fun () ->
-        producer ()
-      | exception Queue.Empty -> begin
-          match writer.closed with
-          | true -> Lwt.return None
-          | false ->
-            Lwt_condition.wait writer.cond >>= fun () ->
-            producer ()
-        end
-    in
-    Lwt.async (fun () -> f writer >>= fun () -> close writer; Lwt.return_unit);
-    Lwt_stream.from producer
+    let reader, writer = create () in
+    Lwt.async (fun () ->
+        Lwt.catch
+          (fun () -> f writer)
+          (fun _ -> Lwt.return ()) >>= fun () ->
+        close writer; Lwt.return ()
+      );
+    reader
 
-  (* We need the flush to pass through *)
+  (* If the writer is closed, so is the reader *)
   let rec transfer reader writer =
-    read reader >>= function
-    | Some v -> write writer v >>= fun () -> transfer reader writer
-    | None -> Lwt.return ()
+    match writer.closed with
+    | true ->
+      close_reader reader;
+      Lwt.return ()
+    | false -> begin
+        match Queue.take reader.queue with
+        | v ->
+          Queue.push v writer.queue;
+          if Queue.length writer.queue = 1 then Lwt_condition.signal writer.cond ();
+          transfer reader writer
+        | exception Queue.Empty when reader.closed ->
+          Lwt.return ();
+        | exception Queue.Empty ->
+          Lwt_condition.wait reader.cond >>= fun () ->
+          transfer reader writer
+      end
 
-  let create () = failwith "Not implemented"
   let closed ~f reader =
-    ignore (f, reader);
-    failwith "Not implemented"
+    Lwt.async (fun () -> fst reader.closer >>= fun () -> f ())
 end
 
 module Net = struct
+  let (>>=?) = Lwt_result.Infix.(>>=)
+  let lookup host =
+    Lwt_unix.gethostbyname host >>= fun host_entry ->
+    match Array.length host_entry.Lwt_unix.h_addr_list with
+    | 0 -> Deferred.Or_error.fail (failwith ("Failed to resolve host: " ^ host))
+    | _ -> Deferred.Or_error.return
+             (Ipaddr_unix.of_inet_addr host_entry.Lwt_unix.h_addr_list.(0))
+
   let connect ~host ~scheme =
-    ignore (host, scheme);
-    failwith "Not implemented"
+    lookup host >>=? fun addr ->
+    let endp = match scheme with
+      | `Http -> `TCP (`IP addr, `Port 80)
+      | `Https -> `OpenSSL (`Hostname host, `IP addr, `Port 443)
+    in
+    Conduit_lwt_unix.connect ~ctx:Conduit_lwt_unix.default_ctx endp >>= fun (_flow, ic, oc) ->
+
+    (*  Lwt_io.input_channel *)
+    let reader, input = Pipe.create () in
+    let rec read () =
+      Lwt_result.catch (Lwt_io.read ~count:(128 * 1024) ic) >>= fun data ->
+      match input.Pipe.closed, data with
+      | _, Ok ""
+      | _, Error _ ->
+        Pipe.close input;
+        Lwt.return ()
+      | true, _ ->
+        Lwt.return ()
+      | false, Ok data ->
+        Pipe.write input data >>= fun () ->
+        read ()
+    in
+    (* We close input and output when input is closed *)
+    Pipe.closed ~f:(fun () -> Lwt_io.close oc) reader;
+    Lwt.async read;
+
+    let output, writer = Pipe.create () in
+
+    let rec write () =
+      match Queue.take output.Pipe.queue with
+      | Flush waiter ->
+        Lwt_io.flush oc >>= fun () ->
+        Lwt.wakeup_later waiter ();
+        write ()
+      | Data data ->
+        Lwt_io.write oc data >>= fun () ->
+        write ()
+      | exception Queue.Empty when output.Pipe.closed ->
+        Lwt.return ()
+      | exception Queue.Empty ->
+        Lwt_condition.wait output.Pipe.cond >>= fun () ->
+        write ()
+    in
+    Lwt.async write;
+    Deferred.Or_error.return (reader, writer)
 end

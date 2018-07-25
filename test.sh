@@ -6,7 +6,8 @@
 # Simple tests using the awscli
 BUKCET=aws-s3-test1
 TEMP=$(mktemp)
-BIN="dune exec aws-cli-async --"
+BIN="_build/install/default/bin/aws-cli-lwt"
+dune build $BIN
 
 FILE=/tmp/aaas
 dd if=/dev/zero ibs=1k count=65 | tr "\000" "A" > $FILE
