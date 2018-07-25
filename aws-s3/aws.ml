@@ -38,11 +38,9 @@ module Make(Io : Types.Io) = struct
       res
 
     in
-    let send writer previous_signature elements length =
+    let send writer sha previous_signature elements length =
       let flush_done = Pipe.flush writer in
-      let sha = Digestif.SHA256.digesti_string
-          (fun f -> List.iter ~f elements)
-      in
+      let sha = Digestif.SHA256.get sha in
       let signature = Authorization.chunk_signature ~signing_key ~date ~time ~scope
           ~previous_signature ~sha |> Authorization.to_hex in
       Io.Pipe.write writer
@@ -54,7 +52,7 @@ module Make(Io : Types.Io) = struct
       flush_done >>= fun () ->
       return signature
     in
-    let rec transfer previous_signature (buffered:int) queue current writer =
+    let rec transfer previous_signature ctx (buffered:int) queue current writer =
       begin
         match current with
         | Some v -> return (Some v)
@@ -66,16 +64,17 @@ module Make(Io : Types.Io) = struct
             return (Some (v, 0))
       end >>= function
       | None ->
-        send writer previous_signature (List.rev queue) buffered >>= fun signature ->
-        send writer signature [] 0 >>= fun _signature ->
+        send writer ctx previous_signature (List.rev queue) buffered >>= fun signature ->
+        send writer Digestif.SHA256.empty signature [] 0 >>= fun _signature ->
         Deferred.return ()
       | Some (data, offset) -> begin
           let remain = chunk_size - buffered in
           match (String.length data) - offset with
           | n when n >= remain ->
             let elem = sub data ~pos:offset ~len:remain in
+            let ctx = Digestif.SHA256.feed_string ctx elem in
             let elements = elem :: (List.rev queue) in
-            send writer previous_signature elements chunk_size >>= fun signature ->
+            send writer ctx previous_signature elements chunk_size >>= fun signature ->
             (* Recursive call. *)
             let data = match String.length data > remain with
               | true ->
@@ -83,15 +82,16 @@ module Make(Io : Types.Io) = struct
               | false ->
                 None
             in
-            transfer signature 0 [] data writer
+            transfer signature Digestif.SHA256.empty 0 [] data writer
           | _ ->
             let elem = sub ~pos:offset data in
-            transfer previous_signature
+            let ctx = Digestif.SHA256.feed_string ctx elem in
+            transfer previous_signature ctx
               (buffered + String.length elem)
               (elem :: queue) None writer
         end
     in
-    Pipe.create_reader ~f:(transfer initial_signature 0 [] None)
+    Pipe.create_reader ~f:(transfer initial_signature Digestif.SHA256.empty 0 [] None)
 
   let make_request ~scheme ?(body=Body.Empty) ?(region=Region.Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
     let host_str = Region.to_host region in
