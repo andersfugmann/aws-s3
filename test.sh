@@ -9,7 +9,7 @@ TEMP=$(mktemp)
 BINS="_build/install/default/bin/aws-cli-async _build/install/default/bin/aws-cli-lwt"
 
 FILE=/tmp/aaas
-dd if=/dev/zero ibs=1k count=65 | tr "\000" "A" > $FILE
+dd if=/dev/urandom ibs=1k count=7k of=$FILE
 
 TEST=0
 function test {
@@ -49,6 +49,10 @@ function suite () {
     test "data" diff -u $FILE ${TEMP}
 
     test "multi_upload" ${BIN} cp --https=${HTTPS} -m $FILE s3://${BUKCET}/test
+    test "download stream" ${BIN} cp -c 8209 --https=${HTTPS} s3://${BUKCET}/test ${TEMP}
+    test "data" diff -u $FILE ${TEMP}
+
+    test "multi_upload chunked" ${BIN} cp -c 8209 --https=${HTTPS} -m $FILE s3://${BUKCET}/test
     test "download" ${BIN} cp --https=${HTTPS} s3://${BUKCET}/test ${TEMP}
     test "data" diff -u $FILE ${TEMP}
 
@@ -57,13 +61,15 @@ function suite () {
 
     test "ls" ${BIN} ls --https=${HTTPS} ${BUKCET}
     test "rm" ${BIN} rm --https=${HTTPS} ${BUKCET} "test"
-    test "upload" ${BIN} cp --https=${HTTPS} $FILE s3://${BUKCET}/test1
-    test "upload" ${BIN} cp --https=${HTTPS} $FILE s3://${BUKCET}/test2
+    test "upload chunked" ${BIN} cp -c 8209 --https=${HTTPS} $FILE s3://${BUKCET}/test1
+    test "download" ${BIN} cp --https=${HTTPS} s3://${BUKCET}/test1 ${TEMP}
+    test "data" diff -u $FILE ${TEMP}
+
+    test "s3 cp" ${BIN} cp --https=${HTTPS} s3://${BUKCET}/test1 s3://${BUKCET}/test2
     test "multi rm" ${BIN} rm --https=${HTTPS} ${BUKCET} "test1" "test2"
 }
 
 for BIN in ${BINS}; do
-    echo "XXX: $BIN"
     dune build $BIN
     suite $BIN false
     suite $BIN true

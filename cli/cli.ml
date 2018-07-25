@@ -8,7 +8,7 @@ type actions =
   | Ls of { bucket: string; prefix: string option; ratelimit: int option; }
   | Head of { path: string; }
   | Rm of { bucket: string; paths : string list }
-  | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool}
+  | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool; chunk_size: int option}
 
 type options =
   { profile: string option; https: bool; }
@@ -45,7 +45,9 @@ let parse exec =
   in
 
   let cp =
-    let make opts first last multi src dest = opts, Cp { src; dest; first; last; multi } in
+    let make opts first last multi chunk_size src dest =
+      opts, Cp { src; dest; first; last; multi; chunk_size }
+    in
     let first =
       let doc = "first byte of the source object to copy. If omitted means from the start." in
       Arg.(value & opt (some int) None & info ["first"; "f"] ~docv:"INT" ~doc)
@@ -59,7 +61,12 @@ let parse exec =
       Arg.(value & flag & info ["multi"; "m"] ~docv:"MULTI" ~doc)
     in
 
-    Term.(const make $ common_opts $ first $ last $ multi $ path 0 "SRC" $ path 1 "DEST"),
+    let chunk_size =
+      let doc = "Use streaming get / put the given chunk_size" in
+      Arg.(value & opt (some int) None & info ["chunk_size"; "c"] ~docv:"CHUNK_SIZE" ~doc)
+    in
+
+    Term.(const make $ common_opts $ first $ last $ multi $ chunk_size $ path 0 "SRC" $ path 1 "DEST"),
     Term.info "cp" ~doc:"Copy files to and from S3"
   in
   let rm =

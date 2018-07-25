@@ -55,19 +55,6 @@ module Make(Io : Types.Io) : sig
      key:string ->
      data:string -> unit -> string result) command
 
-  val put_stream :
-    (?content_type:string ->
-     ?content_encoding:string ->
-     ?acl:string ->
-     ?cache_control:string ->
-     bucket:string ->
-     key:string ->
-     data:string Io.Pipe.reader ->
-     chunk_size:int ->
-     length:int ->
-     unit -> string result) command
-
-
   (** Download [key] from s3 in [bucket]
       If [range] is specified, only a part of the file is retrieved.
       - If [first] is None, then start from the beginning of the object.
@@ -96,12 +83,41 @@ module Make(Io : Types.Io) : sig
     (bucket:string -> objects:Delete_multi.objekt list -> unit -> Delete_multi.result result) command
 
   (** List contents in [bucket]
-
       Aws will return upto 1000 keys per request. If not all keys are
       returned, the function will return a continuation.
   *)
   val ls :
     (?continuation_token:string -> ?prefix:string -> bucket:string -> unit -> Ls.t) command
+
+  (** Streaming functions *)
+  module Stream : sig
+
+    (** Streaming version of put.
+        @param length is the amount of data to copy
+        @param chunk_size Is the size of chunks send to s3.
+               The system will have 2 x chunk_size byte in flight
+        @see put
+    *)
+    val put :
+      (?content_type:string ->
+       ?content_encoding:string ->
+       ?acl:string ->
+       ?cache_control:string ->
+       bucket:string ->
+       key:string ->
+       data:string Io.Pipe.reader ->
+       chunk_size:int ->
+       length:int ->
+       unit -> string result) command
+
+    (** Streaming version of get.
+        The connection is closed when the pipe is closed.
+        @see get
+    *)
+    val get :
+      (?range:range -> bucket:string -> key:string -> unit -> string Io.Pipe.reader result) command
+
+  end
 
   module Multipart_upload: sig
     type t
@@ -129,6 +145,19 @@ module Make(Io : Types.Io) : sig
 
     (** Abort a multipart upload. This also discards all uploaded parts. *)
     val abort : (t -> unit -> unit result) command
+
+    (** Streaming functions *)
+    module Stream : sig
+
+      (** Streaming version of upload_part.
+          @param length is the amount of data to copy
+          @param chunk_size Is the size of chunks send to s3.
+                 The system will have 2 x chunk_size byte in flight
+          @see upload_part
+      *)
+      val upload_part :
+        (t -> part_number:int -> data:string Io.Pipe.reader -> length:int -> chunk_size:int -> unit -> unit result) command
+    end
   end
 
   (** Helper function to handle error codes.

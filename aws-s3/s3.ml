@@ -231,28 +231,32 @@ module Make(Io : Types.Io) = struct
       Deferred.return (Error (Unknown (code, resp.code)))
   (**/**)
 
-  let put ?(scheme=`Http) ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data () =
-    let path = sprintf "/%s/%s" bucket key in
-    let headers =
-      let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
-      let content_encoding = Option.map ~f:(fun ct -> ("Content-Encoding", ct)) content_encoding in
-      let cache_control    = Option.map ~f:(fun cc -> ("Cache-Control", cc)) cache_control in
-      let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
-      filter_map ~f:(fun x -> x) [ content_type; content_encoding; cache_control; acl ]
-    in
-    let cmd ?region () =
-      Aws.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~body:(Body.String data) ~query:[] ()
-    in
+  module Stream = struct
 
-    do_command ?region cmd >>=? fun (headers, _body) ->
-    let etag =
-      match Headers.find_opt "etag" headers with
-      | None -> failwith "Put reply did not conatin an etag header"
-      | Some etag -> String.sub ~pos:1 ~len:(String.length etag - 2) etag
-    in
-    Deferred.return (Ok etag)
+    let get ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key () =
+      let headers =
+        let r_opt = function
+          | Some r -> (string_of_int r)
+          | None -> ""
+        in
+        match range with
+        | Some { first = None; last = None } -> []
+        | Some { first = Some first; last } ->
+          [ "Range", sprintf "bytes=%d-%s" first (r_opt last) ]
+        | Some { first = None; last = Some last } when last < 0 ->
+          [ "Range", sprintf "bytes=-%d" last ]
+        | Some { first = None; last = Some last } ->
+          [ "Range", sprintf "bytes=0-%d" last ]
+        | None -> []
+      in
+      let path = sprintf "/%s/%s" bucket key in
+      let cmd ?region () =
+        Aws.make_request ~scheme ?credentials ?region ~headers ~meth:`GET ~path ~query:[] ()
+      in
+      do_command ?region cmd >>=? fun (_headers, body) ->
+      Deferred.return (Ok body)
 
-  let put_stream ?(scheme=`Http) ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data ~chunk_size ~length () =
+    let put ?(scheme=`Http) ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data ~chunk_size ~length () =
     let path = sprintf "/%s/%s" bucket key in
     let headers =
       let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
@@ -274,27 +278,31 @@ module Make(Io : Types.Io) = struct
     in
     Deferred.return (Ok etag)
 
-  let get ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key () =
-    let headers =
-      let r_opt = function
-        | Some r -> (string_of_int r)
-        | None -> ""
-      in
-      match range with
-      | Some { first = None; last = None } -> []
-      | Some { first = Some first; last } ->
-        [ "Range", sprintf "bytes=%d-%s" first (r_opt last) ]
-      | Some { first = None; last = Some last } when last < 0 ->
-        [ "Range", sprintf "bytes=-%d" last ]
-      | Some { first = None; last = Some last } ->
-        [ "Range", sprintf "bytes=0-%d" last ]
-      | None -> []
-    in
+  end
+
+  let put ?(scheme=`Http) ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data () =
     let path = sprintf "/%s/%s" bucket key in
-    let cmd ?region () =
-      Aws.make_request ~scheme ?credentials ?region ~headers ~meth:`GET ~path ~query:[] ()
+    let headers =
+      let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
+      let content_encoding = Option.map ~f:(fun ct -> ("Content-Encoding", ct)) content_encoding in
+      let cache_control    = Option.map ~f:(fun cc -> ("Cache-Control", cc)) cache_control in
+      let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
+      filter_map ~f:(fun x -> x) [ content_type; content_encoding; cache_control; acl ]
     in
-    do_command ?region cmd >>=? fun (_headers, body) ->
+    let cmd ?region () =
+      Aws.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~body:(Body.String data) ~query:[] ()
+    in
+
+    do_command ?region cmd >>=? fun (headers, _body) ->
+    let etag =
+      match Headers.find_opt "etag" headers with
+      | None -> failwith "Put reply did not conatin an etag header"
+      | Some etag -> String.sub ~pos:1 ~len:(String.length etag - 2) etag
+    in
+    Deferred.return (Ok etag)
+
+  let get ?scheme ?credentials ?region ?range ~bucket ~key () =
+    Stream.get ?scheme ?credentials ?region ?range ~bucket ~key () >>=? fun body ->
     Body.to_string body >>= fun body ->
     Deferred.return (Ok body)
 
@@ -499,6 +507,30 @@ module Make(Io : Types.Io) = struct
       in
       do_command ?region cmd >>=? fun (_headers, _body) ->
       Deferred.return (Ok ())
+
+    module Stream = struct
+      let upload_part ?(scheme=`Http) ?credentials ?region t ~part_number ~data ~length ~chunk_size () =
+        let path = sprintf "/%s/%s" t.bucket t.key in
+        let query =
+          [ "partNumber", string_of_int part_number;
+            "uploadId", t.id ]
+        in
+        let body = Body.Chunked { length; chunk_size; pipe=data } in
+        let cmd ?region () =
+          Aws.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`PUT ~path
+            ~body ~query ()
+        in
+
+        do_command ?region cmd >>=? fun (headers, _body) ->
+        let etag =
+          Headers.find_opt "etag" headers
+          |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
+          |> fun etag -> String.sub ~pos:1 ~len:(String.length etag - 2) etag
+        in
+        t.parts <- { etag; part_number } :: t.parts;
+        Deferred.return (Ok ())
+    end
+
   end
 
   let retry ?region ~retries ~f () =
