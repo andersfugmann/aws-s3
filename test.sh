@@ -6,10 +6,11 @@
 # Simple tests using the awscli
 BUKCET=aws-s3-test1
 TEMP=$(mktemp)
+FILE=$(mktemp)
 BINS="_build/install/default/bin/aws-cli-async _build/install/default/bin/aws-cli-lwt"
-
-FILE=/tmp/aaas
 dd if=/dev/urandom ibs=1k count=7k of=$FILE
+PART=$(mktemp)
+dd if=${FILE} of=${PART} ibs=1k skip=1 count=1k
 
 TEST=0
 function test {
@@ -32,10 +33,10 @@ function fail {
 }
 function cleanup {
     rm -f ${TEMP}
+    rm -f ${PART}
+    rm -f ${FILE}
 }
 trap cleanup EXIT
-
-MD5=$(md5sum $FILE | cut -f 1 -d' ')
 
 function suite () {
     BIN=$1
@@ -44,25 +45,29 @@ function suite () {
 
     test "upload" ${BIN} cp --https=${HTTPS} $FILE s3://${BUKCET}/test
     test "head" ${BIN} head --https=${HTTPS} s3://${BUKCET}/test
-    #| grep -q ${MD5}"
     test "download" ${BIN} cp --https=${HTTPS} s3://${BUKCET}/test ${TEMP}
+    test "data" diff -u $FILE ${TEMP}
+
+    test "download stream" ${BIN} cp -c 8209 --https=${HTTPS} s3://${BUKCET}/test ${TEMP}
     test "data" diff -u $FILE ${TEMP}
 
     test "upload chunked" ${BIN} cp -c 8209 --https=${HTTPS} $FILE s3://${BUKCET}/test
-    test "download" ${BIN} cp --https=${HTTPS} s3://${BUKCET}/test ${TEMP}
+    test "download stream" ${BIN} cp -c 8209 --https=${HTTPS} s3://${BUKCET}/test ${TEMP}
     test "data" diff -u $FILE ${TEMP}
 
-
     test "multi_upload" ${BIN} cp --https=${HTTPS} -m $FILE s3://${BUKCET}/test
-    test "download stream" ${BIN} cp -c 8209 --https=${HTTPS} s3://${BUKCET}/test ${TEMP}
+    test "download" ${BIN} cp --https=${HTTPS} s3://${BUKCET}/test ${TEMP}
     test "data" diff -u $FILE ${TEMP}
 
     test "multi_upload chunked" ${BIN} cp -c 8209 --https=${HTTPS} -m $FILE s3://${BUKCET}/test
     test "download" ${BIN} cp --https=${HTTPS} s3://${BUKCET}/test ${TEMP}
     test "data" diff -u $FILE ${TEMP}
 
-    test "partial get" ${BIN} cp --https=${HTTPS} --first=10 --last=19 s3://${BUKCET}/test ${TEMP}
-    test "partial result" [ "$(wc -c ${TEMP} | cut -f 1 -d' ')" -eq "10" ]
+    test "partial get" ${BIN} cp --https=${HTTPS} s3://${BUKCET}/test --first=1024 --last=1049599 ${TEMP}
+    test "partial data" diff -u ${PART} ${TEMP}
+
+    test "partial download stream" ${BIN} cp --https=${HTTPS} --first=1024 --last=1049599 s3://${BUKCET}/test ${TEMP}
+    test "partial data" diff -u ${PART} ${TEMP}
 
     test "ls" ${BIN} ls --https=${HTTPS} ${BUKCET}
     test "rm" ${BIN} rm --https=${HTTPS} ${BUKCET} "test"

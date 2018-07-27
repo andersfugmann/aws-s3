@@ -35,7 +35,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
     close_in ic;
     data
 
-  let file_reader ?(chunk_size=8) ~pos ~len file =
+  let file_reader ?(chunk_size=4097) ~pos ~len file =
     (* Create a stream with the data *)
     let ic = open_in file in
     (* Seek first *)
