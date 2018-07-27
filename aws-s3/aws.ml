@@ -73,7 +73,7 @@ module Make(Io : Types.Io) = struct
           | n when n >= remain ->
             let elem = sub data ~pos:offset ~len:remain in
             let ctx = Digestif.SHA256.feed_string ctx elem in
-            let elements = elem :: (List.rev queue) in
+            let elements = elem :: queue |> List.rev in
             send writer ctx previous_signature elements chunk_size >>= fun signature ->
             (* Recursive call. *)
             let data = match String.length data > remain with

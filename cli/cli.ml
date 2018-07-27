@@ -11,7 +11,7 @@ type actions =
   | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool; chunk_size: int option}
 
 type options =
-  { profile: string option; https: bool; }
+  { profile: string option; https: bool; retries: int}
 
 let parse exec =
   let profile =
@@ -29,9 +29,14 @@ let parse exec =
     Arg.(value & opt bool false & info ["https"] ~docv:"BOOL" ~doc)
   in
 
+  let retries =
+    let doc = "Retries in case of error" in
+    Arg.(value & opt int 0 & info ["retries"] ~docv:"INT" ~doc)
+  in
+
   let common_opts =
-    let make profile https = { profile; https } in
-    Term.(const make $ profile $ https)
+    let make profile https retries = { profile; https; retries } in
+    Term.(const make $ profile $ https $ retries)
   in
 
   let bucket n =
