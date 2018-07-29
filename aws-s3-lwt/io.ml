@@ -129,20 +129,23 @@ end
 
 module Net = struct
   let (>>=?) = Lwt_result.Infix.(>>=)
-  let lookup host =
-    Lwt_unix.gethostbyname host >>= fun host_entry ->
-    match Array.length host_entry.Lwt_unix.h_addr_list with
-    | 0 -> Deferred.Or_error.fail (failwith ("Failed to resolve host: " ^ host))
-    | _ -> Deferred.Or_error.return
-             (Ipaddr_unix.of_inet_addr host_entry.Lwt_unix.h_addr_list.(0))
+  let lookup ~domain host =
+    let open Lwt_unix in
+    getaddrinfo host "" [AI_FAMILY domain
+                        ; AI_SOCKTYPE SOCK_STREAM]
+    >>= function
+    | {ai_addr=ADDR_INET (addr, _);_} :: _ -> Deferred.Or_error.return addr
+    | _ -> Deferred.Or_error.fail (failwith ("Failed to resolve host: " ^ host))
 
-  let connect ~host ~scheme =
-    lookup host >>=? fun addr ->
+  let connect ~domain ~host ~scheme =
+    lookup ~domain host >>=? fun addr ->
+    let addr = Ipaddr_unix.of_inet_addr addr in
     let endp = match scheme with
       | `Http -> `TCP (`IP addr, `Port 80)
       | `Https -> `OpenSSL (`Hostname host, `IP addr, `Port 443)
     in
-    Conduit_lwt_unix.connect ~ctx:Conduit_lwt_unix.default_ctx endp >>= fun (_flow, ic, oc) ->
+    Conduit_lwt_unix.connect
+      ~ctx:Conduit_lwt_unix.default_ctx endp >>= fun (_flow, ic, oc) ->
 
     (*  Lwt_io.input_channel *)
     let reader, input = Pipe.create () in

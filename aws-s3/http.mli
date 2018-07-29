@@ -5,7 +5,10 @@ module Make : functor(Io: Types.Io) -> sig
 
   val string_of_method : [< `DELETE | `GET | `HEAD | `POST | `PUT ] -> string
 
-  val call: scheme:[< `Http | `Https ] ->
+  val call:
+    ?domain:Unix.socket_domain ->
+    ?expect:bool ->
+    scheme:[< `Http | `Https ] ->
     host:string ->
     path:string ->
     ?query:(string * string) list ->

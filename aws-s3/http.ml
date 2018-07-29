@@ -13,8 +13,36 @@ module Make(Io : Types.Io) = struct
   | `POST -> "POST"
   | `DELETE -> "DELETE"
 
-  let call ~scheme ~host ~path ?(query=[]) ~headers ?body meth =
-    Net.connect ~host ~scheme >>=? fun (reader, writer) ->
+  let read_status reader remain =
+    (* Start reading the reply *)
+    Body.read_until ~sep:" " reader remain >>=? fun (_http_version, remain) ->
+    Body.read_until ~sep:" " reader remain >>=? fun (status_code, remain) ->
+    Body.read_until ~sep:"\r\n" reader remain >>=? fun (status_message, remain) ->
+    Or_error.return ((int_of_string status_code, status_message), remain)
+
+  let read_headers reader remain =
+    let rec inner acc remain =
+      Body.read_until ~sep:"\r\n" reader remain >>=? function
+      | ("", remain) -> Or_error.return (acc, remain)
+      | (line, remain) ->
+        let (key, value) =
+          match Str.split (Str.regexp ": ") line with
+          | [] -> failwith "Illegal header"
+          | [ k ] -> (k, "")
+          | [ k; v ] -> (k, v)
+          | k :: vs -> (k, String.concat ~sep:": " vs)
+        in
+        inner (Headers.add ~key ~value acc) remain
+    in
+    inner Headers.empty remain
+
+
+  let call ?(domain=Unix.PF_INET) ?(expect=false) ~scheme ~host ~path ?(query=[]) ~headers ?body meth =
+    let headers = match expect with
+      | true -> Headers.add ~key:"Expect" ~value:"100-continue" headers
+      | false -> headers
+    in
+    Net.connect ~domain ~host ~scheme >>=? fun (reader, writer) ->
     let path_with_params = match query with
       | [] -> path
       | query ->
@@ -36,33 +64,30 @@ module Make(Io : Types.Io) = struct
         return ()
       ) headers (return ()) >>= fun () ->
     Pipe.write writer "\r\n" >>= fun () ->
-    (* We might want to wait for a result here, if we have expect *)
-    (* Transfer all elements from data *)
-    begin match body with
-    | None -> return ()
-    | Some body -> Pipe.transfer body writer (* We wait until all has been transfered *)
-    end >>= fun () ->
+
+    begin
+      match expect with
+      | true ->
+        read_status reader "" >>=? fun ((status_code, status_message), remain) ->
+        begin match status_code with
+        | 100 ->
+          begin match body with
+          | None -> return ()
+          | Some body -> Pipe.transfer body writer
+          end >>= fun () ->
+          read_status reader remain
+        | _ -> Or_error.return ((status_code, status_message), remain)
+        end
+      | false ->
+        begin match body with
+        | None -> return ()
+        | Some body -> Pipe.transfer body writer
+        end >>= fun () ->
+        read_status reader ""
+    end >>=? fun ((status_code, status_message), remain) ->
     Pipe.close writer;
 
-    (* Start reading the reply *)
-    Body.read_until ~sep:" " reader "" >>=? fun (_http_version, remain) ->
-    Body.read_until ~sep:" " reader remain >>=? fun (status_code, remain) ->
-    Body.read_until ~sep:"\r\n" reader remain >>=? fun (status_message, remain) ->
-
-    let rec read_headers (acc: string Headers.t) remain =
-      Body.read_until ~sep:"\r\n" reader remain >>=? function
-      | ("", remain) -> Or_error.return (acc, remain)
-      | (line, remain) ->
-        let (key, value) =
-          match Str.split (Str.regexp ": ") line with
-          | [] -> failwith "Illegal header"
-          | [ k ] -> (k, "")
-          | [ k; v ] -> (k, v)
-          | k :: vs -> (k, String.concat ~sep:": " vs)
-        in
-        read_headers (Headers.add ~key ~value acc) remain
-    in
-    read_headers Headers.empty remain >>=? fun (headers, remain) ->
+    read_headers reader remain >>=? fun (headers, remain) ->
 
     let content_length =
       match Headers.find_opt "content-length" headers with
@@ -84,5 +109,5 @@ module Make(Io : Types.Io) = struct
     in
     (* We need to register a function to close all pipes once the body has been closed. *)
     async (Pipe.closed body >>= fun () -> Pipe.close writer; Pipe.close_reader reader; return ());
-    Or_error.return (int_of_string status_code, status_message, headers, body)
+    Or_error.return (status_code, status_message, headers, body)
 end

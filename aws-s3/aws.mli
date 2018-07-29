@@ -1,7 +1,9 @@
 module Make(Io : Types.Io) : sig
   open Io
   val make_request :
+    ?domain:Unix.socket_domain ->
     scheme:[`Http|`Https] ->
+    ?expect:bool ->
     ?body:Body.Make(Io).body ->
     ?region:Region.t ->
     ?credentials:Credentials.t ->

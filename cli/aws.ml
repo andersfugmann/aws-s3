@@ -53,8 +53,9 @@ module Make(Io : Aws_s3.Types.Io) = struct
         after 0.0 >>= fun () ->
         read (n - chunk_size) writer
     in
-    (* Remember to close *)
-    Io.Pipe.create_reader ~f:(read len)
+    let reader = Io.Pipe.create_reader ~f:(read len) in
+    Io.Deferred.async (Io.Pipe.closed reader >>= fun () -> close_in ic; return ());
+    reader
 
   let save_file file contents =
     let oc = open_out file in
@@ -92,15 +93,15 @@ module Make(Io : Aws_s3.Types.Io) = struct
     | (false, false) -> failwith "Use cp(1)"
 
   let rec upload_parts t scheme ~retries ~credentials ?(offset=0) ~total ?(part_number=1) ?chunk_size src =
-    let f ~size ?region =
+    let f ~size ?region ()=
       match chunk_size with
       | None ->
         let data = read_file ~pos:offset ~len:size src in
-        S3.Multipart_upload.upload_part ~scheme ?region ~credentials t ~part_number ~data
+        S3.Multipart_upload.upload_part ~scheme ?region ~credentials t ~part_number ~data ()
       | Some chunk_size ->
         (* Create a reader for this section *)
         let reader = file_reader ~pos:offset ~len:size src in
-        S3.Multipart_upload.Stream.upload_part ~scheme ?region ~credentials t ~part_number ~data:reader ~chunk_size ~length:size
+        S3.Multipart_upload.Stream.upload_part ~scheme ?region ~credentials t ~part_number ~data:reader ~chunk_size ~length:size ()
     in
     match (total - offset) with
     | 0 -> []
@@ -217,7 +218,12 @@ module Make(Io : Aws_s3.Types.Io) = struct
     let credentials = ok_exn credentials in
     S3.retry ~retries ~f:(S3.ls ~scheme ?continuation_token:None ~credentials ?prefix ~bucket) () >>=? ls_all
 
-  let exec ({ Cli.profile; https; retries }, cmd) =
+  let exec ({ Cli.profile; https; retries; ipv6 }, cmd) =
+    let () =
+      match ipv6 with
+      | true -> S3.set_connection_type Unix.PF_INET6
+      | false -> ()
+    in
     let scheme = match https with
       | false -> `Http
       | true -> `Https

@@ -43,14 +43,28 @@ module Make(Io : Types.Io) : sig
 
   type range = { first: int option; last:int option }
 
-  (** Upload [key] to [bucket].
+  (** Globally switch between IPv4 or IPv6 connections.
+      This will affect all future API calls.
+      Defaut is to use IPv4, but may change in the future.
+      Unix domain sockets are not supported.
+  *)
+  val set_connection_type: Unix.socket_domain -> unit
+
+
+
+  (** Upload [data] to [bucket]/[key].
       Returns the etag of the object. The etag is the md5 checksum (RFC 1864)
+      @param expect: If true, the body will not be sent untill a
+      status has been received from the server. This incurs a delay
+      in transfer, but avoid sending a large body, if the request is
+      know to fail before the body is sent.
   *)
   val put :
     (?content_type:string ->
      ?content_encoding:string ->
      ?acl:string ->
      ?cache_control:string ->
+     ?expect:bool ->
      bucket:string ->
      key:string ->
      data:string -> unit -> string result) command
@@ -96,6 +110,7 @@ module Make(Io : Types.Io) : sig
         @param length is the amount of data to copy
         @param chunk_size Is the size of chunks send to s3.
                The system will have 2 x chunk_size byte in flight
+
         @see put
     *)
     val put :
@@ -103,6 +118,7 @@ module Make(Io : Types.Io) : sig
        ?content_encoding:string ->
        ?acl:string ->
        ?cache_control:string ->
+       ?expect:bool ->
        bucket:string ->
        key:string ->
        data:string Io.Pipe.reader ->
@@ -130,11 +146,23 @@ module Make(Io : Types.Io) : sig
       ?cache_control:string ->
       bucket:string -> key:string -> unit -> t result) command
 
-    (** Upload a part of the file. All parts except the last part must be
-        at least 5Mb big. All parts must have a unique part number.
-        The final file will be assembled from all parts ordered by part number *)
+    (** Upload a part of the file. All parts except the last part must
+       be at least 5Mb big. All parts must have a unique part number.
+       The final file will be assembled from all parts ordered by part
+       number
+
+       @param expect: If true, the body will not be sent untill a
+       tatus has been received from the server. This incurs a delay
+       in transfer, but avoid sending a large body, if the request is
+       know to fail before the body is sent.
+*)
     val upload_part :
-      (t -> part_number:int -> data:string -> unit -> unit result) command
+      (t ->
+       part_number:int ->
+       ?expect:bool ->
+       data:string ->
+       unit ->
+       unit result) command
 
     (** Specify a part as a copy of an existing object in S3. *)
     val copy_part :
@@ -154,9 +182,22 @@ module Make(Io : Types.Io) : sig
           @param chunk_size Is the size of chunks send to s3.
                  The system will have 2 x chunk_size byte in flight
           @see upload_part
+
+          @param expect: If true, the body will not be sent untill a
+          status has been received from the server. This incurs a delay
+          in transfer, but avoid sending a large body, if the request is
+          know to fail before the body is sent.
+
       *)
       val upload_part :
-        (t -> part_number:int -> data:string Io.Pipe.reader -> length:int -> chunk_size:int -> unit -> unit result) command
+        (t ->
+         part_number:int ->
+         ?expect:bool ->
+         data:string Io.Pipe.reader ->
+         length:int ->
+         chunk_size:int ->
+         unit ->
+         unit result) command
     end
   end
 

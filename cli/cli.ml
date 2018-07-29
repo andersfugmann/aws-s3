@@ -1,8 +1,5 @@
 (** Parse command line options *)
 open Cmdliner
-(* When executing, we take a function to do the work,
-   so we need a descr of what to do.
-*)
 
 type actions =
   | Ls of { bucket: string; prefix: string option; ratelimit: int option; }
@@ -11,7 +8,7 @@ type actions =
   | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool; chunk_size: int option}
 
 type options =
-  { profile: string option; https: bool; retries: int}
+  { profile: string option; https: bool; retries: int; ipv6: bool}
 
 let parse exec =
   let profile =
@@ -29,14 +26,19 @@ let parse exec =
     Arg.(value & opt bool false & info ["https"] ~docv:"BOOL" ~doc)
   in
 
+  let ipv6 =
+    let doc = "Use ipv6" in
+    Arg.(value & flag & info ["6"] ~docv:"IPV6" ~doc)
+  in
+
   let retries =
     let doc = "Retries in case of error" in
     Arg.(value & opt int 0 & info ["retries"] ~docv:"INT" ~doc)
   in
 
   let common_opts =
-    let make profile https retries = { profile; https; retries } in
-    Term.(const make $ profile $ https $ retries)
+    let make profile https retries ipv6 = { profile; https; retries; ipv6:bool } in
+    Term.(const make $ profile $ https $ retries $ ipv6)
   in
 
   let bucket n =

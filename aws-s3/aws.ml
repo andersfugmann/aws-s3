@@ -93,8 +93,13 @@ module Make(Io : Types.Io) = struct
     in
     Pipe.create_reader ~f:(transfer initial_signature Digestif.SHA256.empty 0 [] None)
 
-  let make_request ~scheme ?(body=Body.Empty) ?(region=Region.Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
-    let host_str = Region.to_host region in
+  let make_request ?(domain=Unix.PF_INET) ~scheme ?(expect=false) ?(body=Body.Empty) ?(region=Region.Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
+    let dualstack = match domain with
+      | Unix.PF_INET -> false
+      | Unix.PF_INET6 -> true
+      | Unix.PF_UNIX -> failwith "Unix domain calls are not supported"
+    in
+    let host_str = Region.to_host ~dualstack region in
     let (date, time)  = Unix.gettimeofday () |> Time.iso8601_of_time in
 
     (* Create headers structure *)
@@ -186,7 +191,7 @@ module Make(Io : Types.Io) = struct
       (Headers.add_opt ~key:"Authorization" ~value:auth headers), body
     in
     body >>= fun body ->
-    Http.call ~scheme ~host:host_str ~path ~query ~headers ?body meth >>=? fun (code, msg, headers, body) ->
+    Http.call ~domain ~scheme ~host:host_str ~path ~query ~headers ~expect ?body meth >>=? fun (code, msg, headers, body) ->
     (* Convert the body into a string.  *)
     Deferred.Or_error.return (code, msg, headers, body)
 end

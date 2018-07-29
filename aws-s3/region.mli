@@ -22,4 +22,4 @@ type t =
 val to_string : t -> string
 val of_string : string -> t
 val of_host : string -> t
-val to_host : t -> string
+val to_host : ?dualstack:bool -> t -> string

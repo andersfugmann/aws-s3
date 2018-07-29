@@ -80,5 +80,9 @@ let of_host host =
     host |> of_string
   | _ -> failwith "Cannot parse region from host"
 
-let to_host region =
-  to_string region |> sprintf "s3.%s.amazonaws.com"
+let to_host ?(dualstack=false) region =
+  let dualstack = match dualstack with
+    | true -> ".dualstack"
+    | false -> ""
+  in
+  to_string region |> sprintf "s3%s.%s.amazonaws.com" dualstack

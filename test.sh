@@ -5,11 +5,11 @@
 
 # Simple tests using the awscli
 BUKCET=aws-s3-test1
-TEMP=$(mktemp)
-FILE=$(mktemp)
+TEMP=/tmp/test_data.bin
+FILE=/tmp/rnd.bin
 BINS="_build/install/default/bin/aws-cli-async _build/install/default/bin/aws-cli-lwt"
 dd if=/dev/urandom ibs=1k count=7k of=$FILE
-PART=$(mktemp)
+PART=part.bin
 dd if=${FILE} of=${PART} ibs=1k skip=1 count=1k
 
 TEST=0
@@ -77,7 +77,7 @@ function suite () {
 }
 
 for BIN in ${BINS}; do
-    dune build $BIN
+    dune build $BIN || exit
     suite $BIN false
     suite $BIN true
 done

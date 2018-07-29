@@ -1,7 +1,6 @@
 -*- mode: fundamental -*-
 
 [ ] Support bigstring
-[ ] Support 100-expect
 
 3.1.0: (unreleased)
 [x] Support HEAD operation on objects.
@@ -12,9 +11,11 @@
 [x] Rewrite authentication code
 [x] Switch to use Ptime for time conversion routines
 [x] Support chunked transfer (put)
-[ ] Add streaming API
+[x] Add streaming API
 [x] Remove dependency on Cohttp
 [x] Switch to dune
+[x] Support IPv6
+[x] Add option to use expect-100.
 
 3.0.0: Released 2018-05-16
 [x] Add parameter to specify scheme(http|https)

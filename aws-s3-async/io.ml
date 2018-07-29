@@ -54,21 +54,21 @@ module Pipe = struct
 end
 
 module Net = struct
-  let lookup host =
+  let lookup ~domain host =
     let open Async_unix.Unix in
-    Addr_info.get ~host [ Addr_info.AI_FAMILY PF_INET
-                        (* ; Addr_info.AI_FAMILY PF_INET6 *)
-                        ; Addr_info.AI_SOCKTYPE SOCK_STREAM]
+    Addr_info.get ~host [ Addr_info.AI_FAMILY domain;
+                          Addr_info.AI_SOCKTYPE SOCK_STREAM]
     >>= function
     | { Addr_info.ai_addr=ADDR_INET (addr, _); _ }::_ ->
-      Deferred.Or_error.return (Ipaddr_unix.of_inet_addr addr)
+      Deferred.Or_error.return addr
     | _ -> Deferred.Or_error.fail (failwith ("Failed to resolve host: " ^ host))
 
-  let connect ~host ~scheme =
-    lookup host >>=? fun addr ->
+  let connect ~domain ~host ~scheme =
+    lookup ~domain host >>=? fun addr ->
+    let ip_addr = Ipaddr_unix.of_inet_addr addr in
     let endp = match scheme with
-      | `Http -> `TCP (addr, 80)
-      | `Https -> `OpenSSL (host, addr, 443)
+      | `Http -> `TCP (ip_addr, 80)
+      | `Https -> `OpenSSL (host, ip_addr, 443)
     in
     Conduit_async.connect endp >>= fun (ic, oc) ->
     let reader = Reader.pipe ic in
