@@ -8,7 +8,7 @@ type actions =
   | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool; chunk_size: int option}
 
 type options =
-  { profile: string option; https: bool; retries: int; ipv6: bool}
+  { profile: string option; https: bool; retries: int; ipv6: bool; expect: bool }
 
 let parse exec =
   let profile =
@@ -36,9 +36,15 @@ let parse exec =
     Arg.(value & opt int 0 & info ["retries"] ~docv:"INT" ~doc)
   in
 
+  let expect =
+    let doc = "Use expect -> 100-continue for put/upload_chunk" in
+    Arg.(value & flag & info ["expect"; "e"] ~docv:"BOOL" ~doc)
+  in
+
+
   let common_opts =
-    let make profile https retries ipv6 = { profile; https; retries; ipv6:bool } in
-    Term.(const make $ profile $ https $ retries $ ipv6)
+    let make profile https retries ipv6 expect = { profile; https; retries; ipv6; expect} in
+    Term.(const make $ profile $ https $ retries $ ipv6 $ expect)
   in
 
   let bucket n =

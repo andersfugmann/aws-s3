@@ -92,25 +92,25 @@ module Make(Io : Aws_s3.Types.Io) = struct
     | (true, true) -> S3toS3 (objekt_of_uri src, objekt_of_uri dst)
     | (false, false) -> failwith "Use cp(1)"
 
-  let rec upload_parts t scheme ~retries ~credentials ?(offset=0) ~total ?(part_number=1) ?chunk_size src =
+  let rec upload_parts t scheme ~retries ~expect ~credentials ?(offset=0) ~total ?(part_number=1) ?chunk_size src =
     let f ~size ?region ()=
       match chunk_size with
       | None ->
         let data = read_file ~pos:offset ~len:size src in
-        S3.Multipart_upload.upload_part ~scheme ?region ~credentials t ~part_number ~data ()
+        S3.Multipart_upload.upload_part ~scheme ~expect ?region ~credentials t ~part_number ~data ()
       | Some chunk_size ->
         (* Create a reader for this section *)
         let reader = file_reader ~pos:offset ~len:size src in
-        S3.Multipart_upload.Stream.upload_part ~scheme ?region ~credentials t ~part_number ~data:reader ~chunk_size ~length:size ()
+        S3.Multipart_upload.Stream.upload_part ~scheme ~expect ?region ~credentials t ~part_number ~data:reader ~chunk_size ~length:size ()
     in
     match (total - offset) with
     | 0 -> []
     | len ->
       let size = min len (5*1024*1024) in
       (S3.retry ~retries ~f:(f ~size)) () ::
-       upload_parts t scheme ~retries ~credentials ~offset:(offset + size) ~total ~part_number:(part_number + 1) ?chunk_size src
+       upload_parts t scheme ~retries ~expect ~credentials ~offset:(offset + size) ~total ~part_number:(part_number + 1) ?chunk_size src
 
-  let cp profile scheme ~retries ?(use_multi=false) ?first ?last ?chunk_size src dst =
+  let cp profile scheme ~retries ~expect ?(use_multi=false) ?first ?last ?chunk_size src dst =
     let range = { S3.first; last } in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
@@ -136,10 +136,9 @@ module Make(Io : Aws_s3.Types.Io) = struct
         | None -> file_length src
         | Some n -> n
       in
-      (* read_file ?first ?last src in *)
       S3.retry ~retries
         ~f:(fun ?region () -> S3.Multipart_upload.init ~scheme ?region ~credentials ~bucket:dst.bucket ~key:dst.key ()) () >>=? fun t ->
-      let uploads = upload_parts t ~retries scheme ?chunk_size ~credentials ~offset ~total:last src in
+      let uploads = upload_parts t ~retries ~expect scheme ?chunk_size ~credentials ~offset ~total:last src in
       List.fold_left ~init:(Deferred.return (Ok ())) ~f:(fun acc x -> acc >>=? fun () -> x) uploads >>=?
       S3.retry ~retries
         ~f:(fun ?region () -> S3.Multipart_upload.complete ?region ~credentials t ()) >>=? fun _md5 ->
@@ -157,7 +156,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
               ~data ()
         | Some chunk_size ->
           let reader = file_reader ~pos ~len src in
-          fun ?region () -> S3.Stream.put ~scheme ?region ~credentials ~bucket:dst.bucket ~key:dst.key
+          fun ?region () -> S3.Stream.put ~scheme ~expect ?region ~credentials ~bucket:dst.bucket ~key:dst.key
               ~data:reader ~chunk_size ~length:len ()
       in
       S3.retry ~retries ~f () >>=? fun _etag ->
@@ -218,7 +217,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
     let credentials = ok_exn credentials in
     S3.retry ~retries ~f:(S3.ls ~scheme ?continuation_token:None ~credentials ?prefix ~bucket) () >>=? ls_all
 
-  let exec ({ Cli.profile; https; retries; ipv6 }, cmd) =
+  let exec ({ Cli.profile; https; retries; ipv6; expect }, cmd) =
     let () =
       match ipv6 with
       | true -> S3.set_connection_type Unix.PF_INET6
@@ -231,7 +230,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
     begin
       match cmd with
       | Cli.Cp { src; dest; first; last; multi; chunk_size } ->
-        cp profile ~retries scheme ~use_multi:multi ?first ?last ?chunk_size src dest
+        cp profile ~retries ~expect scheme ~use_multi:multi ?first ?last ?chunk_size src dest
       | Rm { bucket; paths } ->
         rm profile ~retries scheme bucket paths
       | Ls { ratelimit; bucket; prefix } ->
