@@ -219,10 +219,16 @@ module Make(Io : Types.Io) = struct
     | code when 200 <= code && code < 300 ->
       Deferred.return (Ok (headers, body))
     | 404 -> Deferred.return (Error (Not_found))
-    | c when 300 <= c && c < 500 -> begin
+    | c when 300 <= c && c < 400 ->
+      (* Redirect of sorts *)
+      Pipe.close_reader body;
+      let region = Headers.find "x-amz-bucket-region" headers in
+      Deferred.return (Error (Redirect (Region.of_string region)))
+    | c when 400 <= c && c < 500 -> begin
         let open Error_response in
-        Body.to_string body >>= fun body ->
-        let xml = Xml.parse_string body in
+        Body.to_string body >>= fun body_str ->
+        Pipe.close_reader body;
+        let xml = Xml.parse_string body_str in
         match Error_response.of_xml_light xml with
         | { code = "PermanentRedirect"; endpoint = Some host; _ }
         | { code = "TemporaryRedirect"; endpoint = Some host; _ } ->
@@ -236,10 +242,12 @@ module Make(Io : Types.Io) = struct
       end
     | (500 | 503) ->
       (* 500, InternalError | 503, SlowDown | 503, ServiceUnavailable -> Throttle *)
+      Pipe.close_reader body;
       Deferred.return (Error Throttled)
     | code ->
-      Body.to_string body >>= fun body ->
-      let resp = Error_response.of_xml_light (Xml.parse_string body) in
+      Body.to_string body >>= fun body_txt ->
+      Pipe.close_reader body;
+      let resp = Error_response.of_xml_light (Xml.parse_string body_txt) in
       Deferred.return (Error (Unknown (code, resp.code)))
 
 
@@ -258,7 +266,8 @@ module Make(Io : Types.Io) = struct
       Aws.make_request ~domain:!domain ~scheme ?expect ?credentials ?region ~headers ~meth:`PUT ~path ~body ~query:[] ()
     in
 
-    do_command ?region cmd >>=? fun (headers, _body) ->
+    do_command ?region cmd >>=? fun (headers, body) ->
+    Pipe.close_reader body;
     let etag =
       match Headers.find_opt "etag" headers with
       | None -> failwith "Put reply did not conatin an etag header"
@@ -313,7 +322,8 @@ module Make(Io : Types.Io) = struct
     let cmd ?region () =
       Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query:[] ()
     in
-    do_command ?region cmd >>=? fun (_headers, _body) ->
+    do_command ?region cmd >>=? fun (_headers, body) ->
+    Pipe.close_reader body;
     Deferred.return (Ok ())
 
 
@@ -322,7 +332,8 @@ module Make(Io : Types.Io) = struct
     let cmd ?region () =
       Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`HEAD ~path ~query:[] ()
     in
-    do_command ?region cmd >>=? fun (headers, _body) ->
+    do_command ?region cmd >>=? fun (headers, body) ->
+    Pipe.close_reader body;
     let result =
       let (>>=) a f = match a with
         | Some x -> f x
@@ -439,7 +450,8 @@ module Make(Io : Types.Io) = struct
           ~body:(Body.String data) ~query ()
       in
 
-      do_command ?region cmd >>=? fun (headers, _body) ->
+      do_command ?region cmd >>=? fun (headers, body) ->
+      Pipe.close_reader body;
       let etag =
         Headers.find_opt "etag" headers
         |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
@@ -507,7 +519,8 @@ module Make(Io : Types.Io) = struct
       let cmd ?region () =
         Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query ()
       in
-      do_command ?region cmd >>=? fun (_headers, _body) ->
+      do_command ?region cmd >>=? fun (_headers, body) ->
+      Pipe.close_reader body;
       Deferred.return (Ok ())
 
     module Stream = struct
@@ -523,7 +536,8 @@ module Make(Io : Types.Io) = struct
             ~body ~query ()
         in
 
-        do_command ?region cmd >>=? fun (headers, _body) ->
+        do_command ?region cmd >>=? fun (headers, body) ->
+        Pipe.close_reader body;
         let etag =
           Headers.find_opt "etag" headers
           |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)

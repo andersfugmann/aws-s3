@@ -1,6 +1,8 @@
 open StdLabels
 let sprintf = Printf.sprintf
 
+type meth = [ `DELETE | `GET | `HEAD | `POST | `PUT ]
+
 module Make(Io : Types.Io) = struct
   module Body = Body.Make(Io)
   open Io
@@ -37,7 +39,7 @@ module Make(Io : Types.Io) = struct
     inner Headers.empty remain
 
 
-  let call ?(domain=Unix.PF_INET) ?(expect=false) ~scheme ~host ~path ?(query=[]) ~headers ?body meth =
+  let call ?(domain=Unix.PF_INET) ?(expect=false) ~scheme ~host ~path ?(query=[]) ~headers ?body (meth:meth) =
     let headers = match expect with
       | true -> Headers.add ~key:"Expect" ~value:"100-continue" headers
       | false -> headers
@@ -89,12 +91,6 @@ module Make(Io : Types.Io) = struct
 
     read_headers reader remain >>=? fun (headers, remain) ->
 
-    let content_length =
-      match Headers.find_opt "content-length" headers with
-      | None -> 0
-      | Some length ->
-        int_of_string length
-    in
     (* Test if the reply is chunked *)
     let chunked_transfer =
       match Headers.find_opt "transfer-encoding" headers with
@@ -102,12 +98,24 @@ module Make(Io : Types.Io) = struct
         List.mem "chunked" ~set:(String.split_on_char ~sep:',' encoding)
       | None -> false
     in
-    let body =
-      match chunked_transfer with
-      | true -> Body.chunk_reader reader remain
-      | false -> Body.of_pipe ~length:content_length ~start:remain reader
+    let body = match (meth, Headers.find_opt "content-length" headers, chunked_transfer) with
+      | (`HEAD, _, _)
+      | (_, None, false)
+      | (_, Some "0", false) ->
+        Pipe.close writer;
+        Pipe.close_reader reader;
+        Pipe.create_reader ~f:(fun _ -> return ())
+      | _, Some length, false ->
+        let length = int_of_string length in
+        let body = Body.of_pipe ~length ~start:remain reader in
+        async (Pipe.closed body >>= fun () -> Pipe.close writer; Pipe.close_reader reader; return ());
+        body
+      | _, None, true ->
+        let body = Body.chunk_reader reader remain in
+        async (Pipe.closed body >>= fun () -> Pipe.close writer; Pipe.close_reader reader; return ());
+        body
+      | _, Some _length, true ->
+        failwith "Chunked transfer contained content length"
     in
-    (* We need to register a function to close all pipes once the body has been closed. *)
-    async (Pipe.closed body >>= fun () -> Pipe.close writer; Pipe.close_reader reader; return ());
     Or_error.return (status_code, status_message, headers, body)
 end

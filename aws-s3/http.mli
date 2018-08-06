@@ -1,9 +1,12 @@
 (** Utilites *)
 
+type meth = [ `DELETE | `GET | `HEAD | `POST | `PUT ]
+
+
 module Make : functor(Io: Types.Io) -> sig
   open Io
 
-  val string_of_method : [< `DELETE | `GET | `HEAD | `POST | `PUT ] -> string
+  val string_of_method : meth -> string
 
   val call:
     ?domain:Unix.socket_domain ->
@@ -14,6 +17,6 @@ module Make : functor(Io: Types.Io) -> sig
     ?query:(string * string) list ->
     headers:string Headers.t ->
     ?body:string Pipe.reader ->
-    [< `DELETE | `GET | `HEAD | `POST | `PUT ] ->
+    meth ->
     (int * string * string Headers.t * string Pipe.reader) Deferred.Or_error.t
 end
