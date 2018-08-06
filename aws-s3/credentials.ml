@@ -4,7 +4,10 @@ open Protocol_conv_json
 
 type time = float
 let time_of_json t =
-  Json.to_string t |> Time.parse_rcf1123_string
+  Json.to_string t |> Time.parse_iso8601_string
+
+let%test "time conv" =
+  time_of_json (`String "2018-08-06T19:26:20Z") = 1533583580.
 
 type t = {
   access_key: string [@key "AccessKeyId"];
