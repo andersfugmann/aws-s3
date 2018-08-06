@@ -16,14 +16,14 @@ let to_hex str = Digestif.SHA256.to_hex str
 let make_signing_key =
   let cache = Hashtbl.create 0 in
   fun ?(bypass_cache=false) ~date ~region ~credentials ~service () ->
-    match Hashtbl.find_opt cache credentials.Credentials.access_key with
+    match Hashtbl.find_opt cache (credentials.Credentials.access_key, region) with
     | Some (d, signing_key) when d = date && not bypass_cache -> signing_key
     | Some _ | None ->
       let date_key = hmac_sha256 ~key:("AWS4" ^ credentials.Credentials.secret_key) date in
       let date_region_key = hmac_sha256 ~key:(date_key :> string) region in
       let date_region_service_key = hmac_sha256 ~key:(date_region_key :> string) service in
       let signing_key = hmac_sha256 ~key:(date_region_service_key :> string) "aws4_request" in
-      Hashtbl.replace cache credentials.Credentials.access_key (date, signing_key);
+      Hashtbl.replace cache (credentials.Credentials.access_key, region) (date, signing_key);
       signing_key
 
 let make_scope ~date ~region ~service =
