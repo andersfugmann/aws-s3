@@ -64,7 +64,7 @@ let string_to_sign ~date ~time ~verb ~path ~query ~headers ~payload_sha ~scope =
       signed_headers
       payload_sha
   in
-  (** This could be cached. Its more or less static *)
+  (* This could be cached. Its more or less static *)
   let string_to_sign = sprintf "AWS4-HMAC-SHA256\n%sT%sZ\n%s\n%s"
       date time
       scope

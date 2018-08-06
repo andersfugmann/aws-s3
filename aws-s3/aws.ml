@@ -147,8 +147,10 @@ module Make(Io : Types.Io) = struct
           let verb = Http.string_of_method meth in
           let region = Region.to_string region in
           let path = Util.encode_string path in
+          (* Must be sorted *)
           let query =
-            List.map query ~f:(fun (k, v) -> sprintf "%s=%s" (Util.encode_string k) (Util.encode_string v))
+            List.sort ~cmp:(fun a b -> String.compare (fst a) (fst b)) query
+            |> List.map ~f:(fun (k, v) -> sprintf "%s=%s" (Util.encode_string k) (Util.encode_string v))
             |> String.concat ~sep:"&"
           in
           let signing_key =
