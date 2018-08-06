@@ -152,7 +152,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
       let f = match chunk_size with
         | None ->
           let data = read_file ~pos ~len src in
-          fun ?region () -> S3.put ~scheme ?region ~credentials ~bucket:dst.bucket ~key:dst.key
+          fun ?region () -> S3.put ~scheme ?region ~expect ~credentials ~bucket:dst.bucket ~key:dst.key
               ~data ()
         | Some chunk_size ->
           let reader = file_reader ~pos ~len src in

@@ -5,6 +5,7 @@
 
 # Simple tests using the awscli
 BUKCET=aws-s3-test1
+EU_BUKCET=aws-s3-test-eu
 TEMP=/tmp/test_data.bin
 FILE=/tmp/rnd.bin
 BINS="_build/install/default/bin/aws-cli-async _build/install/default/bin/aws-cli-lwt"
@@ -49,6 +50,10 @@ function suite () {
     test "download" ${BIN} cp --https=${HTTPS} s3://${BUKCET}/test ${TEMP}
     test "data" diff -u $FILE ${TEMP}
 
+    test "eu upload expect" ${BIN} cp -e --https=${HTTPS} $FILE s3://${EU_BUKCET}/test
+    test "eu head" ${BIN} head --https=${HTTPS} s3://${EU_BUKCET}/test
+    test "eu download" ${BIN} cp --https=${HTTPS} s3://${EU_BUKCET}/test ${TEMP}
+    test "eu data" diff -u $FILE ${TEMP}
 
     test "upload expect" ${BIN} cp -e --https=${HTTPS} $FILE s3://${BUKCET}/test
     test "head" ${BIN} head --https=${HTTPS} s3://${BUKCET}/test
