@@ -96,13 +96,20 @@ module Protocol(P: sig type 'a result end) = struct
     type objekt = {
       key: string [@key "Key"];
       version_id: string option [@key "VersionId"];
-    }
-    [@@deriving protocol ~driver:(module Xml_light)]
+    } [@@deriving of_protocol ~driver:(module Xml_light)]
+
+    (** We must not transmit the version id at all if not specified *)
+    let objekt_to_xml_light = function
+      | { key; version_id = None } ->
+        Xml.Element ("object", [], [Xml.Element ("Key", [], [Xml.PCData key])])
+      | { key; version_id = Some version } ->
+        Xml.Element ("object", [], [Xml.Element ("Key", [], [Xml.PCData key]);
+                                    Xml.Element ("VersionId", [], [Xml.PCData version])])
 
     type request = {
       quiet: bool [@key "Quiet"];
       objects: objekt list [@key "Object"]
-    } [@@deriving protocol ~driver:(module Xml_light)]
+    } [@@deriving to_protocol ~driver:(module Xml_light)]
 
     let xml_of_request request =
       request_to_xml_light request |> set_element_name "Delete"
