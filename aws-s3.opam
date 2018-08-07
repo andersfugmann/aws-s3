@@ -13,6 +13,7 @@ depends: [
   "ocaml-inifiles"
   "digestif" { = "0.6" }
   "ptime"
+  "uri"
   "xml-light"
   "yojson"
   "ppx_protocol_conv_xml_light"
