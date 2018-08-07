@@ -64,48 +64,36 @@ module Make(Io : Types.Io) = struct
     in
     Pipe.create_reader ~f:(fun writer -> loop writer start length)
 
-  (* Return or_error *)
   let read_until ~sep reader data =
-    let rec loop pos index acc data =
-      (* Search at this point *)
-      match pos with
-      | pos when index = String.length sep ->
-        (* Found it. *)
-        Buffer.add_substring acc data 0 (pos - index);
-        let len = String.length data - pos in
-        return (Ok ((Buffer.contents acc), String.sub data ~pos ~len))
-      | pos when pos = String.length data -> begin
-        Buffer.add_string acc data;
-        (* Fetch a new chunk. Keep index *)
-        Pipe.read reader >>= function
-        | Some data ->
-          loop 0 index acc data;
-        | None ->
-          return
-            (Error (Failure (Printf.sprintf "EOF while looking for '%d'" (Char.code sep.[index]))))
-          (* return (`Eof (Buffer.contents acc)) *)
-      end
-      | pos when data.[pos] = sep.[index] ->
-        loop (pos + 1) (index + 1) acc data
-      | pos ->
-        (* Not a match after all, so reset index, and find the next pos *)
-        let pos =
-          match String.index_from_opt data pos sep.[index] with
-          | Some pos -> pos
-          | None -> String.length data
-        in
-        loop pos 0 acc data
+    let buffer = Buffer.create 256 in
+    let rec loop offset = function
+      | sep_index when sep_index = String.length sep ->
+        (* Found it. Return data *)
+        let v = Buffer.sub buffer 0 (offset - String.length sep) in
+        let remain = Buffer.sub buffer offset (Buffer.length buffer - offset) in
+        return (Ok (v, remain))
+      | sep_index when offset >= (Buffer.length buffer) -> begin
+          Pipe.read reader >>= function
+          | Some data ->
+            Buffer.add_string buffer data;
+            loop offset sep_index;
+          | None ->
+            return
+              (Error (Failure (Printf.sprintf "EOF while looking for '%d'" (Char.code sep.[sep_index]))))
+              (* return (`Eof (Buffer.contents acc)) *)
+        end
+      | sep_index when Buffer.nth buffer offset = sep.[sep_index] ->
+        loop (offset + 1) (sep_index + 1)
+      | _ ->
+        (* Reset sep index. Look for the next element. We cou *)
+        loop (offset + 1) 0
     in
-    loop 0 0 (Buffer.create 256) data
-
+    Buffer.add_string buffer data;
+    loop 0 0
 
   (** Chunked encoding
-      17b
-       <?xml version="1.0" encoding="UTF-8"?><Error><Code>RequestTimeout</Code><Message>Your socket connection to the server was not read from or written to within the timeout period. Idle connections will be closed.</Message><RequestId>9023B51E48987E44</RequestId><HostId>tOyMpBS8PfVt0u4jQ67J+9pDeoAUw9up6ik4KDlQC95mmFAHMBPlkWrL3xy4RFKlcMcqXkPUa4w7gIB68GES1gB6QaZX7S+N</HostId></Error>
-0
        format: <len_hex>\r\n<data>\r\n. Always ends with 0 length chunk
     *)
-
   let chunk_reader reader data =
     let get_exn = function
       | Error exn -> raise exn
