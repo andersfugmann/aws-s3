@@ -45,14 +45,9 @@ module Make(Io : Types.Io) = struct
       | false -> headers
     in
     Net.connect ~domain ~host ~scheme >>=? fun (reader, writer) ->
-    let path_with_params = match query with
-      | [] -> path
-      | query ->
-        let query =
-          List.map ~f:(fun (k, v) -> sprintf "%s=%s" k v) query
-          |> String.concat ~sep:"&"
-        in
-        sprintf "%s?%s" path query
+    let path_with_params =
+      let query = List.map ~f:(fun (k, v) -> k, [v]) query in
+      Uri.make ~path ~query () |> Uri.to_string
     in
     let header = sprintf "%s %s HTTP/1.1\r\n" (string_of_method meth) path_with_params in
     Pipe.write writer header >>= fun () ->

@@ -16,7 +16,7 @@ val string_to_sign :
   time:string ->
   verb:string ->
   path:string ->
-  query:string ->
+  query:(string * string) list ->
   headers:string Headers.t ->
   payload_sha:string -> scope:string ->
   string * string
@@ -27,7 +27,7 @@ val make_signature :
   verb:string ->
   path:string ->
   headers:string Headers.t ->
-  query:string ->
+  query:(string * string) list ->
   scope:string ->
   signing_key:Digestif.SHA256.t ->
   payload_sha:string ->

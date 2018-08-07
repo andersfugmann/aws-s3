@@ -384,10 +384,11 @@ module Make(Io : Types.Io) = struct
       Deferred.return (Ok result)
 
   (** List contents of bucket in s3. *)
-  let rec ls ?(scheme=`Http) ?credentials ?region ?continuation_token ?prefix ~bucket () =
+  let rec ls ?(scheme=`Http) ?credentials ?region ?continuation_token ?prefix ?max_keys ~bucket () =
     let query = [ Some ("list-type", "2");
                   Option.map ~f:(fun ct -> ("continuation-token", ct)) continuation_token;
                   Option.map ~f:(fun prefix -> ("prefix", prefix)) prefix;
+                  Option.map ~f:(fun max_keys -> ("max-keys", string_of_int max_keys)) max_keys;
                 ] |> filter_map ~f:(fun x -> x)
     in
     let cmd ?region () =
@@ -397,7 +398,8 @@ module Make(Io : Types.Io) = struct
     Body.to_string body >>= fun body ->
     let result = Ls.result_of_xml_light (Xml.parse_string body) in
     let continuation = match Ls.(result.next_continuation_token) with
-      | Some ct -> Ls.More (ls ~scheme ?credentials ?region ~continuation_token:ct ?prefix ~bucket)
+      | Some ct ->
+        Ls.More (ls ~scheme ?credentials ?region ~continuation_token:ct ?max_keys ?prefix ~bucket)
       | None -> Ls.Done
     in
     Deferred.return (Ok (Ls.(result.contents, continuation)))

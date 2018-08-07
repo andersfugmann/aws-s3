@@ -8,22 +8,22 @@ type actions =
   | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool; chunk_size: int option}
 
 type options =
-  { profile: string option; https: bool; retries: int; ipv6: bool; expect: bool }
+  { profile: string option; https: bool; retries: int; ipv6: bool; expect: bool; max_keys:int }
 
 let parse exec =
   let profile =
     let doc = "Specify profile to use." in
-    Arg.(value & opt (some string) None & info ["profile"; "p"] ~docv:"NAME" ~doc)
+    Arg.(value & opt (some string) None & info ["profile"; "p"] ~docv:"PROFILE" ~doc)
   in
 
   let ratelimit =
     let doc = "Limit requests to N/sec." in
-    Arg.(value & opt (some int) None & info ["ratelimit"; "r"] ~docv:"INT" ~doc)
+    Arg.(value & opt (some int) None & info ["ratelimit"; "r"] ~docv:"LIMIT" ~doc)
   in
 
   let https =
     let doc = "Enable/disable https." in
-    Arg.(value & opt bool false & info ["https"] ~docv:"BOOL" ~doc)
+    Arg.(value & opt bool false & info ["https"] ~docv:"HTTPS" ~doc)
   in
 
   let ipv6 =
@@ -33,23 +33,27 @@ let parse exec =
 
   let retries =
     let doc = "Retries in case of error" in
-    Arg.(value & opt int 0 & info ["retries"] ~docv:"INT" ~doc)
+    Arg.(value & opt int 0 & info ["retries"] ~docv:"RETIES" ~doc)
   in
 
   let expect =
     let doc = "Use expect -> 100-continue for put/upload_chunk" in
-    Arg.(value & flag & info ["expect"; "e"] ~docv:"BOOL" ~doc)
+    Arg.(value & flag & info ["expect"; "e"] ~docv:"EXPECT" ~doc)
   in
 
+  let max_keys =
+    let doc = "Max keys returned per ls request" in
+    Arg.(value & opt int 1000 & info ["max-keys"] ~docv:"MAX_KEYS" ~doc)
+  in
 
   let common_opts =
-    let make profile https retries ipv6 expect = { profile; https; retries; ipv6; expect} in
-    Term.(const make $ profile $ https $ retries $ ipv6 $ expect)
+    let make profile https retries ipv6 expect max_keys = { profile; https; retries; ipv6; expect; max_keys} in
+    Term.(const make $ profile $ https $ retries $ ipv6 $ expect $ max_keys)
   in
 
   let bucket n =
     let doc = "S3 bucket name" in
-    Arg.(required & pos n (some string) None & info [] ~docv:"NAME" ~doc)
+    Arg.(required & pos n (some string) None & info [] ~docv:"BUCKET" ~doc)
   in
 
   let path n name =
@@ -63,11 +67,11 @@ let parse exec =
     in
     let first =
       let doc = "first byte of the source object to copy. If omitted means from the start." in
-      Arg.(value & opt (some int) None & info ["first"; "f"] ~docv:"INT" ~doc)
+      Arg.(value & opt (some int) None & info ["first"; "f"] ~docv:"FIRST" ~doc)
     in
     let last =
       let doc = "last byte of the source object to copy. If omitted means to the end" in
-      Arg.(value & opt (some int) None & info ["last"; "l"] ~docv:"INT" ~doc)
+      Arg.(value & opt (some int) None & info ["last"; "l"] ~docv:"LAST" ~doc)
     in
     let multi =
       let doc = "Use multipart upload" in
@@ -101,7 +105,7 @@ let parse exec =
 
     let make opts path = opts, Head { path } in
     Term.(const make $ common_opts $ path),
-    Term.info "head" ~doc:"Head  files from s3"
+    Term.info "head" ~doc:"Head files from s3"
   in
 
   let ls =

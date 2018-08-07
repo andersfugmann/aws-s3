@@ -75,7 +75,7 @@ test "download stream" ${BIN} cp -c 8209 --https=${HTTPS} s3://${BUKCET}/test ${
     test "download" ${BIN} cp --https=${HTTPS} s3://${BUKCET}/test ${TEMP}
     test "data" diff -u $FILE ${TEMP}
 
-    test "multi_upload chunked expect " ${BIN} cp -e -c 8209 --https=${HTTPS} -m $FILE s3://${BUKCET}/test
+    test "multi_upload chunked expect" ${BIN} cp -e -c 8209 --https=${HTTPS} -m $FILE s3://${BUKCET}/test
     test "download" ${BIN} cp --https=${HTTPS} s3://${BUKCET}/test ${TEMP}
     test "data" diff -u $FILE ${TEMP}
 
@@ -85,10 +85,10 @@ test "download stream" ${BIN} cp -c 8209 --https=${HTTPS} s3://${BUKCET}/test ${
     test "partial download stream" ${BIN} cp --https=${HTTPS} --first=1024 --last=1049599 s3://${BUKCET}/test ${TEMP}
     test "partial data" diff -u ${PART} ${TEMP}
 
-    test "ls" ${BIN} ls --https=${HTTPS} ${BUKCET}
     test "rm" ${BIN} rm --https=${HTTPS} ${BUKCET} "test"
     test "upload" ${BIN} cp --https=${HTTPS} $FILE s3://${BUKCET}/test1
     test "s3 cp" ${BIN} cp --https=${HTTPS} s3://${BUKCET}/test1 s3://${BUKCET}/test2
+    test "ls" ${BIN} ls --max-keys=1 --https=${HTTPS} ${BUKCET}
     test "multi rm" ${BIN} rm --https=${HTTPS} ${BUKCET} "test1" "test2"
 }
 for HTTPS in false true; do

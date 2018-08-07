@@ -146,20 +146,13 @@ module Make(Io : Types.Io) = struct
         | Some credentials ->
           let verb = Http.string_of_method meth in
           let region = Region.to_string region in
-          let path = Util.encode_string path in
-          (* Must be sorted *)
-          let query =
-            List.sort ~cmp:(fun a b -> String.compare (fst a) (fst b)) query
-            |> List.map ~f:(fun (k, v) -> sprintf "%s=%s" (Util.encode_string k) (Util.encode_string v))
-            |> String.concat ~sep:"&"
-          in
           let signing_key =
             Authorization.make_signing_key ~date ~region ~service:"s3" ~credentials ()
           in
           let scope = Authorization.make_scope ~date ~region ~service:"s3" in
           let signature, signed_headers =
             Authorization.make_signature ~date ~time ~verb ~path
-              ~headers ~query ~scope ~signing_key ~payload_sha
+              ~headers ~query:query ~scope ~signing_key ~payload_sha
           in
           let auth = (Authorization.make_auth_header ~credentials ~scope ~signed_headers ~signature)in
           let body = match body with

@@ -1,7 +1,4 @@
-(** Utilites *)
-
 type meth = [ `DELETE | `GET | `HEAD | `POST | `PUT ]
-
 
 module Make : functor(Io: Types.Io) -> sig
   open Io

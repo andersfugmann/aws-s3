@@ -194,7 +194,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
       Deferred.return (Ok ())
     | Error _ as e -> Deferred.return e
 
-  let ls profile ~retries scheme ratelimit bucket prefix =
+  let ls profile ~retries ~max_keys scheme ratelimit bucket prefix =
     let ratelimit_f = match ratelimit with
       | None -> fun () -> Deferred.return (Ok ())
       | Some n -> fun () -> after (1000. /. float n) >>= fun () -> Deferred.return (Ok ())
@@ -215,9 +215,9 @@ module Make(Io : Aws_s3.Types.Io) = struct
     in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
-    S3.retry ~retries ~f:(S3.ls ~scheme ?continuation_token:None ~credentials ?prefix ~bucket) () >>=? ls_all
+    S3.retry ~retries ~f:(S3.ls ~scheme ?continuation_token:None ~credentials ~max_keys ?prefix ~bucket) () >>=? ls_all
 
-  let exec ({ Cli.profile; https; retries; ipv6; expect }, cmd) =
+  let exec ({ Cli.profile; https; retries; ipv6; expect; max_keys }, cmd) =
     let () =
       match ipv6 with
       | true -> S3.set_connection_type Unix.PF_INET6
@@ -234,7 +234,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
       | Rm { bucket; paths } ->
         rm profile ~retries scheme bucket paths
       | Ls { ratelimit; bucket; prefix } ->
-        ls profile ~retries scheme ratelimit bucket prefix
+        ls profile ~retries ~max_keys scheme ratelimit bucket prefix
       | Head { path } ->
         head profile ~retries scheme path
     end >>= function

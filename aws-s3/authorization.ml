@@ -4,6 +4,11 @@
 open StdLabels
 let sprintf = Printf.sprintf
 
+let debug = false
+let log fmt = match debug with
+  | true -> Printf.kfprintf (fun _ -> ()) stderr (fmt ^^ "\n%!")
+  | false -> Printf.ikfprintf (fun _ -> ()) stderr fmt
+
 let hash_sha256 s =
   Digestif.SHA256.digest_string s
 
@@ -12,7 +17,6 @@ let hmac_sha256 ~key v =
 
 let to_hex str = Digestif.SHA256.to_hex str
 
-(** This should be caching within 24h *)
 let make_signing_key =
   let cache = Hashtbl.create 0 in
   fun ?(bypass_cache=false) ~date ~region ~credentials ~service () ->
@@ -30,6 +34,7 @@ let make_scope ~date ~region ~service =
   sprintf "%s/%s/%s/aws4_request" date region service
 
 let string_to_sign ~date ~time ~verb ~path ~query ~headers ~payload_sha ~scope =
+  let query = List.sort ~cmp:(fun a b -> String.compare (fst a) (fst b)) query in
   assert (Headers.cardinal headers > 0);
   (* Count sizes of headers *)
   let (key_size, value_size) =
@@ -55,21 +60,31 @@ let string_to_sign ~date ~time ~verb ~path ~query ~headers ~payload_sha ~scope =
 
   (* Strip the trailing from signed_headers *)
   let signed_headers = Buffer.contents signed_headers in
+  let canonical_query =
+    query
+    |> List.map ~f:(fun (k, v) -> sprintf "%s=%s" (Uri.pct_encode ~component:`Userinfo k) (Uri.pct_encode ~component:`Userinfo v))
+    |> String.concat ~sep:"&"
+  in
+
 
   let canonical_request = sprintf "%s\n%s\n%s\n%s\n%s\n%s"
       verb
-      path
-      query
+      (Util.encode_string path)
+      canonical_query
       (Buffer.contents canonical_headers)
       signed_headers
       payload_sha
   in
+  log "Canonical request:\n%s\n" canonical_request;
   (* This could be cached. Its more or less static *)
   let string_to_sign = sprintf "AWS4-HMAC-SHA256\n%sT%sZ\n%s\n%s"
       date time
       scope
       (hash_sha256 canonical_request |> to_hex)
   in
+  log "String to sign:\n%s\n" string_to_sign;
+  log "Signed headers:\n%s\n" signed_headers;
+
   (string_to_sign, signed_headers)
 
 let make_signature ~date ~time ~verb ~path
@@ -121,7 +136,7 @@ let%test "auth header" =
       |> List.fold_left ~f:(fun acc (key, value) -> Headers.add ~key ~value acc) ~init:Headers.empty
   in
   let verb = "GET" in
-  let query = "" in
+  let query = [] in
   let payload_sha = hash_sha256 "" |> to_hex in
   let scope = make_scope ~date ~region ~service in
   let signing_key = make_signing_key ~date ~region ~service ~credentials () in

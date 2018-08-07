@@ -97,11 +97,11 @@ module Make(Io : Types.Io) : sig
     (bucket:string -> objects:Delete_multi.objekt list -> unit -> Delete_multi.result result) command
 
   (** List contents in [bucket]
-      Aws will return upto 1000 keys per request. If not all keys are
+      Aws will return at most 1000 keys per request. If not all keys are
       returned, the function will return a continuation.
   *)
   val ls :
-    (?continuation_token:string -> ?prefix:string -> bucket:string -> unit -> Ls.t) command
+    (?continuation_token:string -> ?prefix:string -> ?max_keys:int -> bucket:string -> unit -> Ls.t) command
 
   (** Streaming functions *)
   module Stream : sig
