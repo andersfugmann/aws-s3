@@ -11,7 +11,7 @@ version: "3.1.0"
 depends: [
   "dune" { build }
   "ocaml-inifiles"
-  "digestif" { >= "0.6" }
+  "digestif" { = "0.6" }
   "ptime"
   "xml-light"
   "yojson"
