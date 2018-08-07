@@ -1,6 +1,6 @@
 -*- mode: fundamental -*-
 
-[ ] Support bigstring
+[ ] Support bigstring (zero copy)
 
 3.1.0: (unreleased)
 [x] Support HEAD operation on objects.
@@ -16,6 +16,8 @@
 [x] Switch to dune
 [x] Support IPv6
 [x] Add option to use expect-100.
+[x] Add option to limit result of ls
+[x] Extend aws-cli
 
 3.0.0: Released 2018-05-16
 [x] Add parameter to specify scheme(http|https)
