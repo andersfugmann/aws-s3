@@ -25,7 +25,7 @@ release:
 	@./release.sh $(VERSION)
 
 doc:
-	dune build --dev @doc
+	dune build @doc
 
 gh-pages: doc
 	git clone `git config --get remote.origin.url` .gh-pages --reference .

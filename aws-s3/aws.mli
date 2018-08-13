@@ -1,3 +1,4 @@
+(**/**)
 module Make(Io : Types.Io) : sig
   open Io
   val make_request :
@@ -14,3 +15,4 @@ module Make(Io : Types.Io) : sig
     unit ->
     (int * string * string Headers.t * string Pipe.reader) Deferred.Or_error.t
 end
+(**/**)

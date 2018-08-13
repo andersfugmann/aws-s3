@@ -42,7 +42,7 @@ module Pipe = struct
     | `Eof -> return None
     | `Ok v -> return (Some v)
   let write writer data =
-    (*Pipe.write writer data *)
+    (* Pipe.write writer data *)
     Pipe.write_without_pushback writer data;
     return ()
   let close writer = Pipe.close writer

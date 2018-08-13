@@ -1,4 +1,21 @@
-(** S3 commands *)
+(** S3 functions
+    All function requires a [region], [scheme] and [credentials].
+
+    The default region is [Us_east_1].
+
+    The default scheme is [http]. If you are connecting from outside AWS,
+    it is strongly recommended that you use https.
+    To use https, make sure to have the relevant opam packages installed:
+    [async_ssl] for [async] and [lwt_ssl]/[tls] for [lwt].
+    Please note that connections are not reused due to a limitation on the AWS endpoint.
+
+
+    If no credentials is provided, the requests will not be signed,
+    The bucket / objects need to be configured accordingly.
+
+    IPv6 connection can be set globally using the function:
+    {!Aws_s3.S3.Make.set_connection_type}.
+*)
 module Make(Io : Types.Io) : sig
   open Io
 
@@ -12,9 +29,9 @@ module Make(Io : Types.Io) : sig
   type content = {
     storage_class : storage_class;
     size : int;
-    last_modified : float;
+    last_modified : float; (** Seconds since epoch *)
     key : string;
-    etag : string;
+    etag : string; (** Etag as a string. this us usually the MD5, unless the object was constructed by multi-upload *)
   }
 
   type nonrec 'a result = ('a, error) result Deferred.t
@@ -44,17 +61,15 @@ module Make(Io : Types.Io) : sig
   type range = { first: int option; last:int option }
 
   (** Globally switch between IPv4 or IPv6 connections.
-      This will affect all future API calls.
+      This will affect all following operations on buckets/objects.
       Defaut is to use IPv4, but may change in the future.
       Unix domain sockets are not supported.
   *)
   val set_connection_type: Unix.socket_domain -> unit
 
-
-
   (** Upload [data] to [bucket]/[key].
       Returns the etag of the object. The etag is the md5 checksum (RFC 1864)
-      @param expect: If true, the body will not be sent untill a
+      @param expect If true, the body will not be sent untill a
       status has been received from the server. This incurs a delay
       in transfer, but avoid sending a large body, if the request is
       know to fail before the body is sent.
@@ -70,12 +85,9 @@ module Make(Io : Types.Io) : sig
      data:string -> unit -> string result) command
 
   (** Download [key] from s3 in [bucket]
-      If [range] is specified, only a part of the file is retrieved.
+      If [range] is specified, only a part of the file is retrieved:
       - If [first] is None, then start from the beginning of the object.
       - If [last] is None, then get to the end of the object.
-      Scheme defaults to http. If you are uploading across the internet.
-      to use https, please make sure that you have enabled ssl for conduit
-      (opam package tls or lwt_ssl for lwt or async_ssl for async)
   *)
   val get :
     (?range:range -> bucket:string -> key:string -> unit -> string result) command
@@ -91,7 +103,8 @@ module Make(Io : Types.Io) : sig
   (** Delete multiple objects from [bucket].
 
       The result will indicate which items failed and which are deleted. If
-      an item is not found it will be reported as successfully deleted.
+      an item is not found it will be reported as successfully deleted
+      (the operation is idempotent).
   *)
   val delete_multi :
     (bucket:string -> objects:Delete_multi.objekt list -> unit -> Delete_multi.result result) command
@@ -103,15 +116,18 @@ module Make(Io : Types.Io) : sig
   val ls :
     (?continuation_token:string -> ?prefix:string -> ?max_keys:int -> bucket:string -> unit -> Ls.t) command
 
-  (** Streaming functions *)
+  (** Streaming functions.
+      Streaming function seeks to limit the amount of used memory used when
+      operating of large objects by operating on streams.
+  *)
   module Stream : sig
 
     (** Streaming version of put.
-        @param length is the amount of data to copy
-        @param chunk_size Is the size of chunks send to s3.
+        @param length Amount of data to copy
+        @param chunk_size The size of chunks send to s3.
                The system will have 2 x chunk_size byte in flight
 
-        @see put
+        see {!Aws_s3.S3.Make.put}
     *)
     val put :
       (?content_type:string ->
@@ -127,8 +143,9 @@ module Make(Io : Types.Io) : sig
        unit -> string result) command
 
     (** Streaming version of get.
-        The connection is closed when the pipe is closed.
-        @see get
+        The connection is closed when the returned reader pipe is closed.
+
+        see {!Aws_s3.S3.Make.get}
     *)
     val get :
       (?range:range -> bucket:string -> key:string -> unit -> string Io.Pipe.reader result) command
@@ -151,11 +168,11 @@ module Make(Io : Types.Io) : sig
        The final file will be assembled from all parts ordered by part
        number
 
-       @param expect: If true, the body will not be sent untill a
+       @param expect: If true, the body will not be sent until a
        tatus has been received from the server. This incurs a delay
        in transfer, but avoid sending a large body, if the request is
        know to fail before the body is sent.
-*)
+    *)
     val upload_part :
       (t ->
        part_number:int ->
@@ -181,13 +198,9 @@ module Make(Io : Types.Io) : sig
           @param length is the amount of data to copy
           @param chunk_size Is the size of chunks send to s3.
                  The system will have 2 x chunk_size byte in flight
-          @see upload_part
 
-          @param expect: If true, the body will not be sent untill a
-          status has been received from the server. This incurs a delay
-          in transfer, but avoid sending a large body, if the request is
-          know to fail before the body is sent.
 
+          see {!Aws_s3.S3.Make.Multipart_upload.upload_part}
       *)
       val upload_part :
         (t ->

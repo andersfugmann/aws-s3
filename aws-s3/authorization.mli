@@ -1,3 +1,4 @@
+(**/**)
 val hash_sha256 : string -> Digestif.SHA256.t
 val hmac_sha256 : key:string -> string -> Digestif.SHA256.t
 val to_hex : Digestif.SHA256.t -> string
@@ -46,3 +47,4 @@ val chunk_signature:
   scope:string ->
   previous_signature:string ->
   sha:Digestif.SHA256.t -> Digestif.SHA256.t
+(**/**)

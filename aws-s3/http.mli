@@ -1,3 +1,4 @@
+(**/**)
 type meth = [ `DELETE | `GET | `HEAD | `POST | `PUT ]
 
 module Make : functor(Io: Types.Io) -> sig
@@ -17,3 +18,4 @@ module Make : functor(Io: Types.Io) -> sig
     meth ->
     (int * string * string Headers.t * string Pipe.reader) Deferred.Or_error.t
 end
+(**/**)

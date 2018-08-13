@@ -1,3 +1,4 @@
+(**/**)
 open StdLabels
 let sprintf = Printf.sprintf
 
@@ -110,7 +111,10 @@ module Make(Io : Types.Io) = struct
         async (Pipe.closed body >>= fun () -> Pipe.close writer; Pipe.close_reader reader; return ());
         body
       | _, Some _length, true ->
+        (* TODO: Handle this more gracefully *)
         failwith "Chunked transfer contained content length"
     in
+    async (catch (fun () -> Pipe.closed body >>= fun () -> Pipe.close_reader reader; return ()) >>= fun _ -> return ());
+
     Or_error.return (status_code, status_message, headers, body)
 end
