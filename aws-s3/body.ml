@@ -10,6 +10,35 @@ module Make(Io : Types.Io) = struct
     | Empty
     | Chunked of { pipe: string Pipe.reader; length: int; chunk_size: int }
 
+  type string_body = { mutable complete: bool; content: Buffer.t; }
+  let reader ?(size=1024) () =
+    let reader, writer = Pipe.create () in
+    let body = { complete = false; content = Buffer.create size } in
+    let rec read reader =
+      Pipe.read reader >>= function
+      | None ->
+        body.complete <- true;
+        return ()
+      | Some data -> Buffer.add_string body.content data;
+        read reader
+    in
+    async (read reader);
+    body, writer
+
+  let get body =
+    match body.complete with
+    | true -> Buffer.contents body.content
+    | false -> raise (Failure "Not closed")
+
+  let null_body () =
+    let reader, writer = Pipe.create () in
+    let rec read reader =
+      Pipe.read reader >>= function
+      | None -> return ()
+      | Some _ -> read reader
+    in
+    async (read reader);
+    writer
 
   let to_string ?(length = 1024) body =
     let rec loop buffer =
@@ -41,7 +70,7 @@ module Make(Io : Types.Io) = struct
     in
     loop (Buffer.create length) data length
 
-  let of_pipe ~length ?start reader =
+  let copy ~length ?start reader writer =
     let rec loop writer data remain =
       match remain, data with
       | 0, _ ->
@@ -62,7 +91,7 @@ module Make(Io : Types.Io) = struct
           | data -> loop writer data remain
         end
     in
-    Pipe.create_reader ~f:(fun writer -> loop writer start length)
+    loop writer start length
 
   let read_until ~sep reader data =
     let buffer = Buffer.create 256 in
@@ -85,7 +114,7 @@ module Make(Io : Types.Io) = struct
       | sep_index when Buffer.nth buffer offset = sep.[sep_index] ->
         loop (offset + 1) (sep_index + 1)
       | _ ->
-        (* Reset sep index. Look for the next element. We cou *)
+        (* Reset sep index. Look for the next element. *)
         loop (offset + 1) 0
     in
     Buffer.add_string buffer data;
@@ -94,31 +123,31 @@ module Make(Io : Types.Io) = struct
   (** Chunked encoding
        format: <len_hex>\r\n<data>\r\n. Always ends with 0 length chunk
     *)
-  let chunk_reader reader data =
+  let chunked_copy ?start reader writer =
     let get_exn = function
       | Error exn -> raise exn
       | Ok v -> return v
     in
-    let rec read_chunk writer data remain =
+    let rec read_chunk data remain =
       match data, remain with
       | data, 0 -> return data
       | Some data, remain when String.length data < remain ->
         Pipe.write writer data >>= fun () ->
-        read_chunk writer None (remain - String.length data)
+        read_chunk None (remain - String.length data)
       | Some data, remain ->
         Pipe.write writer (String.sub ~pos:0 ~len:remain data) >>= fun () ->
-        read_chunk writer (Some (String.sub ~pos:remain ~len:(String.length data - remain) data)) 0
+        read_chunk (Some (String.sub ~pos:remain ~len:(String.length data - remain) data)) 0
       | None, _ -> begin
           Pipe.read reader >>= function
           | None -> raise (Failure "EOF")
-          | v -> read_chunk writer v remain
+          | v -> read_chunk v remain
         end
     in
-    let rec read writer = function
+    let rec read = function
       | None -> begin
           Pipe.read reader >>= function
           | None -> raise (Failure "EOF")
-          | v -> read writer v
+          | v -> read v
         end
       | Some data -> begin
           read_until ~sep:"\r\n" reader data >>= get_exn >>= fun (size_str, data) ->
@@ -127,12 +156,11 @@ module Make(Io : Types.Io) = struct
           | 0 -> read_until ~sep:"\r\n" reader data >>= get_exn >>= fun _ ->
             return ()
           | n ->
-            read_chunk writer (Some data) n >>= fun data ->
+            read_chunk (Some data) n >>= fun data ->
             read_string ~length:2 data reader >>= get_exn >>= fun (crlf, data) ->
             assert (crlf = "\r\n");
-            read writer data
+            read data
         end
     in
-    Pipe.create_reader ~f:(fun writer -> read writer (Some data))
-
+    read start
 end

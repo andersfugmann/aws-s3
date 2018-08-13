@@ -93,7 +93,7 @@ module Make(Io : Types.Io) = struct
     in
     Pipe.create_reader ~f:(transfer initial_signature Digestif.SHA256.empty 0 [] None)
 
-  let make_request ?(domain=Unix.PF_INET) ~scheme ?(expect=false) ?(body=Body.Empty) ?(region=Region.Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
+  let make_request ?(domain=Unix.PF_INET) ~scheme ?(expect=false) ~sink ?(body=Body.Empty) ?(region=Region.Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
     let dualstack = match domain with
       | Unix.PF_INET -> false
       | Unix.PF_INET6 -> true
@@ -141,6 +141,7 @@ module Make(Io : Types.Io) = struct
             | Body.Chunked _, None -> Some "aws-chunked"
             | _, v -> v)
       in
+
       let auth, body =
         match credentials with
         | Some credentials ->
@@ -154,7 +155,7 @@ module Make(Io : Types.Io) = struct
             Authorization.make_signature ~date ~time ~verb ~path
               ~headers ~query:query ~scope ~signing_key ~payload_sha
           in
-          let auth = (Authorization.make_auth_header ~credentials ~scope ~signed_headers ~signature)in
+          let auth = (Authorization.make_auth_header ~credentials ~scope ~signed_headers ~signature) in
           let body = match body with
             | Body.String body ->
               let reader, writer = Pipe.create () in
@@ -164,6 +165,7 @@ module Make(Io : Types.Io) = struct
             | Body.Empty -> return None
             | Body.Chunked { pipe; chunk_size; _ } ->
               let pipe =
+                (* Get errors if the chunk_writer fails *)
                 chunk_writer ~signing_key ~scope
                   ~initial_signature:signature ~date ~time ~chunk_size pipe
               in
@@ -186,7 +188,6 @@ module Make(Io : Types.Io) = struct
       (Headers.add_opt ~key:"Authorization" ~value:auth headers), body
     in
     body >>= fun body ->
-    Http.call ~domain ~scheme ~host:host_str ~path ~query ~headers ~expect ?body meth >>=? fun (code, msg, headers, body) ->
-    (* Convert the body into a string.  *)
+    Http.call ~domain ~scheme ~host:host_str ~path ~query ~headers ~expect ~sink ?body meth >>=? fun (code, msg, headers, body) ->
     Deferred.Or_error.return (code, msg, headers, body)
 end

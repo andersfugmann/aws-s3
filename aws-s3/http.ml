@@ -40,7 +40,7 @@ module Make(Io : Types.Io) = struct
     inner Headers.empty remain
 
 
-  let call ?(domain=Unix.PF_INET) ?(expect=false) ~scheme ~host ~path ?(query=[]) ~headers ?body (meth:meth) =
+  let call ?(domain=Unix.PF_INET) ?(expect=false) ~scheme ~host ~path ?(query=[]) ~headers ~sink ?body (meth:meth) =
     let headers = match expect with
       | true -> Headers.add ~key:"Expect" ~value:"100-continue" headers
       | false -> headers
@@ -84,8 +84,17 @@ module Make(Io : Types.Io) = struct
         read_status reader ""
     end >>=? fun ((status_code, status_message), remain) ->
     Pipe.close writer;
+    let sink, error_body = match status_code with
+      | n when 200 <= n && n < 300 -> (sink, None)
+      | _ -> (* Capture the response as an error message *)
+        Pipe.close sink; (* TODO: Determine if we should do this... *)
+        let body, writer = Body.reader () in
+        writer, Some body
+    in
 
     read_headers reader remain >>=? fun (headers, remain) ->
+    (* At this point we need to match on the status. If its not [200;300[ then
+       we should return the body as an error *)
 
     (* Test if the reply is chunked *)
     let chunked_transfer =
@@ -94,27 +103,27 @@ module Make(Io : Types.Io) = struct
         List.mem "chunked" ~set:(String.split_on_char ~sep:',' encoding)
       | None -> false
     in
-    let body = match (meth, Headers.find_opt "content-length" headers, chunked_transfer) with
+    begin
+      match (meth, Headers.find_opt "content-length" headers, chunked_transfer) with
       | (`HEAD, _, _)
       | (_, None, false)
-      | (_, Some "0", false) ->
-        Pipe.close writer;
-        Pipe.close_reader reader;
-        Pipe.create_reader ~f:(fun _ -> return ())
+      | (_, Some "0", false) -> return ()
       | _, Some length, false ->
         let length = int_of_string length in
-        let body = Body.of_pipe ~length ~start:remain reader in
-        async (Pipe.closed body >>= fun () -> Pipe.close writer; Pipe.close_reader reader; return ());
-        body
+        Body.copy ~length ~start:remain reader sink
       | _, None, true ->
-        let body = Body.chunk_reader reader remain in
-        async (Pipe.closed body >>= fun () -> Pipe.close writer; Pipe.close_reader reader; return ());
-        body
+        Body.chunked_copy ~start:remain reader sink
       | _, Some _length, true ->
         (* TODO: Handle this more gracefully *)
         failwith "Chunked transfer contained content length"
-    in
-    async (catch (fun () -> Pipe.closed body >>= fun () -> Pipe.close_reader reader; return ()) >>= fun _ -> return ());
+    end >>= fun () ->
+    (* At this point we have retrieved all data, and we can close the connection *)
+    Pipe.close_reader reader;
+    Pipe.close sink;
 
+    let body = match error_body with
+      | None -> ""
+      | Some body -> Body.get body
+    in
     Or_error.return (status_code, status_message, headers, body)
 end

@@ -30,26 +30,26 @@ module Make(Io : Types.Io) = struct
     let get_role () =
       let path = "/latest/meta-data/iam/security-credentials/" in
       let host = instance_data_host in
-      Http.call ~scheme:`Http ~path ~host ~headers:Headers.empty `GET >>=? fun (status, message, _headers, body) ->
-      Body.to_string body >>= fun body ->
+      let body, sink = Body.reader () in
+      Http.call ~scheme:`Http ~path ~host ~sink ~headers:Headers.empty `GET >>=? fun (status, message, _headers, error_body) ->
       match status with
       | code when code >= 200 && code < 300 ->
-        Deferred.Or_error.return body
+        Deferred.Or_error.return (Body.get body)
       | _ ->
-        let msg = sprintf "Failed to get role. %s. Reponse %s" message body in
+        let msg = sprintf "Failed to get role. %s. Reponse %s" message error_body in
         Deferred.Or_error.fail (Failure msg)
 
     let get_credentials role =
       let path = sprintf "/latest/meta-data/iam/security-credentials/%s" role in
       let host = instance_data_host in
-      Http.call ~scheme:`Http ~path ~host ~headers:Headers.empty `GET >>=? fun (status, message, _headers, body) ->
-      Body.to_string body >>= fun body ->
+      let body, sink = Body.reader () in
+      Http.call ~scheme:`Http ~path ~host ~sink ~headers:Headers.empty `GET >>=? fun (status, message, _headers, error_body) ->
       match status with
       | code when code >= 200 && code < 300 ->
-        let json = Yojson.Safe.from_string body in
+        let json = Yojson.Safe.from_string (Body.get body) in
         of_json json |> Deferred.Or_error.return
       | _ ->
-        let msg = sprintf "Failed to get credentials. %s. Reponse %s" message body in
+        let msg = sprintf "Failed to get credentials. %s. Reponse %s" message error_body in
         Deferred.Or_error.fail (Failure msg)
   end
 

@@ -5,6 +5,7 @@ module Make(Io : Types.Io) : sig
     ?domain:Unix.socket_domain ->
     scheme:[`Http|`Https] ->
     ?expect:bool ->
+    sink:string Io.Pipe.writer ->
     ?body:Body.Make(Io).body ->
     ?region:Region.t ->
     ?credentials:Credentials.t ->
@@ -13,6 +14,6 @@ module Make(Io : Types.Io) : sig
     path:string ->
     query:(string * string) list ->
     unit ->
-    (int * string * string Headers.t * string Pipe.reader) Deferred.Or_error.t
+    (int * string * string Headers.t * string) Deferred.Or_error.t
 end
 (**/**)

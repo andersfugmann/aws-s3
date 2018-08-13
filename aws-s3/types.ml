@@ -24,6 +24,7 @@ module type Io = sig
     type 'a writer
     type 'a reader
     val create_reader : f:('a writer -> unit Deferred.t) -> 'a reader
+    (* val create_writer : f:('a reader -> unit Deferred.t) -> 'a writer *)
     val create : unit -> 'a reader * 'a writer
     val flush : 'a writer -> unit Deferred.t
     val write: 'a writer -> 'a -> unit Deferred.t

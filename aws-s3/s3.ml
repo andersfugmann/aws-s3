@@ -213,22 +213,22 @@ module Make(Io : Types.Io) = struct
 
   (**/**)
   let do_command ?region cmd =
-    cmd ?region () >>= (function Ok r -> Deferred.return r | Error exn -> raise exn)
+    (* TODO: Return the exn as part of result result *)
+    let (reader, writer) = Pipe.create () in
+    cmd ?region () ~sink:writer >>= (function Ok r -> Deferred.return r | Error exn -> raise exn)
+    (* At this point the body has been received (send to the sink *)
     >>= fun (code, _message, headers, body) ->
     match code with
     | code when 200 <= code && code < 300 ->
-      Deferred.return (Ok (headers, body))
-    | 404 -> Deferred.return (Error (Not_found))
+      Deferred.return (Ok (headers, reader))
+    | 404 -> Deferred.return (Error Not_found)
     | c when 300 <= c && c < 400 ->
       (* Redirect of sorts *)
-      Pipe.close_reader body;
       let region = Headers.find "x-amz-bucket-region" headers in
       Deferred.return (Error (Redirect (Region.of_string region)))
     | c when 400 <= c && c < 500 -> begin
         let open Error_response in
-        Body.to_string body >>= fun body_str ->
-        Pipe.close_reader body;
-        let xml = Xml.parse_string body_str in
+        let xml = Xml.parse_string body in
         match Error_response.of_xml_light xml with
         | { code = "PermanentRedirect"; endpoint = Some host; _ }
         | { code = "TemporaryRedirect"; endpoint = Some host; _ } ->
@@ -242,12 +242,9 @@ module Make(Io : Types.Io) = struct
       end
     | (500 | 503) ->
       (* 500, InternalError | 503, SlowDown | 503, ServiceUnavailable -> Throttle *)
-      Pipe.close_reader body;
       Deferred.return (Error Throttled)
     | code ->
-      Body.to_string body >>= fun body_txt ->
-      Pipe.close_reader body;
-      let resp = Error_response.of_xml_light (Xml.parse_string body_txt) in
+      let resp = Error_response.of_xml_light (Xml.parse_string body) in
       Deferred.return (Error (Unknown (code, resp.code)))
 
 

@@ -14,8 +14,9 @@ module Make : functor(Io: Types.Io) -> sig
     path:string ->
     ?query:(string * string) list ->
     headers:string Headers.t ->
+    sink:string Io.Pipe.writer ->
     ?body:string Pipe.reader ->
     meth ->
-    (int * string * string Headers.t * string Pipe.reader) Deferred.Or_error.t
+    (int * string * string Headers.t * string) Deferred.Or_error.t
 end
 (**/**)
