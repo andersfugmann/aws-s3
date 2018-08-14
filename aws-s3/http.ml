@@ -99,7 +99,6 @@ module Make(Io : Types.Io) = struct
     let sink, error_body = match status_code with
       | n when 200 <= n && n < 300 -> (sink, None)
       | _ -> (* Capture the response as an error message *)
-        Pipe.close sink; (* TODO: Determine if we should do this... *)
         let body, writer = Body.reader () in
         writer, Some body
     in
@@ -129,8 +128,6 @@ module Make(Io : Types.Io) = struct
     end >>=? fun _remain ->
     Pipe.close_reader reader;
     Pipe.close sink;
-    (* Why would we flush the sink??? *)
-    Pipe.flush sink >>= fun () ->
 
     let body = match error_body with
       | None -> ""

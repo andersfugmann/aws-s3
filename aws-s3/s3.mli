@@ -144,9 +144,17 @@ module Make(Io : Types.Io) : sig
        unit -> string result) command
 
     (** Streaming version of get.
-        The connection is closed when the returned reader pipe is closed.
+        The caller must supply a [sink] to which retrieved data is streamed.
+        The result will be determined after all data has been sent to the sink.
 
-        see {!Aws_s3.S3.Make.get}
+        Connections to s3 is closed once the result has been determined.
+        The sink is closed after successful data retrieval.
+        In case of errors the state (open / closed) of the sink is not defined.
+
+        The rationale for the sink argument, rather than returning a [string Pipe.reader] is to
+        allow the user to match on the result to determine if all data was successfully received.
+
+        For other parameters see {!Aws_s3.S3.Make.get}
     *)
     val get :
       (?range:range -> bucket:string -> key:string -> sink:string Io.Pipe.writer -> unit -> unit result) command
