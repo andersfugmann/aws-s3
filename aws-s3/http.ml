@@ -14,10 +14,10 @@ module Make(Io : Types.Io) = struct
   open Deferred
 
   let string_of_method = function
-  | `GET -> "GET"
-  | `PUT -> "PUT"
-  | `HEAD -> "HEAD"
-  | `POST -> "POST"
+  | `GET    -> "GET"
+  | `PUT    -> "PUT"
+  | `HEAD   -> "HEAD"
+  | `POST   -> "POST"
   | `DELETE -> "DELETE"
 
   let read_status reader remain =
@@ -117,19 +117,19 @@ module Make(Io : Types.Io) = struct
       match (meth, Headers.find_opt "content-length" headers, chunked_transfer) with
       | (`HEAD, _, _)
       | (_, None, false)
-      | (_, Some "0", false) -> return ()
+      | (_, Some "0", false) -> Or_error.return ""
       | _, Some length, false ->
         let length = int_of_string length in
-        Body.copy ~length ~start:remain reader sink
-      | _, None, true ->
-        Body.chunked_copy ~start:remain reader sink
-      | _, Some _length, true ->
-        (* TODO: Handle this more gracefully *)
-        failwith "Chunked transfer contained content length"
-    end >>= fun () ->
-    (* At this point we have retrieved all data, and we can close the connection *)
+        Body.transfer ~length ~start:remain reader sink
+      | _, _, true -> (* Actually we should not accept a content
+                         length then when encoding is chunked, but AWS
+                         does require this when uploading, so we
+                         accept it for symmetry.*)
+        Body.chunked_transfer ~start:remain reader sink
+    end >>=? fun _remain ->
     Pipe.close_reader reader;
     Pipe.close sink;
+    (* Why would we flush the sink??? *)
     Pipe.flush sink >>= fun () ->
 
     let body = match error_body with

@@ -12,12 +12,11 @@ module Make(Io : Types.Io) : sig
     string option ->
     string Pipe.reader -> (string * string option) Or_error.t
 
-  val copy: length:int -> ?start:string -> string Pipe.reader -> string Pipe.writer -> unit Deferred.t
-
   val read_until :
     sep:string ->
-    string Pipe.reader -> string -> (string * string, exn) result Deferred.t
-  val chunked_copy : ?start:string -> string Pipe.reader -> string Pipe.writer -> unit Deferred.t
+    string Pipe.reader -> string -> (string * string) Deferred.Or_error.t
+  val chunked_transfer : ?start:string -> string Pipe.reader -> string Pipe.writer -> string Deferred.Or_error.t
+  val transfer: length:int -> ?start:string -> string Pipe.reader -> string Pipe.writer -> string Deferred.Or_error.t
 
   type string_body
   val reader: ?size:int -> unit -> string_body * string Pipe.writer
