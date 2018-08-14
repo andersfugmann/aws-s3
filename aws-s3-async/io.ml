@@ -37,7 +37,6 @@ module Ivar = struct
   let wait t = Async.Ivar.read t
 end
 
-
 module Pipe = struct
   open Async_kernel
   open Deferred

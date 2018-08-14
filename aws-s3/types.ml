@@ -82,6 +82,7 @@ module type Io = sig
     val closed : ('a, 'b) pipe -> unit Deferred.t
   end
 
+  (**/**)
   module Net : sig
     val connect :
       domain:Unix.socket_domain ->
@@ -89,5 +90,6 @@ module type Io = sig
       scheme:[< `Http | `Https ] ->
       (string Pipe.reader * string Pipe.writer) Deferred.Or_error.t
   end
+  (**/**)
 
 end
