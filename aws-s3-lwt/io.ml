@@ -33,6 +33,9 @@ module Pipe = struct
   type 'a elem = Flush of unit Lwt.u
                | Data of 'a
 
+  type writer_phantom = [`Writer]
+  type reader_phantom = [`Reader]
+
   type ('a, 'phantom) pipe =
     { cond: unit Lwt_condition.t;
       queue: 'a elem Queue.t;
@@ -40,8 +43,8 @@ module Pipe = struct
       closer: (unit Lwt.t * unit Lwt.u);
     }
 
-  type 'a reader = ('a, [`Reader]) pipe
-  type 'a writer = ('a, [`Writer]) pipe
+  type 'a reader = ('a, reader_phantom) pipe
+  type 'a writer = ('a, writer_phantom) pipe
 
   let on_close pipe =
     match Lwt.is_sleeping (fst pipe.closer) with
@@ -70,7 +73,6 @@ module Pipe = struct
 
   let close_reader (reader : 'a reader) =
     reader.closed <- true;
-    Queue.clear (reader.queue);
     Lwt_condition.broadcast reader.cond ();
     on_close reader
 
@@ -100,15 +102,29 @@ module Pipe = struct
     Lwt.async (fun () ->
         Lwt.catch
           (fun () -> f writer)
-          (fun _ -> Lwt.return ()) >>= fun () ->
-        close writer; Lwt.return ()
+          (fun _ -> Printf.eprintf "Create_reader raised\n%!"; Lwt.return ()) >>= fun () ->
+        close_reader reader; Lwt.return ()
       );
     reader
 
+  let create_writer: f:('a reader -> unit Lwt.t) -> 'a writer = fun ~f ->
+    let reader, writer = create () in
+    Lwt.async (fun () ->
+        Lwt.catch
+          (fun () -> f reader)
+          (fun _ -> Printf.eprintf "Create_writer raised\n%!"; Lwt.return ()) >>= fun () ->
+        close writer; Lwt.return ()
+      );
+    writer
+
+  let is_closed pipe = pipe.closed
+  let closed pipe = fst pipe.closer
+
   (* If the writer is closed, so is the reader *)
   let rec transfer reader writer =
-    match writer.closed with
+    match is_closed writer with
     | true ->
+      Printf.eprintf "Writer closed early\n%!";
       close_reader reader;
       Lwt.return ()
     | false -> begin
@@ -123,8 +139,6 @@ module Pipe = struct
           Lwt_condition.wait reader.cond >>= fun () ->
           transfer reader writer
       end
-
-  let closed reader = fst reader.closer
 end
 
 module Net = struct

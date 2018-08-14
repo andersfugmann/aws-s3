@@ -1,6 +1,10 @@
 (**/**)
 open StdLabels
 let sprintf = Printf.sprintf
+let debug = false
+let log fmt = match debug with
+  | true -> Printf.kfprintf (fun _ -> ()) stderr ("%s: " ^^ fmt ^^ "\n%!") __MODULE__
+  | false -> Printf.ikfprintf (fun _ -> ()) stderr fmt
 
 type meth = [ `DELETE | `GET | `HEAD | `POST | `PUT ]
 
@@ -66,13 +70,20 @@ module Make(Io : Types.Io) = struct
     begin
       match expect with
       | true ->
+        log "Expect 100-continue";
         read_status reader "" >>=? fun ((status_code, status_message), remain) ->
         begin match status_code with
         | 100 ->
+          log "Got 100-continue";
           begin match body with
           | None -> return ()
-          | Some body -> Pipe.transfer body writer
+          | Some body ->
+            log "Send body";
+            Pipe.transfer body writer >>= fun () ->
+            log "Body sent";
+            Pipe.flush writer
           end >>= fun () ->
+          log "Read status";
           read_status reader remain
         | _ -> Or_error.return ((status_code, status_message), remain)
         end
@@ -83,6 +94,7 @@ module Make(Io : Types.Io) = struct
         end >>= fun () ->
         read_status reader ""
     end >>=? fun ((status_code, status_message), remain) ->
+    log "Got result:%s " status_message;
     Pipe.close writer;
     let sink, error_body = match status_code with
       | n when 200 <= n && n < 300 -> (sink, None)
@@ -93,8 +105,6 @@ module Make(Io : Types.Io) = struct
     in
 
     read_headers reader remain >>=? fun (headers, remain) ->
-    (* At this point we need to match on the status. If its not [200;300[ then
-       we should return the body as an error *)
 
     (* Test if the reply is chunked *)
     let chunked_transfer =
@@ -120,6 +130,7 @@ module Make(Io : Types.Io) = struct
     (* At this point we have retrieved all data, and we can close the connection *)
     Pipe.close_reader reader;
     Pipe.close sink;
+    Pipe.flush sink >>= fun () ->
 
     let body = match error_body with
       | None -> ""

@@ -21,10 +21,13 @@ module type Io = sig
   end
 
   module Pipe : sig
-    type 'a writer
-    type 'a reader
+    type ('a, 'b) pipe
+    type writer_phantom
+    type reader_phantom
+    type 'a writer = ('a, writer_phantom) pipe
+    type 'a reader = ('a, reader_phantom) pipe
     val create_reader : f:('a writer -> unit Deferred.t) -> 'a reader
-    (* val create_writer : f:('a reader -> unit Deferred.t) -> 'a writer *)
+    val create_writer : f:('a reader -> unit Deferred.t) -> 'a writer
     val create : unit -> 'a reader * 'a writer
     val flush : 'a writer -> unit Deferred.t
     val write: 'a writer -> 'a -> unit Deferred.t
@@ -32,7 +35,8 @@ module type Io = sig
     val close_reader: 'a reader -> unit
     val read: 'a reader -> 'a option Deferred.t
     val transfer: 'a reader -> 'a writer -> unit Deferred.t
-    val closed : 'a reader -> unit Deferred.t
+    val is_closed: ('a, 'b) pipe -> bool
+    val closed : ('a, 'b) pipe -> unit Deferred.t
   end
 
   module Net : sig

@@ -214,13 +214,12 @@ module Make(Io : Types.Io) = struct
   (**/**)
   let do_command ?region cmd =
     (* TODO: Return the exn as part of result result *)
-    let (reader, writer) = Pipe.create () in
-    cmd ?region () ~sink:writer >>= (function Ok r -> Deferred.return r | Error exn -> raise exn)
+    cmd ?region () >>= (function Ok r -> Deferred.return r | Error exn -> raise exn)
     (* At this point the body has been received (send to the sink *)
     >>= fun (code, _message, headers, body) ->
     match code with
     | code when 200 <= code && code < 300 ->
-      Deferred.return (Ok (headers, reader))
+      Deferred.return (Ok headers)
     | 404 -> Deferred.return (Error Not_found)
     | c when 300 <= c && c < 400 ->
       (* Redirect of sorts *)
@@ -259,12 +258,12 @@ module Make(Io : Types.Io) = struct
       |> List.filter ~f:(function (_, Some _) -> true | (_, None) -> false)
       |> List.map ~f:(function (k, Some v) -> (k, v) | (_, None) -> failwith "Impossible")
     in
+    let sink = Body.null () in
     let cmd ?region () =
-      Aws.make_request ~domain:!domain ~scheme ?expect ?credentials ?region ~headers ~meth:`PUT ~path ~body ~query:[] ()
+      Aws.make_request ~domain:!domain ~scheme ?expect ?credentials ?region ~headers ~meth:`PUT ~path ~sink ~body ~query:[] ()
     in
 
-    do_command ?region cmd >>=? fun (headers, body) ->
-    Pipe.close_reader body;
+    do_command ?region cmd >>=? fun headers ->
     let etag =
       match Headers.find_opt "etag" headers with
       | None -> failwith "Put reply did not conatin an etag header"
@@ -276,7 +275,7 @@ module Make(Io : Types.Io) = struct
 
   module Stream = struct
 
-    let get ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key () =
+    let get ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key ~sink () =
       let headers =
         let r_opt = function
           | Some r -> (string_of_int r)
@@ -294,10 +293,10 @@ module Make(Io : Types.Io) = struct
       in
       let path = sprintf "/%s/%s" bucket key in
       let cmd ?region () =
-        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers ~meth:`GET ~path ~query:[] ()
+        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~sink ~headers ~meth:`GET ~path ~query:[] ()
       in
-      do_command ?region cmd >>=? fun (_headers, body) ->
-      Deferred.return (Ok body)
+      do_command ?region cmd >>=? fun (_headers) ->
+      Deferred.return (Ok ())
 
     let put ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~data ~chunk_size ~length () =
       let body = Body.Chunked { length; chunk_size; pipe=data } in
@@ -310,27 +309,28 @@ module Make(Io : Types.Io) = struct
     put_common ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body ()
 
   let get ?scheme ?credentials ?region ?range ~bucket ~key () =
-    Stream.get ?scheme ?credentials ?region ?range ~bucket ~key () >>=? fun body ->
-    Body.to_string body >>= fun body ->
+    let body, sink = Body.reader () in
+    Stream.get ?scheme ?credentials ?region ?range ~bucket ~key ~sink () >>=? fun () ->
+    let body = Body.get body in
     Deferred.return (Ok body)
 
   let delete ?(scheme=`Http) ?credentials ?region ~bucket ~key () =
     let path = sprintf "/%s/%s" bucket key in
+    let sink = Body.null () in
     let cmd ?region () =
-      Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query:[] ()
+      Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query:[] ~sink ()
     in
-    do_command ?region cmd >>=? fun (_headers, body) ->
-    Pipe.close_reader body;
+    do_command ?region cmd >>=? fun _headers ->
     Deferred.return (Ok ())
 
 
   let head ?(scheme=`Http) ?credentials ?region ~bucket ~key () =
     let path = sprintf "/%s/%s" bucket key in
+    let sink = Body.null () in
     let cmd ?region () =
-      Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`HEAD ~path ~query:[] ()
+      Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`HEAD ~path ~query:[] ~sink ()
     in
-    do_command ?region cmd >>=? fun (headers, body) ->
-    Pipe.close_reader body;
+    do_command ?region cmd >>=? fun headers ->
     let result =
       let (>>=) a f = match a with
         | Some x -> f x
@@ -370,13 +370,14 @@ module Make(Io : Types.Io) = struct
         |> Xml.to_string
       in
       let headers = [ "Content-MD5", B64.encode (Caml.Digest.string request) ] in
+      let body, sink = Body.reader () in
       let cmd ?region () =
         Aws.make_request ~domain:!domain ~scheme
           ~body:(Body.String request) ?credentials ?region ~headers
-          ~meth:`POST ~query:["delete", ""] ~path:("/" ^ bucket) ()
+          ~meth:`POST ~query:["delete", ""] ~path:("/" ^ bucket) ~sink ()
       in
-      do_command ?region cmd >>=? fun (_headers, body) ->
-      Body.to_string body >>= fun body ->
+      do_command ?region cmd >>=? fun _headers ->
+      let body = Body.get body in
       let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
       Deferred.return (Ok result)
 
@@ -388,11 +389,12 @@ module Make(Io : Types.Io) = struct
                   Option.map ~f:(fun max_keys -> ("max-keys", string_of_int max_keys)) max_keys;
                 ] |> filter_map ~f:(fun x -> x)
     in
+    let body, sink = Body.reader () in
     let cmd ?region () =
-      Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`GET ~path:("/" ^ bucket) ~query ()
+      Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`GET ~path:("/" ^ bucket) ~query ~sink ()
     in
-    do_command ?region cmd >>=? fun (_headers, body) ->
-    Body.to_string body >>= fun body ->
+    do_command ?region cmd >>=? fun _headers ->
+    let body = Body.get body in
     let result = Ls.result_of_xml_light (Xml.parse_string body) in
     let continuation = match Ls.(result.next_continuation_token) with
       | Some ct ->
@@ -419,12 +421,12 @@ module Make(Io : Types.Io) = struct
         let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
         filter_map ~f:(fun x -> x) [ content_type; content_encoding; cache_control; acl ]
       in
+      let body, sink = Body.reader () in
       let cmd ?region () =
-        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers ~meth:`POST ~path ~query ()
+        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers ~meth:`POST ~path ~query ~sink ()
       in
-
-      do_command ?region cmd >>=? fun (_headers, body) ->
-      Body.to_string body >>= fun body ->
+      do_command ?region cmd >>=? fun _headers ->
+      let body = Body.get body in
       let resp = Multipart.Initiate.of_xml_light (Xml.parse_string body) in
       Ok { id = resp.Multipart.Initiate.upload_id;
            parts = [];
@@ -444,13 +446,12 @@ module Make(Io : Types.Io) = struct
         [ "partNumber", string_of_int part_number;
           "uploadId", t.id ]
       in
+      let sink = Body.null () in
       let cmd ?region () =
         Aws.make_request ~domain:!domain ~scheme ?expect ?credentials ?region ~headers:[] ~meth:`PUT ~path
-          ~body:(Body.String data) ~query ()
+          ~body:(Body.String data) ~query ~sink ()
       in
-
-      do_command ?region cmd >>=? fun (headers, body) ->
-      Pipe.close_reader body;
+      do_command ?region cmd >>=? fun headers ->
       let etag =
         Headers.find_opt "etag" headers
         |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
@@ -473,12 +474,13 @@ module Make(Io : Types.Io) = struct
         Option.value_map ~default:[] ~f:(fun (first, last) ->
             [ "x-amz-copy-source-range", sprintf "bytes=%d-%d" first last ]) range
       in
+      let body, sink = Body.reader () in
       let cmd ?region () =
-        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~query ()
+        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~query ~sink ()
       in
 
-      do_command ?region cmd >>=? fun (_headers, body) ->
-      Body.to_string body >>= fun body ->
+      do_command ?region cmd >>=? fun _headers ->
+      let body = Body.get body in
       let xml = Xml.parse_string body in
       match Multipart.Copy.of_xml_light xml with
       | { Multipart.Copy.etag; _ } ->
@@ -497,11 +499,12 @@ module Make(Io : Types.Io) = struct
         Multipart.Complete.(xml_of_request { parts })
         |> Xml.to_string_fmt
       in
-      let cmd ?region () =
-        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:(Body.String request) ()
+      let body, sink = Body.reader () in
+            let cmd ?region () =
+        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:(Body.String request) ~sink ()
       in
-      do_command ?region cmd >>=? fun (_headers, body) ->
-      Body.to_string body >>= fun body ->
+      do_command ?region cmd >>=? fun _headers ->
+      let body = Body.get body in
       let xml = Xml.parse_string body in
       match Multipart.Complete.response_of_xml_light xml with
       | { location=_; etag; bucket; key } when bucket = t.bucket && key = t.key ->
@@ -515,11 +518,11 @@ module Make(Io : Types.Io) = struct
     let abort ?(scheme=`Http) ?credentials ?region t () =
       let path = sprintf "/%s/%s" t.bucket t.key in
       let query = [ "uploadId", t.id ] in
+      let sink = Body.null () in
       let cmd ?region () =
-        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query ()
+        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query ~sink ()
       in
-      do_command ?region cmd >>=? fun (_headers, body) ->
-      Pipe.close_reader body;
+      do_command ?region cmd >>=? fun _headers ->
       Deferred.return (Ok ())
 
     module Stream = struct
@@ -530,13 +533,13 @@ module Make(Io : Types.Io) = struct
             "uploadId", t.id ]
         in
         let body = Body.Chunked { length; chunk_size; pipe=data } in
+        let sink = Body.null () in
         let cmd ?region () =
           Aws.make_request ~domain:!domain ?expect ~scheme ?credentials ?region ~headers:[] ~meth:`PUT ~path
-            ~body ~query ()
+            ~body ~query ~sink ()
         in
 
-        do_command ?region cmd >>=? fun (headers, body) ->
-        Pipe.close_reader body;
+        do_command ?region cmd >>=? fun headers ->
         let etag =
           Headers.find_opt "etag" headers
           |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)

@@ -16,7 +16,7 @@ dd if=$LARGE_FILE  of=$FILE       ibs=1k count=129
 FIRST_PART=1000
 LAST_PART=68000
 PART=part.bin
-dd if=${LARGE_FILE} of=${PART}    ibs=1 skip=$(( FIRST_PART - 1 )) count=$(( LAST_PART - FIRST_PART ))
+dd if=${LARGE_FILE} of=${PART} ibs=1 skip=$(( FIRST_PART )) count=$(( LAST_PART - FIRST_PART + 1))
 
 TEST=0
 function test {
@@ -100,7 +100,7 @@ function test_complete () {
 }
 
 # Test complete functionality for both lwt and async
-for b in async lwt; do
+for b in lwt async; do
     BIN=_build/install/default/bin/aws-cli-$b
     dune build $BIN || exit
     test_simple $BIN 3 false

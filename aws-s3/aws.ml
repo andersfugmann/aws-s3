@@ -1,5 +1,10 @@
 open StdLabels
 let sprintf = Printf.sprintf
+let debug = false
+let log fmt = match debug with
+  | true -> Printf.kfprintf (fun _ -> ()) stderr ("%s: " ^^ fmt ^^ "\n%!") __MODULE__
+  | false -> Printf.ikfprintf (fun _ -> ()) stderr fmt
+let _ = log
 
 let empty_sha = Authorization.hash_sha256 "" |> Authorization.to_hex
 
@@ -23,7 +28,6 @@ module Make(Io : Types.Io) = struct
   open Io
   open Deferred
 
-  (* TODO: Calculate sha while retrieving data *)
   let chunk_writer ~signing_key ~scope ~initial_signature ~date ~time ~chunk_size reader =
     let open Deferred in
     let sub ~pos ?len str =
@@ -36,7 +40,6 @@ module Make(Io : Types.Io) = struct
           String.sub ~pos ~len str
       in
       res
-
     in
     let send writer sha previous_signature elements length =
       let flush_done = Pipe.flush writer in

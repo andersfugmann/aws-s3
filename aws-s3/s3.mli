@@ -148,7 +148,7 @@ module Make(Io : Types.Io) : sig
         see {!Aws_s3.S3.Make.get}
     *)
     val get :
-      (?range:range -> bucket:string -> key:string -> unit -> string Io.Pipe.reader result) command
+      (?range:range -> bucket:string -> key:string -> sink:string Io.Pipe.writer -> unit -> unit result) command
 
   end
 

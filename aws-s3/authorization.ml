@@ -6,7 +6,7 @@ let sprintf = Printf.sprintf
 
 let debug = false
 let log fmt = match debug with
-  | true -> Printf.kfprintf (fun _ -> ()) stderr (fmt ^^ "\n%!")
+  | true -> Printf.kfprintf (fun _ -> ()) stderr ("%s: " ^^ fmt ^^ "\n%!") __MODULE__
   | false -> Printf.ikfprintf (fun _ -> ()) stderr fmt
 
 let hash_sha256 s =

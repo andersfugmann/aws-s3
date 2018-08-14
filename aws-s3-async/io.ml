@@ -34,6 +34,9 @@ module Pipe = struct
   open Async_kernel
   open Deferred
 
+  type ('a, 'b) pipe = ('a, 'b) Pipe.pipe
+  type writer_phantom = Pipe.Writer.phantom
+  type reader_phantom = Pipe.Reader.phantom
   type 'a writer = 'a Pipe.Writer.t
   type 'a reader = 'a Pipe.Reader.t
 
@@ -48,9 +51,11 @@ module Pipe = struct
   let close writer = Pipe.close writer
   let close_reader reader = Pipe.close_read reader
   let create_reader ~f = Pipe.create_reader ~close_on_exception:true f
+  let create_writer ~f = Pipe.create_writer f
   let transfer reader writer = Pipe.transfer_id reader writer
   let create () = Pipe.create ()
-  let closed reader = Pipe.closed reader
+  let is_closed pipe = Pipe.is_closed pipe
+  let closed pipe = Pipe.closed pipe
 end
 
 module Net = struct

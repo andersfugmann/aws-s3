@@ -120,8 +120,9 @@ module Make(Io : Aws_s3.Types.Io) = struct
         | None ->
           S3.get ~scheme ?region ~credentials ~range ~bucket:src.bucket ~key:src.key ()
         | Some _ ->
-          S3.Stream.get ~scheme ?region ~credentials ~range ~bucket:src.bucket ~key:src.key () >>=? fun body ->
-          Body.to_string body >>= fun body ->
+          let body, sink = Body.reader () in
+          S3.Stream.get ~scheme ?region ~credentials ~range ~bucket:src.bucket ~key:src.key ~sink () >>=? fun () ->
+          let body = Body.get body in
           Deferred.return (Ok body)
       in
       S3.retry ~retries ~f () >>=? fun data ->

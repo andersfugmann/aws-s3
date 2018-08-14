@@ -10,35 +10,33 @@ module Make(Io : Types.Io) = struct
     | Empty
     | Chunked of { pipe: string Pipe.reader; length: int; chunk_size: int }
 
-  type string_body = { mutable complete: bool; content: Buffer.t; }
+  type string_body = { writer: string Pipe.writer; content: Buffer.t; }
   let reader ?(size=1024) () =
     let reader, writer = Pipe.create () in
-    let body = { complete = false; content = Buffer.create size } in
+    let content = Buffer.create size in
     let rec read reader =
       Pipe.read reader >>= function
       | None ->
-        body.complete <- true;
         return ()
-      | Some data -> Buffer.add_string body.content data;
+      | Some data -> Buffer.add_string content data;
         read reader
     in
     async (read reader);
+    let body = { writer; content } in
     body, writer
 
   let get body =
-    match body.complete with
+    match Pipe.is_closed body.writer with
     | true -> Buffer.contents body.content
-    | false -> raise (Failure "Not closed")
+    | false -> raise (Failure "Body not closed")
 
-  let null_body () =
-    let reader, writer = Pipe.create () in
+  let null () =
     let rec read reader =
       Pipe.read reader >>= function
       | None -> return ()
       | Some _ -> read reader
     in
-    async (read reader);
-    writer
+    Pipe.create_writer ~f:read
 
   let to_string ?(length = 1024) body =
     let rec loop buffer =

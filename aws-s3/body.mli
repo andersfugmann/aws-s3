@@ -23,5 +23,5 @@ module Make(Io : Types.Io) : sig
   val reader: ?size:int -> unit -> string_body * string Pipe.writer
   val get: string_body -> string
 
-  val null_body: unit -> string Pipe.writer
+  val null: unit -> string Pipe.writer
 end
