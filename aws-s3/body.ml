@@ -3,14 +3,13 @@ open StdLabels
 module Make(Io : Types.Io) = struct
   open Io
   open Deferred
-  type t = string Pipe.reader
 
-  type body =
+  type t =
     | String of string
     | Empty
     | Chunked of { pipe: string Pipe.reader; length: int; chunk_size: int }
 
-  type string_body = { complete: unit Ivar.t; writer: string Pipe.writer; content: Buffer.t; }
+  type body = { complete: unit Ivar.t; writer: string Pipe.writer; content: Buffer.t; }
   let reader ?(size=1024) () =
     let complete = Ivar.create () in
     let content = Buffer.create size in

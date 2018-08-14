@@ -18,7 +18,7 @@ end
 module Make(Io : Aws_s3.Types.Io) = struct
   module S3 = Aws_s3.S3.Make(Io)
   module Credentials = Aws_s3.Credentials.Make(Io)
-  module Body = Aws_s3.Body.Make(Io)
+  module Body = Aws_s3__Body.Make(Io)
   open Io
   open Deferred
 

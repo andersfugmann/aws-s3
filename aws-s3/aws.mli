@@ -6,7 +6,7 @@ module Make(Io : Types.Io) : sig
     scheme:[`Http|`Https] ->
     ?expect:bool ->
     sink:string Io.Pipe.writer ->
-    ?body:Body.Make(Io).body ->
+    ?body:Body.Make(Io).t ->
     ?region:Region.t ->
     ?credentials:Credentials.t ->
     headers:(string * string) list ->
