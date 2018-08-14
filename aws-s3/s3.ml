@@ -197,6 +197,7 @@ module Make(Io : Types.Io) = struct
     | Redirect of Region.t
     | Throttled
     | Unknown of int * string
+    | Failed of exn
     | Not_found
 
   let domain = ref Unix.PF_INET
@@ -213,10 +214,8 @@ module Make(Io : Types.Io) = struct
 
   (**/**)
   let do_command ?region cmd =
-    (* TODO: Return the exn as part of result result *)
-    cmd ?region () >>= (function Ok r -> Deferred.return r | Error exn -> raise exn)
-    (* At this point the body has been received (send to the sink *)
-    >>= fun (code, _message, headers, body) ->
+    cmd ?region () >>=
+    (function Ok v -> return (Ok v) | Error exn -> return (Error (Failed exn))) >>=? fun (code, _message, headers, body) ->
     match code with
     | code when 200 <= code && code < 300 ->
       Deferred.return (Ok headers)
@@ -245,7 +244,6 @@ module Make(Io : Types.Io) = struct
     | code ->
       let resp = Error_response.of_xml_light (Xml.parse_string body) in
       Deferred.return (Error (Unknown (code, resp.code)))
-
 
   let put_common ?(scheme=`Http) ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body () =
     let path = sprintf "/%s/%s" bucket key in

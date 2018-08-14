@@ -23,6 +23,7 @@ module Make(Io : Types.Io) : sig
     | Redirect of Region.t
     | Throttled
     | Unknown of int * string
+    | Failed of exn
     | Not_found
 
   type storage_class = Standard | Standard_ia | Onezone_ia | Reduced_redundancy | Glacier
