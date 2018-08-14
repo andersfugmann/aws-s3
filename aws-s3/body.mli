@@ -20,7 +20,7 @@ module Make(Io : Types.Io) : sig
   val transfer: length:int -> ?start:string -> string Pipe.reader -> string Pipe.writer -> string Deferred.Or_error.t
   type string_body
   val reader: ?size:int -> unit -> string_body * string Pipe.writer
-  val get: string_body -> string
+  val get: string_body -> string Deferred.Or_error.t
 
   val null: unit -> string Pipe.writer
   (**/**)

@@ -30,6 +30,14 @@ module Deferred = struct
   let async = don't_wait_for
 end
 
+module Ivar = struct
+  type 'a t = 'a Async.Ivar.t
+  let create () = Async.Ivar.create ()
+  let fill t v = Async.Ivar.fill t v
+  let wait t = Async.Ivar.read t
+end
+
+
 module Pipe = struct
   open Async_kernel
   open Deferred

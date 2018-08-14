@@ -10,25 +10,28 @@ module Make(Io : Types.Io) = struct
     | Empty
     | Chunked of { pipe: string Pipe.reader; length: int; chunk_size: int }
 
-  type string_body = { writer: string Pipe.writer; content: Buffer.t; }
+  type string_body = { complete: unit Ivar.t; writer: string Pipe.writer; content: Buffer.t; }
   let reader ?(size=1024) () =
-    let reader, writer = Pipe.create () in
+    let complete = Ivar.create () in
     let content = Buffer.create size in
     let rec read reader =
       Pipe.read reader >>= function
       | None ->
+        Ivar.fill complete ();
         return ()
       | Some data -> Buffer.add_string content data;
         read reader
     in
-    async (read reader);
-    let body = { writer; content } in
+    let writer = Pipe.create_writer ~f:read in
+    let body = { complete; writer; content} in
     body, writer
 
   let get body =
     match Pipe.is_closed body.writer with
-    | true -> Buffer.contents body.content
-    | false -> raise (Failure "Body not closed")
+    | true ->
+      Ivar.wait body.complete >>= fun () ->
+      Or_error.return (Buffer.contents body.content)
+    | false -> Or_error.fail (Failure "Body not closed correctly")
 
   let null () =
     let rec read reader =

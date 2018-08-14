@@ -129,9 +129,10 @@ module Make(Io : Types.Io) = struct
     Pipe.close_reader reader;
     Pipe.close sink;
 
-    let body = match error_body with
-      | None -> ""
+    begin
+      match error_body with
+      | None -> Or_error.return ""
       | Some body -> Body.get body
-    in
+    end >>=? fun body ->
     Or_error.return (status_code, status_message, headers, body)
 end

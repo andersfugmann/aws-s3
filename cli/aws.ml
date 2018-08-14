@@ -123,8 +123,10 @@ module Make(Io : Aws_s3.Types.Io) = struct
         | Some _ ->
           let body, sink = Body.reader () in
           S3.Stream.get ~scheme ?region ~credentials ~range ~bucket:src.bucket ~key:src.key ~sink () >>=? fun () ->
-          let body = Body.get body in
-          Deferred.return (Ok body)
+          Pipe.flush sink >>= fun () ->
+          Body.get body >>= function
+          | Ok body -> Deferred.return (Ok body)
+          | Error exn -> raise exn
       in
       S3.retry ~retries ~f () >>=? fun data ->
       save_file dst data;

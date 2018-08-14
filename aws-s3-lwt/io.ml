@@ -28,6 +28,13 @@ module Deferred = struct
   let async t = Lwt.async (fun () -> t)
 end
 
+module Ivar = struct
+  type 'a t = ('a Lwt.t * 'a Lwt.u)
+  let create () = Lwt.wait ()
+  let fill t v = Lwt.wakeup_later (snd t) v
+  let wait t = fst t
+end
+
 module Pipe = struct
   open Lwt.Infix
   type 'a elem = Flush of unit Lwt.u
@@ -61,6 +68,9 @@ module Pipe = struct
       failwith (__LOC__ ^ ": Closed")
 
   let flush writer =
+    match Queue.length writer.queue = 0 && writer.closed with
+    | true -> Lwt.return ()
+    | false ->
     let waiter, wakeup = Lwt.wait () in
     Queue.add (Flush wakeup) writer.queue;
     if Queue.length writer.queue = 1 then Lwt_condition.signal writer.cond ();

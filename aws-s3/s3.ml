@@ -200,6 +200,10 @@ module Make(Io : Types.Io) = struct
     | Failed of exn
     | Not_found
 
+  let exn_to_error = function
+    | Ok v -> return (Ok v)
+    | Error exn -> return (Error (Failed exn))
+
   let domain = ref Unix.PF_INET
   let set_connection_type = function
     | Unix.PF_UNIX -> raise (Invalid_argument "Unix domains are not supported")
@@ -309,7 +313,7 @@ module Make(Io : Types.Io) = struct
   let get ?scheme ?credentials ?region ?range ~bucket ~key () =
     let body, sink = Body.reader () in
     Stream.get ?scheme ?credentials ?region ?range ~bucket ~key ~sink () >>=? fun () ->
-    let body = Body.get body in
+    Body.get body >>= exn_to_error >>=? fun body ->
     Deferred.return (Ok body)
 
   let delete ?(scheme=`Http) ?credentials ?region ~bucket ~key () =
@@ -375,7 +379,7 @@ module Make(Io : Types.Io) = struct
           ~meth:`POST ~query:["delete", ""] ~path:("/" ^ bucket) ~sink ()
       in
       do_command ?region cmd >>=? fun _headers ->
-      let body = Body.get body in
+      Body.get body >>= exn_to_error >>=? fun body ->
       let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
       Deferred.return (Ok result)
 
@@ -392,7 +396,7 @@ module Make(Io : Types.Io) = struct
       Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`GET ~path:("/" ^ bucket) ~query ~sink ()
     in
     do_command ?region cmd >>=? fun _headers ->
-    let body = Body.get body in
+    Body.get body >>= exn_to_error >>=? fun body ->
     let result = Ls.result_of_xml_light (Xml.parse_string body) in
     let continuation = match Ls.(result.next_continuation_token) with
       | Some ct ->
@@ -424,7 +428,7 @@ module Make(Io : Types.Io) = struct
         Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers ~meth:`POST ~path ~query ~sink ()
       in
       do_command ?region cmd >>=? fun _headers ->
-      let body = Body.get body in
+      Body.get body >>= exn_to_error >>=? fun body ->
       let resp = Multipart.Initiate.of_xml_light (Xml.parse_string body) in
       Ok { id = resp.Multipart.Initiate.upload_id;
            parts = [];
@@ -478,7 +482,7 @@ module Make(Io : Types.Io) = struct
       in
 
       do_command ?region cmd >>=? fun _headers ->
-      let body = Body.get body in
+      Body.get body >>= exn_to_error >>=? fun body ->
       let xml = Xml.parse_string body in
       match Multipart.Copy.of_xml_light xml with
       | { Multipart.Copy.etag; _ } ->
@@ -498,11 +502,11 @@ module Make(Io : Types.Io) = struct
         |> Xml.to_string_fmt
       in
       let body, sink = Body.reader () in
-            let cmd ?region () =
+      let cmd ?region () =
         Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:(Body.String request) ~sink ()
       in
       do_command ?region cmd >>=? fun _headers ->
-      let body = Body.get body in
+      Body.get body >>= exn_to_error >>=? fun body ->
       let xml = Xml.parse_string body in
       match Multipart.Complete.response_of_xml_light xml with
       | { location=_; etag; bucket; key } when bucket = t.bucket && key = t.key ->

@@ -34,7 +34,8 @@ module Make(Io : Types.Io) = struct
       Http.call ~scheme:`Http ~path ~host ~sink ~headers:Headers.empty `GET >>=? fun (status, message, _headers, error_body) ->
       match status with
       | code when code >= 200 && code < 300 ->
-        Deferred.Or_error.return (Body.get body)
+        Body.get body >>=? fun body ->
+        Deferred.Or_error.return body
       | _ ->
         let msg = sprintf "Failed to get role. %s. Reponse %s" message error_body in
         Deferred.Or_error.fail (Failure msg)
@@ -46,7 +47,8 @@ module Make(Io : Types.Io) = struct
       Http.call ~scheme:`Http ~path ~host ~sink ~headers:Headers.empty `GET >>=? fun (status, message, _headers, error_body) ->
       match status with
       | code when code >= 200 && code < 300 ->
-        let json = Yojson.Safe.from_string (Body.get body) in
+        Body.get body >>=? fun body ->
+        let json = Yojson.Safe.from_string body in
         of_json json |> Deferred.Or_error.return
       | _ ->
         let msg = sprintf "Failed to get credentials. %s. Reponse %s" message error_body in

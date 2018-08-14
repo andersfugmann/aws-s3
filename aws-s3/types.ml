@@ -20,6 +20,15 @@ module type Io = sig
     val (>>=?): ('a, 'c) result t -> ('a -> ('b, 'c) result t) -> ('b, 'c) result t
   end
 
+  (**/**)
+  module Ivar : sig
+    type 'a t
+    val create: unit -> 'a t
+    val fill: 'a t -> 'a -> unit
+    val wait: 'a t -> 'a Deferred.t
+  end
+  (**/**)
+
   (** Module mimicking Async.Pipe *)
   module Pipe : sig
     (** Generic pipe *)
