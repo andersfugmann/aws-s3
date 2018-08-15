@@ -129,6 +129,9 @@ module Make(Io : Types.Io) : sig
         @param length Amount of data to copy
         @param chunk_size The size of chunks send to s3.
                The system will have 2 x chunk_size byte in flight
+        @param data stream to be uploaded. Data will not be consumed after
+               the result is determined. If using [expect], then data may not have been consumed at all,
+               but it is up to the caller to test if data has been consumed from the input data.
 
         see {!Aws_s3.S3.Make.put}
     *)
