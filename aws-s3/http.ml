@@ -43,13 +43,11 @@ module Make(Io : Types.Io) = struct
     in
     inner Headers.empty remain
 
-
-  let call ?(domain=Unix.PF_INET) ?(expect=false) ~scheme ~host ~path ?(query=[]) ~headers ~sink ?body (meth:meth) =
+  let send_request ~expect ~path ~query ~headers ~meth writer () =
     let headers = match expect with
       | true -> Headers.add ~key:"Expect" ~value:"100-continue" headers
       | false -> headers
     in
-    Net.connect ~domain ~host ~scheme >>=? fun (reader, writer) ->
     let path_with_params =
       let query = List.map ~f:(fun (k, v) -> k, [v]) query in
       Uri.make ~path ~query () |> Uri.to_string
@@ -66,45 +64,38 @@ module Make(Io : Types.Io) = struct
         return ()
       ) headers (return ()) >>= fun () ->
     Pipe.write writer "\r\n" >>= fun () ->
+    return ()
 
-    begin
-      match expect with
-      | true ->
-        log "Expect 100-continue";
-        read_status reader "" >>=? fun ((status_code, status_message), remain) ->
-        begin match status_code with
-        | 100 ->
-          log "Got 100-continue";
-          begin match body with
-          | None -> return ()
-          | Some body ->
-            log "Send body";
-            Pipe.transfer body writer >>= fun () ->
-            log "Body sent";
-            Pipe.flush writer
-          end >>= fun () ->
-          log "Read status";
-          read_status reader remain
-        | _ -> Or_error.return ((status_code, status_message), remain)
-        end
-      | false ->
-        begin match body with
-        | None -> return ()
-        | Some body -> Pipe.transfer body writer
-        end >>= fun () ->
-        read_status reader ""
-    end >>=? fun ((status_code, status_message), remain) ->
-    log "Got result:%s " status_message;
-    Pipe.close writer;
-    let sink, error_body = match status_code with
-      | n when 200 <= n && n < 300 -> (sink, None)
-      | _ -> (* Capture the response as an error message *)
-        let body, writer = Body.reader () in
-        writer, Some body
+  let handle_expect ~expect reader =
+    match expect with
+    | true -> begin
+      log "Expect 100-continue";
+      read_status reader "" >>=? function
+      | ((100, _), remain) ->
+        log "Got 100-continue";
+        Or_error.return (`Continue remain)
+      | ((code, message), remain) ->
+        Or_error.return (`Failed ((code, message), remain))
+      end
+    | false -> Or_error.return (`Continue "")
+
+  let send_body ?body writer =
+    let rec transfer reader writer =
+      Pipe.read reader >>= function
+      | Some data ->
+        Pipe.write writer data >>= fun () ->
+        transfer reader writer
+      | None -> return ()
     in
+    match body with
+    | None -> Or_error.return ()
+    | Some reader ->
+      catch (fun () -> transfer reader writer) >>= fun result ->
+      (* Close the reader and writer in any case *)
+      Pipe.close_reader reader;
+      return result (* Might contain an exception *)
 
-    read_headers reader remain >>=? fun (headers, remain) ->
-
+  let read_data ~sink ~headers remain reader =
     (* Test if the reply is chunked *)
     let chunked_transfer =
       match Headers.find_opt "transfer-encoding" headers with
@@ -113,26 +104,62 @@ module Make(Io : Types.Io) = struct
       | None -> false
     in
     begin
-      match (meth, Headers.find_opt "content-length" headers, chunked_transfer) with
-      | (`HEAD, _, _)
-      | (_, None, false)
-      | (_, Some "0", false) -> Or_error.return ""
-      | _, Some length, false ->
+      match (Headers.find_opt "content-length" headers, chunked_transfer) with
+      | (None, false)
+      | (Some "0", false) ->
+        Or_error.return "" (* This is just an optimization *)
+      | Some length, false ->
         let length = int_of_string length in
         Body.transfer ~length ~start:remain reader sink
-      | _, _, true -> (* Actually we should not accept a content
-                         length then when encoding is chunked, but AWS
-                         does require this when uploading, so we
-                         accept it for symmetry.*)
+      | _, true -> (* Actually we should not accept a content
+                      length then when encoding is chunked, but AWS
+                      does require this when uploading, so we
+                      accept it for symmetry.*)
         Body.chunked_transfer ~start:remain reader sink
     end >>=? fun _remain ->
-    Pipe.close_reader reader;
     Pipe.close sink;
+    Or_error.return ()
 
+  let do_request ~expect ~path ?(query=[]) ~headers ~sink ?body meth reader writer =
+    catch (send_request ~expect ~path ~query ~headers ~meth writer) >>=? fun () ->
     begin
-      match error_body with
-      | None -> Or_error.return ""
-      | Some body -> Body.get body
-    end >>=? fun body ->
-    Or_error.return (status_code, status_message, headers, body)
+      handle_expect ~expect reader >>=? function
+      | `Failed ((code, message), remain) ->
+        Or_error.return ((code, message), remain)
+      | `Continue remain ->
+        send_body ?body writer >>=? fun () ->
+        read_status reader remain
+    end >>=? fun ((code, message), remain) ->
+    read_headers reader remain >>=? fun (headers, remain) ->
+
+    begin match meth with
+      | `HEAD -> Or_error.return ""
+      | _ ->
+        let sink, error_body = match code with
+          | n when 200 <= n && n < 300 -> (sink, None)
+          | _ ->
+            (* Capture the response as an error message *)
+            let body, writer = Body.reader () in
+            (* Close the sink. *)
+            Pipe.close sink;
+            writer, Some body
+        in
+        read_data ~sink ~headers remain reader >>=? fun () ->
+        begin
+          match error_body with
+          | None -> Or_error.return ""
+          | Some body -> Body.get body
+        end
+    end >>=? fun error_body ->
+    Or_error.return (code, message, headers, error_body)
+
+
+  let call ?(domain=Unix.PF_INET) ?(expect=false) ~scheme ~host ~path ?(query=[]) ~headers ~sink ?body (meth:meth) =
+    Net.connect ~domain ~host ~scheme >>=? fun (reader, writer) ->
+    (* At this point we need to make sure reader and writer are closed properly. *)
+    do_request ~expect ~path ~query ~headers ~sink ?body meth reader writer >>= fun result ->
+    (* Close the reader and writer regardless of status *)
+    Pipe.close_reader reader;
+    Pipe.close writer;
+    return result
 end
