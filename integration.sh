@@ -15,7 +15,7 @@ dd if=$LARGE_FILE  of=$FILE       ibs=1k count=129
 
 FIRST_PART=1000
 LAST_PART=68000
-PART=part.bin
+PART=/tmp/part.bin
 dd if=${LARGE_FILE} of=${PART} ibs=1 skip=$(( FIRST_PART )) count=$(( LAST_PART - FIRST_PART + 1))
 
 TEST=0

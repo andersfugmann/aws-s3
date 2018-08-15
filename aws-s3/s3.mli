@@ -70,9 +70,10 @@ module Make(Io : Types.Io) : sig
 
   (** Upload [data] to [bucket]/[key].
       Returns the etag of the object. The etag is the md5 checksum (RFC 1864)
-      @param expect If true, the body will not be sent untill a
+
+      @param expect If true, the body will not be sent until a
       status has been received from the server. This incurs a delay
-      in transfer, but avoid sending a large body, if the request is
+      in transfer, but avoid sending a large body, if the request can be
       know to fail before the body is sent.
   *)
   val put :
