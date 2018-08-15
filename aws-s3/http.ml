@@ -163,5 +163,6 @@ module Make(Io : Types.Io) = struct
     (* Close the reader and writer regardless of status *)
     Pipe.close_reader reader;
     Pipe.close writer;
+    Pipe.close sink;
     return result
 end

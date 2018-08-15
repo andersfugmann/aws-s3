@@ -6,7 +6,6 @@ module Make(Io : Types.Io) : sig
     | Chunked of { pipe : string Pipe.reader; length : int; chunk_size : int; }
   (**/**)
   val to_string :
-    ?length:int ->
     string Pipe.reader ->
     string Deferred.t
 

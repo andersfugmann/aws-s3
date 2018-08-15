@@ -145,14 +145,15 @@ module Make(Io : Types.Io) : sig
 
     (** Streaming version of get.
         The caller must supply a [sink] to which retrieved data is streamed.
-        The result will be determined after all data has been sent to the sink.
+        The result will be determined after all data has been sent to the sink, and the sink is closed.
 
         Connections to s3 is closed once the result has been determined.
-        The sink is closed after successful data retrieval.
-        In case of errors the state (open / closed) of the sink is not defined.
+        The caller should ways examine the result of the function.
+        If the result is [Ok], then it is guaranteed that all data has been retrieved successfully and written to the sink.
+        In case of [Error], only parts of the data may have been written to the sink.
 
-        The rationale for the sink argument, rather than returning a [string Pipe.reader] is to
-        allow the user to match on the result to determine if all data was successfully received.
+        The rationale for using a sink rather than returning a pipe reader from which data
+        can be consumed is that a reader does not allow simple relay of error states during the transfer.
 
         For other parameters see {!Aws_s3.S3.Make.get}
     *)

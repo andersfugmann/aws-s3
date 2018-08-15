@@ -17,16 +17,15 @@ module Make(Io : Types.Io) = struct
     in
     Pipe.create_writer ~f:read
 
-  let to_string ?(length = 1024) body =
-    let rec loop buffer =
+  let to_string body =
+    let rec loop acc =
       Pipe.read body >>= function
       | Some data ->
-        Buffer.add_string buffer data;
-        loop buffer
-      | None -> return (Buffer.contents buffer)
+        loop (data :: acc)
+      | None ->
+        String.concat ~sep:"" (List.rev acc) |> return
     in
-    (* Should use the indication from content-length *)
-    loop (Buffer.create length)
+    loop []
 
   let read_string ?start ~length reader =
     let rec loop acc data remain =

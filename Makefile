@@ -14,6 +14,10 @@ clean:
 test: build
 	dune runtest
 
+.PHONY: integration
+integration:
+	./integration.sh
+
 update-version: VERSION=$(shell cat Changelog | grep -E '^[0-9]' | head -n 1 | cut -f1 -d':' )
 update-version:
 	@echo "Set version to $(VERSION)"
