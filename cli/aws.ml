@@ -65,8 +65,8 @@ module Make(Io : Aws_s3.Types.Io) = struct
   type objekt = { bucket: string; key: string }
   let objekt_of_uri u =
     match String.split_on_char ~sep:'/' u with
-    | ["s3:"; ""; bucket; key] ->
-      { bucket; key }
+    | "s3:" :: "" :: bucket :: key ->
+      { bucket; key = String.concat ~sep:"/" key }
     | _ -> failwith ("Illegal uri: " ^ u)
 
   let string_of_error = function

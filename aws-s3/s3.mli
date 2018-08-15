@@ -26,13 +26,14 @@ module Make(Io : Types.Io) : sig
     | Failed of exn
     | Not_found
 
+  type etag = string
   type storage_class = Standard | Standard_ia | Onezone_ia | Reduced_redundancy | Glacier
   type content = {
     storage_class : storage_class;
     size : int;
     last_modified : float; (** Seconds since epoch *)
     key : string;
-    etag : string; (** Etag as a string. this us usually the MD5, unless the object was constructed by multi-upload *)
+    etag : etag; (** Etag as a string. this us usually the MD5, unless the object was constructed by multi-upload *)
   }
 
   type nonrec 'a result = ('a, error) result Deferred.t
@@ -84,7 +85,7 @@ module Make(Io : Types.Io) : sig
      ?expect:bool ->
      bucket:string ->
      key:string ->
-     data:string -> unit -> string result) command
+     data:string -> unit -> etag result) command
 
   (** Download [key] from s3 in [bucket]
       If [range] is specified, only a part of the file is retrieved:
@@ -142,7 +143,7 @@ module Make(Io : Types.Io) : sig
        data:string Io.Pipe.reader ->
        chunk_size:int ->
        length:int ->
-       unit -> string result) command
+       unit -> etag result) command
 
     (** Streaming version of get.
         The caller must supply a [sink] to which retrieved data is streamed.
@@ -196,8 +197,9 @@ module Make(Io : Types.Io) : sig
     val copy_part :
       (t -> part_number:int -> ?range:int * int -> bucket:string -> key:string -> unit -> unit result) command
 
-    (** Complete a multipart upload. The returned string is an opaque identifier used as etag *)
-    val complete : (t -> unit -> string result) command
+    (** Complete a multipart upload. The returned string is an opaque identifier used as etag.
+        the etag return is _NOT_ the md5 *)
+    val complete : (t -> unit -> etag result) command
 
     (** Abort a multipart upload. This also discards all uploaded parts. *)
     val abort : (t -> unit -> unit result) command
@@ -209,7 +211,9 @@ module Make(Io : Types.Io) : sig
           @param length is the amount of data to copy
           @param chunk_size Is the size of chunks send to s3.
                  The system will have 2 x chunk_size byte in flight
-
+          @param data the streamed data. Data will not be consumed after
+                 the result is determined. If using [expect], then data may not have been consumed at all,
+                 but it is up to the caller to test if data has been consumed from the input data.
 
           see {!Aws_s3.S3.Make.Multipart_upload.upload_part}
       *)

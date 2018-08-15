@@ -54,6 +54,17 @@ module Protocol(P: sig type 'a result end) = struct
     Xml_light.to_string t
     |> Time.parse_iso8601_string
 
+  let unquote s =
+    match String.length s with
+    | 0 | 1 -> s
+    | _ when s.[0] = '"' ->
+      String.sub s ~pos:1 ~len:(String.length s - 2)
+    | _ -> s
+
+  type etag = string
+  let etag_of_xml_light t =
+    Xml_light.to_string t |> unquote
+
   type storage_class =
     | Standard           [@key "STANDARD"]
     | Standard_ia        [@key "STANDARD_IA"]
@@ -65,7 +76,7 @@ module Protocol(P: sig type 'a result end) = struct
     size: int [@key "Size"];
     last_modified: time [@key "LastModified"];
     key: string [@key "Key"];
-    etag: string [@key "ETag"];
+    etag: etag [@key "ETag"];
     (** Add expiration date option *)
   } [@@deriving of_protocol ~driver:(module Xml_light)]
 
@@ -269,7 +280,7 @@ module Make(Io : Types.Io) = struct
     let etag =
       match Headers.find_opt "etag" headers with
       | None -> failwith "Put reply did not conatin an etag header"
-      | Some etag -> String.sub ~pos:1 ~len:(String.length etag - 2) etag
+      | Some etag -> unquote etag
     in
     Deferred.return (Ok etag)
 
@@ -348,7 +359,7 @@ module Make(Io : Types.Io) = struct
         |> Option.value_map ~default:Standard ~f:(fun s ->
             storage_class_of_xml_light (Xml.Element ("p", [], [Xml.PCData s])))
       in
-      Some { storage_class; size; last_modified; key; etag }
+      Some { storage_class; size; last_modified; key; etag = unquote etag}
     in
     match result with
     | Some r -> Deferred.return (Ok r)
@@ -457,7 +468,7 @@ module Make(Io : Types.Io) = struct
       let etag =
         Headers.find_opt "etag" headers
         |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
-        |> fun etag -> String.sub ~pos:1 ~len:(String.length etag - 2) etag
+        |> fun etag -> unquote etag
       in
       t.parts <- { etag; part_number } :: t.parts;
       Deferred.return (Ok ())
