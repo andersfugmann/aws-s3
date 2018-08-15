@@ -200,9 +200,9 @@ module Make(Io : Types.Io) = struct
     | Failed of exn
     | Not_found
 
-  let exn_to_error = function
-    | Ok v -> return (Ok v)
-    | Error exn -> return (Error (Failed exn))
+  let string_sink () =
+    let reader, writer = Pipe.create () in
+    Body.to_string reader, writer
 
   let domain = ref Unix.PF_INET
   let set_connection_type = function
@@ -311,9 +311,9 @@ module Make(Io : Types.Io) = struct
     put_common ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body ()
 
   let get ?scheme ?credentials ?region ?range ~bucket ~key () =
-    let body, sink = Body.reader () in
+    let body, sink = string_sink () in
     Stream.get ?scheme ?credentials ?region ?range ~bucket ~key ~sink () >>=? fun () ->
-    Body.get body >>= exn_to_error >>=? fun body ->
+    body >>= fun body ->
     Deferred.return (Ok body)
 
   let delete ?(scheme=`Http) ?credentials ?region ~bucket ~key () =
@@ -372,14 +372,14 @@ module Make(Io : Types.Io) = struct
         |> Xml.to_string
       in
       let headers = [ "Content-MD5", B64.encode (Caml.Digest.string request) ] in
-      let body, sink = Body.reader () in
+      let body, sink = string_sink () in
       let cmd ?region () =
         Aws.make_request ~domain:!domain ~scheme
           ~body:(Body.String request) ?credentials ?region ~headers
           ~meth:`POST ~query:["delete", ""] ~path:("/" ^ bucket) ~sink ()
       in
       do_command ?region cmd >>=? fun _headers ->
-      Body.get body >>= exn_to_error >>=? fun body ->
+      body >>= fun body ->
       let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
       Deferred.return (Ok result)
 
@@ -391,12 +391,12 @@ module Make(Io : Types.Io) = struct
                   Option.map ~f:(fun max_keys -> ("max-keys", string_of_int max_keys)) max_keys;
                 ] |> filter_map ~f:(fun x -> x)
     in
-    let body, sink = Body.reader () in
+    let body, sink = string_sink () in
     let cmd ?region () =
       Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`GET ~path:("/" ^ bucket) ~query ~sink ()
     in
     do_command ?region cmd >>=? fun _headers ->
-    Body.get body >>= exn_to_error >>=? fun body ->
+    body >>= fun body ->
     let result = Ls.result_of_xml_light (Xml.parse_string body) in
     let continuation = match Ls.(result.next_continuation_token) with
       | Some ct ->
@@ -423,12 +423,12 @@ module Make(Io : Types.Io) = struct
         let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
         filter_map ~f:(fun x -> x) [ content_type; content_encoding; cache_control; acl ]
       in
-      let body, sink = Body.reader () in
+      let body, sink = string_sink () in
       let cmd ?region () =
         Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers ~meth:`POST ~path ~query ~sink ()
       in
       do_command ?region cmd >>=? fun _headers ->
-      Body.get body >>= exn_to_error >>=? fun body ->
+      body >>= fun body ->
       let resp = Multipart.Initiate.of_xml_light (Xml.parse_string body) in
       Ok { id = resp.Multipart.Initiate.upload_id;
            parts = [];
@@ -476,13 +476,13 @@ module Make(Io : Types.Io) = struct
         Option.value_map ~default:[] ~f:(fun (first, last) ->
             [ "x-amz-copy-source-range", sprintf "bytes=%d-%d" first last ]) range
       in
-      let body, sink = Body.reader () in
+      let body, sink = string_sink () in
       let cmd ?region () =
         Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~query ~sink ()
       in
 
       do_command ?region cmd >>=? fun _headers ->
-      Body.get body >>= exn_to_error >>=? fun body ->
+      body >>= fun body ->
       let xml = Xml.parse_string body in
       match Multipart.Copy.of_xml_light xml with
       | { Multipart.Copy.etag; _ } ->
@@ -501,12 +501,12 @@ module Make(Io : Types.Io) = struct
         Multipart.Complete.(xml_of_request { parts })
         |> Xml.to_string_fmt
       in
-      let body, sink = Body.reader () in
+      let body, sink = string_sink () in
       let cmd ?region () =
         Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:(Body.String request) ~sink ()
       in
       do_command ?region cmd >>=? fun _headers ->
-      Body.get body >>= exn_to_error >>=? fun body ->
+      body >>= fun body ->
       let xml = Xml.parse_string body in
       match Multipart.Complete.response_of_xml_light xml with
       | { location=_; etag; bucket; key } when bucket = t.bucket && key = t.key ->

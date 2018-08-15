@@ -30,11 +30,14 @@ module Make(Io : Types.Io) = struct
     let get_role () =
       let path = "/latest/meta-data/iam/security-credentials/" in
       let host = instance_data_host in
-      let body, sink = Body.reader () in
+      let body, sink =
+        let reader, writer = Pipe.create () in
+        Body.to_string reader, writer
+      in
       Http.call ~scheme:`Http ~path ~host ~sink ~headers:Headers.empty `GET >>=? fun (status, message, _headers, error_body) ->
       match status with
       | code when code >= 200 && code < 300 ->
-        Body.get body >>=? fun body ->
+        body >>= fun body ->
         Deferred.Or_error.return body
       | _ ->
         let msg = sprintf "Failed to get role. %s. Reponse %s" message error_body in
@@ -43,11 +46,14 @@ module Make(Io : Types.Io) = struct
     let get_credentials role =
       let path = sprintf "/latest/meta-data/iam/security-credentials/%s" role in
       let host = instance_data_host in
-      let body, sink = Body.reader () in
+      let body, sink =
+        let reader, writer = Pipe.create () in
+        Body.to_string reader, writer
+      in
       Http.call ~scheme:`Http ~path ~host ~sink ~headers:Headers.empty `GET >>=? fun (status, message, _headers, error_body) ->
       match status with
       | code when code >= 200 && code < 300 ->
-        Body.get body >>=? fun body ->
+        body >>= fun body ->
         let json = Yojson.Safe.from_string body in
         of_json json |> Deferred.Or_error.return
       | _ ->

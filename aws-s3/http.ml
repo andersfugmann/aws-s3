@@ -20,16 +20,17 @@ module Make(Io : Types.Io) = struct
   | `POST   -> "POST"
   | `DELETE -> "DELETE"
 
-  let read_status reader remain =
+  let read_status ?start reader =
+    let remain = start in
     (* Start reading the reply *)
-    Body.read_until ~sep:" " reader remain >>=? fun (_http_version, remain) ->
-    Body.read_until ~sep:" " reader remain >>=? fun (status_code, remain) ->
-    Body.read_until ~sep:"\r\n" reader remain >>=? fun (status_message, remain) ->
+    Body.read_until ?start:remain ~sep:" " reader >>=? fun (_http_version, remain) ->
+    Body.read_until ?start:remain ~sep:" " reader >>=? fun (status_code, remain) ->
+    Body.read_until ?start:remain ~sep:"\r\n" reader >>=? fun (status_message, remain) ->
     Or_error.return ((int_of_string status_code, status_message), remain)
 
-  let read_headers reader remain =
-    let rec inner acc remain =
-      Body.read_until ~sep:"\r\n" reader remain >>=? function
+  let read_headers ?start reader =
+    let rec inner ?start acc =
+      Body.read_until ?start ~sep:"\r\n" reader >>=? function
       | ("", remain) -> Or_error.return (acc, remain)
       | (line, remain) ->
         let (key, value) =
@@ -39,9 +40,9 @@ module Make(Io : Types.Io) = struct
           | [ k; v ] -> (k, v)
           | k :: vs -> (k, String.concat ~sep:": " vs)
         in
-        inner (Headers.add ~key ~value acc) remain
+        inner ?start:remain (Headers.add ~key ~value acc)
     in
-    inner Headers.empty remain
+    inner ?start Headers.empty
 
   let send_request ~expect ~path ~query ~headers ~meth writer () =
     let headers = match expect with
@@ -70,14 +71,14 @@ module Make(Io : Types.Io) = struct
     match expect with
     | true -> begin
       log "Expect 100-continue";
-      read_status reader "" >>=? function
+      read_status reader >>=? function
       | ((100, _), remain) ->
         log "Got 100-continue";
         Or_error.return (`Continue remain)
       | ((code, message), remain) ->
         Or_error.return (`Failed ((code, message), remain))
       end
-    | false -> Or_error.return (`Continue "")
+    | false -> Or_error.return (`Continue None)
 
   let send_body ?body writer =
     let rec transfer reader writer =
@@ -95,7 +96,7 @@ module Make(Io : Types.Io) = struct
       Pipe.close_reader reader;
       return result (* Might contain an exception *)
 
-  let read_data ~sink ~headers remain reader =
+  let read_data ?start ~sink ~headers reader =
     (* Test if the reply is chunked *)
     let chunked_transfer =
       match Headers.find_opt "transfer-encoding" headers with
@@ -105,18 +106,17 @@ module Make(Io : Types.Io) = struct
     in
     begin
       match (Headers.find_opt "content-length" headers, chunked_transfer) with
-      | (None, false)
-      | (Some "0", false) ->
-        Or_error.return "" (* This is just an optimization *)
+      | (None, false) -> Or_error.return None
       | Some length, false ->
         let length = int_of_string length in
-        Body.transfer ~length ~start:remain reader sink
+        Body.transfer ?start ~length reader sink
       | _, true -> (* Actually we should not accept a content
                       length then when encoding is chunked, but AWS
                       does require this when uploading, so we
                       accept it for symmetry.*)
-        Body.chunked_transfer ~start:remain reader sink
+        Body.chunked_transfer ?start reader sink
     end >>=? fun _remain ->
+    (* We could log here is we have extra data *)
     Pipe.close sink;
     Or_error.return ()
 
@@ -128,28 +128,30 @@ module Make(Io : Types.Io) = struct
         Or_error.return ((code, message), remain)
       | `Continue remain ->
         send_body ?body writer >>=? fun () ->
-        read_status reader remain
+        read_status ?start:remain reader
     end >>=? fun ((code, message), remain) ->
-    read_headers reader remain >>=? fun (headers, remain) ->
+    read_headers ?start:remain reader >>=? fun (headers, remain) ->
+
+
+    let error_body, error_sink =
+      let reader, writer = Pipe.create () in
+      Body.to_string reader, writer
+    in
 
     begin match meth with
       | `HEAD -> Or_error.return ""
       | _ ->
-        let sink, error_body = match code with
-          | n when 200 <= n && n < 300 -> (sink, None)
+        let sink = match code with
+          | n when 200 <= n && n < 300 ->
+            Pipe.close error_sink;
+            sink
           | _ ->
-            (* Capture the response as an error message *)
-            let body, writer = Body.reader () in
-            (* Close the sink. *)
             Pipe.close sink;
-            writer, Some body
+            error_sink
         in
-        read_data ~sink ~headers remain reader >>=? fun () ->
-        begin
-          match error_body with
-          | None -> Or_error.return ""
-          | Some body -> Body.get body
-        end
+        read_data ?start:remain ~sink ~headers reader >>=? fun () ->
+        error_body >>= fun error_body ->
+        Or_error.return error_body
     end >>=? fun error_body ->
     Or_error.return (code, message, headers, error_body)
 

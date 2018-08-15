@@ -9,29 +9,6 @@ module Make(Io : Types.Io) = struct
     | Empty
     | Chunked of { pipe: string Pipe.reader; length: int; chunk_size: int }
 
-  type body = { complete: unit Ivar.t; writer: string Pipe.writer; content: Buffer.t; }
-  let reader ?(size=1024) () =
-    let complete = Ivar.create () in
-    let content = Buffer.create size in
-    let rec read reader =
-      Pipe.read reader >>= function
-      | None ->
-        Ivar.fill complete ();
-        return ()
-      | Some data -> Buffer.add_string content data;
-        read reader
-    in
-    let writer = Pipe.create_writer ~f:read in
-    let body = { complete; writer; content} in
-    body, writer
-
-  let get body =
-    match Pipe.is_closed body.writer with
-    | true ->
-      Ivar.wait body.complete >>= fun () ->
-      Or_error.return (Buffer.contents body.content)
-    | false -> Or_error.fail (Failure "Body not closed correctly")
-
   let null () =
     let rec read reader =
       Pipe.read reader >>= function
@@ -51,7 +28,7 @@ module Make(Io : Types.Io) = struct
     (* Should use the indication from content-length *)
     loop (Buffer.create length)
 
-  let read_string ~length data reader =
+  let read_string ?start ~length reader =
     let rec loop acc data remain =
       match data, remain with
       | data, 0 -> Or_error.return (Buffer.contents acc, data)
@@ -68,13 +45,13 @@ module Make(Io : Types.Io) = struct
         Or_error.return
           (Buffer.contents acc, Some (String.sub data ~pos:remain ~len:(String.length data - remain)))
     in
-    loop (Buffer.create length) data length
+    loop (Buffer.create length) start length
 
-  let transfer ~length ?start reader writer =
+  let transfer ?start ~length reader writer =
     let rec loop writer data remain =
       match remain, data with
       | 0, data ->
-        Or_error.return (match data with Some d -> d | None -> "")
+        Or_error.return data
       | remain, Some data -> begin
           match remain - String.length data  with
           | n when n >= 0 ->
@@ -93,13 +70,22 @@ module Make(Io : Types.Io) = struct
     in
     loop writer start length
 
-  let read_until ~sep reader data =
-    let buffer = Buffer.create 256 in
+  let read_until ?start ~sep reader =
+    let buffer =
+      let b = Buffer.create 256 in
+      match start with
+      | Some data -> Buffer.add_string b data; b
+      | None -> b
+    in
     let rec loop offset = function
       | sep_index when sep_index = String.length sep ->
         (* Found it. Return data *)
         let v = Buffer.sub buffer 0 (offset - String.length sep) in
-        let remain = Buffer.sub buffer offset (Buffer.length buffer - offset) in
+        let remain =
+          match offset < Buffer.length buffer with
+          | true -> Some (Buffer.sub buffer offset (Buffer.length buffer - offset))
+          | false -> None
+        in
         Or_error.return (v, remain)
       | sep_index when offset >= (Buffer.length buffer) -> begin
           Pipe.read reader >>= function
@@ -115,7 +101,6 @@ module Make(Io : Types.Io) = struct
         (* Reset sep index. Look for the next element. *)
         loop (offset + 1) 0
     in
-    Buffer.add_string buffer data;
     loop 0 0
 
   (** Chunked encoding
@@ -137,29 +122,22 @@ module Make(Io : Types.Io) = struct
           | v -> read_chunk v remain
         end
     in
-    let rec read = function
-      | None -> begin
-          Pipe.read reader >>= function
-          | None -> Or_error.fail (Failure "Premature EOF on input")
-          | v -> read v
-        end
-      | Some data -> begin
-          read_until ~sep:"\r\n" reader data >>=? fun (size_str, data) ->
-          begin
-            try Scanf.sscanf size_str "%x" (fun x -> x) |> Or_error.return
-            with _ -> Or_error.fail (Failure "Malformed chunk: Invalid length")
-          end >>=? fun chunk_size ->
-          match chunk_size with
-          | 0 -> read_until ~sep:"\r\n" reader data >>=? fun (_, remain) ->
-            Or_error.return remain
-          | n ->
-            read_chunk (Some data) n >>=? fun data ->
-            read_string ~length:2 data reader >>=? function
-            | ("\r\n", data) ->
-              read data
-            | (_, _data) ->
-              Or_error.fail (Failure "Malformed chunk: CRLF not present")
-        end
+    let rec read remain =
+      read_until ?start:remain ~sep:"\r\n" reader >>=? fun (size_str, data) ->
+      begin
+        try Scanf.sscanf size_str "%x" (fun x -> x) |> Or_error.return
+        with _ -> Or_error.fail (Failure "Malformed chunk: Invalid length")
+      end >>=? fun chunk_size ->
+      match chunk_size with
+      | 0 -> read_until ?start:data ~sep:"\r\n" reader >>=? fun (_, remain) ->
+        Or_error.return remain
+      | n ->
+        read_chunk data n >>=? fun data ->
+        read_string ?start:data ~length:2 reader >>=? function
+        | ("\r\n", data) ->
+          read data
+        | (_, _data) ->
+          Or_error.fail (Failure "Malformed chunk: CRLF not present")
     in
     read start
 end
