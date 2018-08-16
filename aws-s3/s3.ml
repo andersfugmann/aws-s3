@@ -288,7 +288,7 @@ module Make(Io : Types.Io) = struct
 
   module Stream = struct
 
-    let get ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key ~sink () =
+    let get ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key ~data () =
       let headers =
         let r_opt = function
           | Some r -> (string_of_int r)
@@ -306,7 +306,7 @@ module Make(Io : Types.Io) = struct
       in
       let path = sprintf "/%s/%s" bucket key in
       let cmd ?region () =
-        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~sink ~headers ~meth:`GET ~path ~query:[] ()
+        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~sink:data ~headers ~meth:`GET ~path ~query:[] ()
       in
       do_command ?region cmd >>=? fun (_headers) ->
       Deferred.return (Ok ())
@@ -322,8 +322,8 @@ module Make(Io : Types.Io) = struct
     put_common ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body ()
 
   let get ?scheme ?credentials ?region ?range ~bucket ~key () =
-    let body, sink = string_sink () in
-    Stream.get ?scheme ?credentials ?region ?range ~bucket ~key ~sink () >>=? fun () ->
+    let body, data = string_sink () in
+    Stream.get ?scheme ?credentials ?region ?range ~bucket ~key ~data () >>=? fun () ->
     body >>= fun body ->
     Deferred.return (Ok body)
 

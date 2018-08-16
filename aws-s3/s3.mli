@@ -149,21 +149,21 @@ module Make(Io : Types.Io) : sig
        unit -> etag result) command
 
     (** Streaming version of get.
-        The caller must supply a [sink] to which retrieved data is streamed.
-        The result will be determined after all data has been sent to the sink, and the sink is closed.
+        The caller must supply a [data] sink to which retrieved data is streamed.
+        The result will be determined after all data has been sent to the sink, and the data sink is closed.
 
         Connections to s3 is closed once the result has been determined.
         The caller should ways examine the result of the function.
-        If the result is [Ok], then it is guaranteed that all data has been retrieved successfully and written to the sink.
-        In case of [Error], only parts of the data may have been written to the sink.
+        If the result is [Ok ()], then it is guaranteed that all data has been retrieved successfully and written to the data sink.
+        In case of [Error _], only parts of the data may have been written to the data sink.
 
-        The rationale for using a sink rather than returning a pipe reader from which data
+        The rationale for using a data sink rather than returning a pipe reader from which data
         can be consumed is that a reader does not allow simple relay of error states during the transfer.
 
         For other parameters see {!Aws_s3.S3.Make.get}
     *)
     val get :
-      (?range:range -> bucket:string -> key:string -> sink:string Io.Pipe.writer -> unit -> unit result) command
+      (?range:range -> bucket:string -> key:string -> data:string Io.Pipe.writer -> unit -> unit result) command
 
   end
 
