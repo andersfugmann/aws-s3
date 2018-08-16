@@ -10,9 +10,9 @@ The following S3 operations are supported:
 * Multi delete
 * Head suport
 * Ls
+* Streaming API
 
 The library also implements fetching credentials through IAM service.
-
 
 The library supports both lwt and async concurrency models.
 * For lwt, please install `aws-s3-lwt` package
@@ -20,5 +20,6 @@ The library supports both lwt and async concurrency models.
 
 [Api](https://andersfugmann.github.io/aws-s3/)
 
-This library is based on s3_cp example found at
-https://github.com/mirage/ocaml-cohttp/blob/master/examples/async/s3_cp.ml
+This library is originally based on s3_cp example found at
+https://github.com/mirage/ocaml-cohttp/blob/master/examples/async/s3_cp.ml,
+but has diverted (and grown) substantially since.

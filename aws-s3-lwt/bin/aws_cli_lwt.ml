@@ -1,4 +1,4 @@
-module Aws = Aws_cli.Aws.Make(Aws_s3_lwt.Compat)
+module Aws = Aws_cli.Aws.Make(Aws_s3_lwt.Io)
 
 let exec cmd = Lwt_main.run (Aws.exec cmd)
 

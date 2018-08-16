@@ -5,13 +5,16 @@ license: "BSD-3"
 homepage: "https://github.com/andersfugmann/aws-s3"
 dev-repo: "git+https://github.com/andersfugmann/aws-s3"
 bug-reports: "https://github.com/andersfugmann/aws-s3/issues"
-build: [["jbuilder" "build" "-p" name "-j" jobs]]
-version: "3.1.0"
+build: [
+  ["dune" "subst"] {pinned}
+  ["dune" "build" "-p" name "-j" jobs]
+]
+version: "4.0.0"
 depends: [
-  "jbuilder" { build }
-  "aws-s3" { = "3.1.0" }
+  "dune" { build }
+  "aws-s3" { = "4.0.0" }
   "lwt"
-  "cohttp-lwt-unix"
+  "conduit-lwt-unix"
 ]
 
 available: [ ocaml-version >= "4.04.0" ]

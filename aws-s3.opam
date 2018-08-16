@@ -5,21 +5,25 @@ license: "BSD-3"
 homepage: "https://github.com/andersfugmann/aws-s3"
 dev-repo: "git+https://github.com/andersfugmann/aws-s3"
 bug-reports: "https://github.com/andersfugmann/aws-s3/issues"
-build: [["jbuilder" "build" "-p" name "-j" jobs]]
-build-test: [["jbuilder" "runtest" "-p" name "-j" jobs]]
-version: "3.1.0"
+build: [
+  ["dune" "subst"] {pinned}
+  ["dune" "build" "-p" name "-j" jobs]
+]
+build-test: [["dune" "runtest" "-p" name "-j" jobs]]
+version: "4.0.0"
 depends: [
-  "jbuilder" { build }
-  "core" {>= "v0.9.0"}
-  "ounit"
-  "cohttp"
+  "dune" { build }
   "ocaml-inifiles"
-  "digestif" { >= "0.6" }
+  "digestif" { = "0.6" }
+  "ptime"
+  "uri"
   "xml-light"
   "yojson"
   "ppx_protocol_conv_xml_light"
   "ppx_protocol_conv_json"
   "cmdliner"
+  "ppx_inline_test"
+  "base64"
 ]
 
-available: [ ocaml-version >= "4.04.0" ]
+available: [ ocaml-version >= "4.05.0" ]

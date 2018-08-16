@@ -1,18 +1,14 @@
 (** Parse command line options *)
-open Core
 open Cmdliner
-(* When executing, we take a function to do the work,
-   so we need a descr of what to do.
-*)
 
 type actions =
   | Ls of { bucket: string; prefix: string option; ratelimit: int option; }
   | Head of { path: string; }
   | Rm of { bucket: string; paths : string list }
-  | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool}
+  | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool; chunk_size: int option}
 
 type options =
-  { profile: string option; }
+  { profile: string option; https: bool; retries: int; ipv6: bool; expect: bool; max_keys:int }
 
 let parse exec =
   let profile =
@@ -22,12 +18,37 @@ let parse exec =
 
   let ratelimit =
     let doc = "Limit requests to N/sec." in
-    Arg.(value & opt (some int) None & info ["ratelimit"; "r"] ~docv:"RATELIMIT" ~doc)
+    Arg.(value & opt (some int) None & info ["ratelimit"; "r"] ~docv:"LIMIT" ~doc)
+  in
+
+  let https =
+    let doc = "Enable/disable https." in
+    Arg.(value & opt bool false & info ["https"] ~docv:"HTTPS" ~doc)
+  in
+
+  let ipv6 =
+    let doc = "Use ipv6" in
+    Arg.(value & flag & info ["6"] ~docv:"IPV6" ~doc)
+  in
+
+  let retries =
+    let doc = "Retries in case of error" in
+    Arg.(value & opt int 0 & info ["retries"] ~docv:"RETIES" ~doc)
+  in
+
+  let expect =
+    let doc = "Use expect -> 100-continue for put/upload_chunk" in
+    Arg.(value & flag & info ["expect"; "e"] ~docv:"EXPECT" ~doc)
+  in
+
+  let max_keys =
+    let doc = "Max keys returned per ls request" in
+    Arg.(value & opt int 1000 & info ["max-keys"] ~docv:"MAX_KEYS" ~doc)
   in
 
   let common_opts =
-    let make profile = { profile } in
-    Term.(const make $ profile)
+    let make profile https retries ipv6 expect max_keys = { profile; https; retries; ipv6; expect; max_keys} in
+    Term.(const make $ profile $ https $ retries $ ipv6 $ expect $ max_keys)
   in
 
   let bucket n =
@@ -35,28 +56,34 @@ let parse exec =
     Arg.(required & pos n (some string) None & info [] ~docv:"BUCKET" ~doc)
   in
 
-
   let path n name =
-    let doc = "path: <local_path>|<s3://<bucket>/<objname>" in
+    let doc = "path: <local_path>|s3://<bucket>/<objname>" in
     Arg.(required & pos n (some string) None & info [] ~docv:name ~doc)
   in
 
   let cp =
-    let make opts first last multi src dest = opts, Cp { src; dest; first; last; multi } in
+    let make opts first last multi chunk_size src dest =
+      opts, Cp { src; dest; first; last; multi; chunk_size }
+    in
     let first =
       let doc = "first byte of the source object to copy. If omitted means from the start." in
-      Arg.(value & opt (some int) None & info ["first"; "f"] ~docv:"BYTE" ~doc)
+      Arg.(value & opt (some int) None & info ["first"; "f"] ~docv:"FIRST" ~doc)
     in
     let last =
       let doc = "last byte of the source object to copy. If omitted means to the end" in
-      Arg.(value & opt (some int) None & info ["last"; "l"] ~docv:"BYTE" ~doc)
+      Arg.(value & opt (some int) None & info ["last"; "l"] ~docv:"LAST" ~doc)
     in
     let multi =
       let doc = "Use multipart upload" in
       Arg.(value & flag & info ["multi"; "m"] ~docv:"MULTI" ~doc)
     in
 
-    Term.(const make $ common_opts $ first $ last $ multi $ path 0 "SRC" $ path 1 "DEST"),
+    let chunk_size =
+      let doc = "Use streaming get / put the given chunk_size" in
+      Arg.(value & opt (some int) None & info ["chunk_size"; "c"] ~docv:"CHUNK_SIZE" ~doc)
+    in
+
+    Term.(const make $ common_opts $ first $ last $ multi $ chunk_size $ path 0 "SRC" $ path 1 "DEST"),
     Term.info "cp" ~doc:"Copy files to and from S3"
   in
   let rm =
@@ -72,13 +99,13 @@ let parse exec =
 
   let head =
     let path =
-      let doc = "object: <s3://<bucket>/<objname>" in
+      let doc = "object: s3://<bucket>/<objname>" in
       Arg.(required & pos 0 (some string) None & info [] ~docv:"PATH" ~doc)
     in
 
     let make opts path = opts, Head { path } in
     Term.(const make $ common_opts $ path),
-    Term.info "head" ~doc:"Head  files from s3"
+    Term.info "head" ~doc:"Head files from s3"
   in
 
   let ls =

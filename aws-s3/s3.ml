@@ -15,15 +15,55 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
   }}}*)
-open Core
-open Cohttp
+open StdLabels
+let sprintf = Printf.sprintf
 open Protocol_conv_xml
+
+module Option = struct
+  let map ?default ~f = function
+    | None -> default
+    | Some v -> Some (f v)
+
+  let value ~default = function
+    | None -> default
+    | Some v -> v
+
+  let value_map ~default ~f v =
+    map ~f v
+    |> value ~default
+
+  let value_exn ~message = function
+    | Some v -> v
+    | None -> failwith message
+
+end
+
+let rec filter_map ~f = function
+  | [] -> []
+  | x :: xs -> begin
+      match f x with
+      | Some x -> x :: (filter_map ~f xs)
+      | None -> (filter_map ~f xs)
+    end
+
 
 (* Protocol definitions *)
 module Protocol(P: sig type 'a result end) = struct
-  type time = Core.Time.t
+  type time = float
   let time_of_xml_light t =
-    Xml_light.to_string t |> Time.of_string
+    Xml_light.to_string t
+    |> Time.parse_iso8601_string
+
+  let unquote s =
+    match String.length s with
+    | 0 | 1 -> s
+    | _ when s.[0] = '"' ->
+      String.sub s ~pos:1 ~len:(String.length s - 2)
+    | _ -> s
+
+  type etag = string
+  let etag_of_xml_light t =
+    Xml_light.to_string t |> unquote
 
   type storage_class =
     | Standard           [@key "STANDARD"]
@@ -36,7 +76,7 @@ module Protocol(P: sig type 'a result end) = struct
     size: int [@key "Size"];
     last_modified: time [@key "LastModified"];
     key: string [@key "Key"];
-    etag: string [@key "ETag"];
+    etag: etag [@key "ETag"];
     (** Add expiration date option *)
   } [@@deriving of_protocol ~driver:(module Xml_light)]
 
@@ -67,13 +107,20 @@ module Protocol(P: sig type 'a result end) = struct
     type objekt = {
       key: string [@key "Key"];
       version_id: string option [@key "VersionId"];
-    }
-    [@@deriving protocol ~driver:(module Xml_light)]
+    } [@@deriving of_protocol ~driver:(module Xml_light)]
+
+    (** We must not transmit the version id at all if not specified *)
+    let objekt_to_xml_light = function
+      | { key; version_id = None } ->
+        Xml.Element ("object", [], [Xml.Element ("Key", [], [Xml.PCData key])])
+      | { key; version_id = Some version } ->
+        Xml.Element ("object", [], [Xml.Element ("Key", [], [Xml.PCData key]);
+                                    Xml.Element ("VersionId", [], [Xml.PCData version])])
 
     type request = {
       quiet: bool [@key "Quiet"];
       objects: objekt list [@key "Object"]
-    } [@@deriving protocol ~driver:(module Xml_light)]
+    } [@@deriving to_protocol ~driver:(module Xml_light)]
 
     let xml_of_request request =
       request_to_xml_light request |> set_element_name "Delete"
@@ -152,44 +199,56 @@ module Protocol(P: sig type 'a result end) = struct
   end
 end
 
-module Make(Compat : Types.Compat) = struct
-  module Util_deferred = Util.Make(Compat)
-  open Compat
-  open Deferred.Infix
-
+module Make(Io : Types.Io) = struct
+  module Aws = Aws.Make(Io)
+  module Body = Body.Make(Io)
+  open Io
+  open Deferred
   type error =
-    | Redirect of Util.region
+    | Redirect of Region.t
     | Throttled
     | Unknown of int * string
+    | Failed of exn
     | Not_found
+
+  let string_sink () =
+    let reader, writer = Pipe.create () in
+    Body.to_string reader, writer
+
+  let domain = ref Unix.PF_INET
+  let set_connection_type = function
+    | Unix.PF_UNIX -> raise (Invalid_argument "Unix domains are not supported")
+    | d -> domain := d
 
   include Protocol(struct type nonrec 'a result = ('a, error) result Deferred.t end)
 
   type range = { first: int option; last: int option }
 
   type nonrec 'a result = ('a, error) result Deferred.t
-  type 'a command = ?scheme:[`Http|`Https] -> ?credentials:Credentials.t -> ?region:Util.region -> 'a
+  type 'a command = ?scheme:[`Http|`Https] -> ?credentials:Credentials.t -> ?region:Region.t -> 'a
 
   (**/**)
   let do_command ?region cmd =
-    cmd ?region () >>= fun (resp, body) ->
-    let status = Cohttp.Response.status resp in
-    match Code.code_of_status status with
+    cmd ?region () >>=
+    (function Ok v -> return (Ok v) | Error exn -> return (Error (Failed exn))) >>=? fun (code, _message, headers, body) ->
+    match code with
     | code when 200 <= code && code < 300 ->
-      let headers = Cohttp.Response.headers resp in
-      Deferred.return (Ok (headers, body))
-    | 404 -> Deferred.return (Error (Not_found))
-    | c when 300 <= c && c < 500 -> begin
+      Deferred.return (Ok headers)
+    | 404 -> Deferred.return (Error Not_found)
+    | c when 300 <= c && c < 400 ->
+      (* Redirect of sorts *)
+      let region = Headers.find "x-amz-bucket-region" headers in
+      Deferred.return (Error (Redirect (Region.of_string region)))
+    | c when 400 <= c && c < 500 -> begin
         let open Error_response in
-        Cohttp_deferred.Body.to_string body >>= fun body ->
         let xml = Xml.parse_string body in
         match Error_response.of_xml_light xml with
         | { code = "PermanentRedirect"; endpoint = Some host; _ }
         | { code = "TemporaryRedirect"; endpoint = Some host; _ } ->
-          let region = Util.region_of_host host in
+          let region = Region.of_host host in
           Deferred.return (Error (Redirect region))
         | { code = "AuthorizationHeaderMalformed"; region = Some region; _ } ->
-          let region = Util.region_of_string region in
+          let region = Region.of_string region in
           Deferred.return (Error (Redirect region))
         | { code; _ } ->
           Deferred.return (Error (Unknown (c, code)))
@@ -198,102 +257,115 @@ module Make(Compat : Types.Compat) = struct
       (* 500, InternalError | 503, SlowDown | 503, ServiceUnavailable -> Throttle *)
       Deferred.return (Error Throttled)
     | code ->
-      Cohttp_deferred.Body.to_string body >>= fun body ->
       let resp = Error_response.of_xml_light (Xml.parse_string body) in
       Deferred.return (Error (Unknown (code, resp.code)))
-  (**/**)
 
-  let put ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key ~data () =
-    let scheme = Option.value ~default:`Http scheme in
-    let path = sprintf "%s/%s" bucket key in
+  let put_common ?(scheme=`Http) ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body () =
+    let path = sprintf "/%s/%s" bucket key in
     let headers =
-      let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
-      let content_encoding = Option.map ~f:(fun ct -> ("Content-Encoding", ct)) content_encoding in
-      let cache_control    = Option.map ~f:(fun cc -> ("Cache-Control", cc)) cache_control in
-      let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
-      Core.List.filter_opt [ content_type; content_encoding; cache_control; acl ]
+      [ "Content-Type", content_type;
+        "Content-Encoding", content_encoding;
+        "Cache-Control", cache_control;
+        "x-amz-acl", acl;
+      ]
+      |> List.filter ~f:(function (_, Some _) -> true | (_, None) -> false)
+      |> List.map ~f:(function (k, Some v) -> (k, v) | (_, None) -> failwith "Impossible")
     in
+    let sink = Body.null () in
     let cmd ?region () =
-      Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~body:data ~query:[] ()
+      Aws.make_request ~domain:!domain ~scheme ?expect ?credentials ?region ~headers ~meth:`PUT ~path ~sink ~body ~query:[] ()
     in
 
-    do_command ?region cmd >>=? fun (headers, _body) ->
+    do_command ?region cmd >>=? fun headers ->
     let etag =
-      Header.get headers "etag"
-      |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
-      |> String.strip ~drop:(function '"' -> true | _ -> false)
+      match Headers.find_opt "etag" headers with
+      | None -> failwith "Put reply did not conatin an etag header"
+      | Some etag -> unquote etag
     in
     Deferred.return (Ok etag)
 
-  let get ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key () =
-    let headers =
-      let r_opt r = Option.value_map ~f:(string_of_int) ~default:"" r in
+  (**/**)
 
-      [ Option.bind ~f:(function { first = None; last = None }-> None
-                               | { first = Some first; last } ->
-                                 Some ("Range", sprintf "bytes=%d-%s" first (r_opt last))
-                               | { first = None; last = Some last } when last < 0 ->
-                                 Some ("Range", sprintf "bytes=-%d" last)
-                               | { first = None; last = Some last } ->
-                                 Some ("Range", sprintf "bytes=0-%d" last)
+  module Stream = struct
 
-          ) range
-      ]
-      |> List.filter_opt
-    in
-    let path = sprintf "%s/%s" bucket key in
-    let cmd ?region () =
-      Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`GET ~path ~query:[] ()
-    in
-    do_command ?region cmd >>=? fun (_headers, body) ->
-    Cohttp_deferred.Body.to_string body >>= fun body ->
+    let get ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key ~data () =
+      let headers =
+        let r_opt = function
+          | Some r -> (string_of_int r)
+          | None -> ""
+        in
+        match range with
+        | Some { first = None; last = None } -> []
+        | Some { first = Some first; last } ->
+          [ "Range", sprintf "bytes=%d-%s" first (r_opt last) ]
+        | Some { first = None; last = Some last } when last < 0 ->
+          [ "Range", sprintf "bytes=-%d" last ]
+        | Some { first = None; last = Some last } ->
+          [ "Range", sprintf "bytes=0-%d" last ]
+        | None -> []
+      in
+      let path = sprintf "/%s/%s" bucket key in
+      let cmd ?region () =
+        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~sink:data ~headers ~meth:`GET ~path ~query:[] ()
+      in
+      do_command ?region cmd >>=? fun (_headers) ->
+      Deferred.return (Ok ())
+
+    let put ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~data ~chunk_size ~length () =
+      let body = Body.Chunked { length; chunk_size; pipe=data } in
+      put_common ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body ()
+  end
+  (* End streaming module *)
+
+  let put ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~data () =
+    let body = Body.String data in
+    put_common ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body ()
+
+  let get ?scheme ?credentials ?region ?range ~bucket ~key () =
+    let body, data = string_sink () in
+    Stream.get ?scheme ?credentials ?region ?range ~bucket ~key ~data () >>=? fun () ->
+    body >>= fun body ->
     Deferred.return (Ok body)
 
-  let delete ?scheme ?credentials ?region ~bucket ~key () =
-    let scheme = Option.value ~default:`Http scheme in
-    let path = sprintf "%s/%s" bucket key in
+  let delete ?(scheme=`Http) ?credentials ?region ~bucket ~key () =
+    let path = sprintf "/%s/%s" bucket key in
+    let sink = Body.null () in
     let cmd ?region () =
-      Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query:[] ()
+      Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query:[] ~sink ()
     in
-    do_command ?region cmd >>=? fun (_headers, _body) ->
+    do_command ?region cmd >>=? fun _headers ->
     Deferred.return (Ok ())
 
-  let date_of_rcf1123_string s =
-    String.split ~on:' ' s
-    |> List.tl_exn
-    |> List.rev
-    |> List.tl_exn
-    |> List.rev
-    |> String.concat ~sep:" "
-    |> fun s -> Time.of_string (s ^ "Z")
 
   let head ?(scheme=`Http) ?credentials ?region ~bucket ~key () =
-    let path = sprintf "%s/%s" bucket key in
+    let path = sprintf "/%s/%s" bucket key in
+    let sink = Body.null () in
     let cmd ?region () =
-      Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`HEAD ~path ~query:[] ()
+      Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`HEAD ~path ~query:[] ~sink ()
     in
-    do_command ?region cmd >>=? fun (headers, _body) ->
+    do_command ?region cmd >>=? fun headers ->
     let result =
-      let open Option.Monad_infix in
-      Header.get headers "content-length" >>= fun size ->
-      Header.get headers "etag" >>= fun etag ->
-      Header.get headers "last-modified" >>= fun last_modified ->
-      let last_modified = date_of_rcf1123_string last_modified in
+      let (>>=) a f = match a with
+        | Some x -> f x
+        | None -> None
+      in
+      Headers.find_opt "content-length" headers >>= fun size ->
+      Headers.find_opt "etag" headers >>= fun etag ->
+      Headers.find_opt "last-modified" headers >>= fun last_modified ->
+      let last_modified = Time.parse_rcf1123_string last_modified in
       let size = size |> int_of_string in
       let storage_class =
-        Header.get headers "x-amz-storage-class"
+        Headers.find_opt "x-amz-storage-class" headers
         |> Option.value_map ~default:Standard ~f:(fun s ->
-            storage_class_of_xml_light (Xml.Element ("p", [], [Xml.PCData s]))
-          )
+            storage_class_of_xml_light (Xml.Element ("p", [], [Xml.PCData s])))
       in
-      Some { storage_class; size; last_modified; key; etag }
+      Some { storage_class; size; last_modified; key; etag = unquote etag}
     in
     match result with
     | Some r -> Deferred.return (Ok r)
     | None -> Deferred.return (Error (Unknown (1, "Result did not return correct headers")))
 
-  let delete_multi ?scheme ?credentials ?region ~bucket ~objects () =
-    let scheme = Option.value ~default:`Http scheme in
+  let delete_multi ?(scheme=`Http) ?credentials ?region ~bucket ~objects () =
     match objects with
     | [] -> Delete_multi.{
         delete_marker = false;
@@ -311,32 +383,35 @@ module Make(Compat : Types.Compat) = struct
         |> Xml.to_string
       in
       let headers = [ "Content-MD5", B64.encode (Caml.Digest.string request) ] in
+      let body, sink = string_sink () in
       let cmd ?region () =
-        Util_deferred.make_request ~scheme
-          ~body:request ?credentials ?region ~headers
-          ~meth:`POST ~query:["delete", ""] ~path:bucket ()
+        Aws.make_request ~domain:!domain ~scheme
+          ~body:(Body.String request) ?credentials ?region ~headers
+          ~meth:`POST ~query:["delete", ""] ~path:("/" ^ bucket) ~sink ()
       in
-      do_command ?region cmd >>=? fun (_headers, body) ->
-      Cohttp_deferred.Body.to_string body >>= fun body ->
+      do_command ?region cmd >>=? fun _headers ->
+      body >>= fun body ->
       let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
       Deferred.return (Ok result)
 
   (** List contents of bucket in s3. *)
-  let rec ls ?scheme ?credentials ?region ?continuation_token ?prefix ~bucket () =
-    let scheme = Option.value ~default:`Http scheme in
+  let rec ls ?(scheme=`Http) ?credentials ?region ?continuation_token ?prefix ?max_keys ~bucket () =
     let query = [ Some ("list-type", "2");
                   Option.map ~f:(fun ct -> ("continuation-token", ct)) continuation_token;
                   Option.map ~f:(fun prefix -> ("prefix", prefix)) prefix;
-                ] |> List.filter_opt
+                  Option.map ~f:(fun max_keys -> ("max-keys", string_of_int max_keys)) max_keys;
+                ] |> filter_map ~f:(fun x -> x)
     in
+    let body, sink = string_sink () in
     let cmd ?region () =
-      Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`GET ~path:bucket ~query ()
+      Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`GET ~path:("/" ^ bucket) ~query ~sink ()
     in
-    do_command ?region cmd >>=? fun (_headers, body) ->
-    Cohttp_deferred.Body.to_string body >>= fun body ->
+    do_command ?region cmd >>=? fun _headers ->
+    body >>= fun body ->
     let result = Ls.result_of_xml_light (Xml.parse_string body) in
     let continuation = match Ls.(result.next_continuation_token) with
-      | Some ct -> Ls.More (ls ~scheme ?credentials ?region ~continuation_token:ct ?prefix ~bucket)
+      | Some ct ->
+        Ls.More (ls ~scheme ?credentials ?region ~continuation_token:ct ?max_keys ?prefix ~bucket)
       | None -> Ls.Done
     in
     Deferred.return (Ok (Ls.(result.contents, continuation)))
@@ -350,50 +425,50 @@ module Make(Compat : Types.Compat) = struct
              }
 
     (** Initiate a multipart upload *)
-    let init ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key  () =
-      let scheme = Option.value ~default:`Http scheme in
-      let path = sprintf "%s/%s" bucket key in
+    let init ?(scheme=`Http) ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key  () =
+      let path = sprintf "/%s/%s" bucket key in
       let query = ["uploads", ""] in
       let headers =
         let content_type     = Option.map ~f:(fun ct -> ("Content-Type", ct)) content_type in
         let cache_control    = Option.map ~f:(fun cc -> ("Cache-Control", cc)) cache_control in
         let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
-        Core.List.filter_opt [ content_type; content_encoding; cache_control; acl ]
+        filter_map ~f:(fun x -> x) [ content_type; content_encoding; cache_control; acl ]
       in
+      let body, sink = string_sink () in
       let cmd ?region () =
-        Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`POST ~path ~query ()
+        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers ~meth:`POST ~path ~query ~sink ()
       in
-
-      do_command ?region cmd >>=? fun (_headers, body) ->
-      Cohttp_deferred.Body.to_string body >>| fun body ->
+      do_command ?region cmd >>=? fun _headers ->
+      body >>= fun body ->
       let resp = Multipart.Initiate.of_xml_light (Xml.parse_string body) in
       Ok { id = resp.Multipart.Initiate.upload_id;
            parts = [];
            bucket;
            key;
          }
+      |> Deferred.return
 
     (** Upload a part of the file.
         Parts must be at least 5Mb except for the last part
         [part_number] specifies the part numer. Parts will be assembled in order, but
         does not have to be consequtive
     *)
-    let upload_part ?scheme ?credentials ?region t ~part_number ~data () =
-      let scheme = Option.value ~default:`Http scheme in
-      let path = sprintf "%s/%s" t.bucket t.key in
+    let upload_part ?(scheme=`Http) ?credentials ?region t ~part_number ?expect ~data () =
+      let path = sprintf "/%s/%s" t.bucket t.key in
       let query =
         [ "partNumber", string_of_int part_number;
           "uploadId", t.id ]
       in
+      let sink = Body.null () in
       let cmd ?region () =
-        Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`PUT ~path ~body:data ~query ()
+        Aws.make_request ~domain:!domain ~scheme ?expect ?credentials ?region ~headers:[] ~meth:`PUT ~path
+          ~body:(Body.String data) ~query ~sink ()
       in
-
-      do_command ?region cmd >>=? fun (headers, _body) ->
+      do_command ?region cmd >>=? fun headers ->
       let etag =
-        Header.get headers "etag"
+        Headers.find_opt "etag" headers
         |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
-        |> String.strip ~drop:(function '"' -> true | _ -> false)
+        |> fun etag -> unquote etag
       in
       t.parts <- { etag; part_number } :: t.parts;
       Deferred.return (Ok ())
@@ -401,9 +476,8 @@ module Make(Compat : Types.Compat) = struct
     (** Specify a part to be a file on s3.
         [range] can be used to only include a part of the s3 file
     *)
-    let copy_part ?scheme ?credentials ?region t ~part_number ?range ~bucket ~key () =
-      let scheme = Option.value ~default:`Http scheme in
-      let path = sprintf "%s/%s" t.bucket t.key in
+    let copy_part ?(scheme=`Http) ?credentials ?region t ~part_number ?range ~bucket ~key () =
+      let path = sprintf "/%s/%s" t.bucket t.key in
       let query =
         [ "partNumber", string_of_int part_number;
           "uploadId", t.id ]
@@ -413,24 +487,24 @@ module Make(Compat : Types.Compat) = struct
         Option.value_map ~default:[] ~f:(fun (first, last) ->
             [ "x-amz-copy-source-range", sprintf "bytes=%d-%d" first last ]) range
       in
+      let body, sink = string_sink () in
       let cmd ?region () =
-        Util_deferred.make_request ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~query ()
+        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~query ~sink ()
       in
 
-      do_command ?region cmd >>=? fun (_headers, body) ->
-      Cohttp_deferred.Body.to_string body >>| fun body ->
+      do_command ?region cmd >>=? fun _headers ->
+      body >>= fun body ->
       let xml = Xml.parse_string body in
       match Multipart.Copy.of_xml_light xml with
       | { Multipart.Copy.etag; _ } ->
         t.parts <- { etag; part_number } :: t.parts;
-        (Ok ())
+        Deferred.return (Ok ())
 
     (** Complete the multipart upload.
         The returned etag is a opaque identifier (not md5)
     *)
-    let complete ?scheme ?credentials ?region t () =
-      let scheme = Option.value ~default:`Http scheme in
-      let path = sprintf "%s/%s" t.bucket t.key in
+    let complete ?(scheme=`Http) ?credentials ?region t () =
+      let path = sprintf "/%s/%s" t.bucket t.key in
       let query = [ "uploadId", t.id ] in
       let request =
         (* TODO: Sort the parts by partNumber *)
@@ -438,27 +512,56 @@ module Make(Compat : Types.Compat) = struct
         Multipart.Complete.(xml_of_request { parts })
         |> Xml.to_string_fmt
       in
+      let body, sink = string_sink () in
       let cmd ?region () =
-        Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:request ()
+        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:(Body.String request) ~sink ()
       in
-      do_command ?region cmd >>=? fun (_headers, body) ->
-      Cohttp_deferred.Body.to_string body >>| fun body ->
+      do_command ?region cmd >>=? fun _headers ->
+      body >>= fun body ->
       let xml = Xml.parse_string body in
       match Multipart.Complete.response_of_xml_light xml with
       | { location=_; etag; bucket; key } when bucket = t.bucket && key = t.key ->
-        Ok etag
-      | _ -> Error (Unknown ((-1), "Bucket/key does not match"))
+        Ok etag |> Deferred.return
+      | _ ->
+        Error (Unknown ((-1), "Bucket/key does not match"))
+        |> Deferred.return
+
 
     (** Abort a multipart upload, deleting all specified parts *)
-    let abort ?scheme ?credentials ?region t () =
-      let scheme = Option.value ~default:`Http scheme in
-      let path = sprintf "%s/%s" t.bucket t.key in
+    let abort ?(scheme=`Http) ?credentials ?region t () =
+      let path = sprintf "/%s/%s" t.bucket t.key in
       let query = [ "uploadId", t.id ] in
+      let sink = Body.null () in
       let cmd ?region () =
-        Util_deferred.make_request ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query ()
+        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query ~sink ()
       in
-      do_command ?region cmd >>=? fun (_headers, _body) ->
+      do_command ?region cmd >>=? fun _headers ->
       Deferred.return (Ok ())
+
+    module Stream = struct
+      let upload_part ?(scheme=`Http) ?credentials ?region t ~part_number ?expect ~data ~length ~chunk_size () =
+        let path = sprintf "/%s/%s" t.bucket t.key in
+        let query =
+          [ "partNumber", string_of_int part_number;
+            "uploadId", t.id ]
+        in
+        let body = Body.Chunked { length; chunk_size; pipe=data } in
+        let sink = Body.null () in
+        let cmd ?region () =
+          Aws.make_request ~domain:!domain ?expect ~scheme ?credentials ?region ~headers:[] ~meth:`PUT ~path
+            ~body ~query ~sink ()
+        in
+
+        do_command ?region cmd >>=? fun headers ->
+        let etag =
+          Headers.find_opt "etag" headers
+          |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
+          |> fun etag -> String.sub ~pos:1 ~len:(String.length etag - 2) etag
+        in
+        t.parts <- { etag; part_number } :: t.parts;
+        Deferred.return (Ok ())
+    end
+
   end
 
   let retry ?region ~retries ~f () =
@@ -485,13 +588,9 @@ module Make(Compat : Types.Compat) = struct
     inner ?region ~retry_count:0 ~redirected:false ()
 end
 
-module Test = struct
-  open OUnit2
-
-  module Protocol = Protocol(struct type 'a result = 'a end)
-
-  let parse_result _ =
-    let data = {|
+let%test _ =
+  let module Protocol = Protocol(struct type 'a result = 'a end) in
+  let data = {|
       <ListBucketResult>
         <Name>s3_osd</Name>
         <Prefix></Prefix>
@@ -518,28 +617,21 @@ module Test = struct
     let xml = Xml.parse_string data in
     let result = Protocol.Ls.result_of_xml_light xml in
     ignore result;
-    ()
+    true
 
-  let parse_error _ =
-    let data =
-      {| <Error>
-           <Code>PermanentRedirect</Code>
-           <Message>The bucket you are attempting to access must be addressed using the specified endpoint. Please send all future requests to this endpoint.</Message>
-           <Bucket>stijntest</Bucket>
-           <Endpoint>stijntest.s3.amazonaws.com</Endpoint>
-           <RequestId>9E23E3919C24476C</RequestId>
-           <HostId>zdRmjNUli+pR+gwwhfGt2/s7VVerHquAPqgi9KpZ9OVsYhfF+9uAkkRJtxPcLCJKk2ZjzV1MTv8=</HostId>
-         </Error>
-      |}
-    in
-    let xml = Xml.parse_string data in
-    let error = Protocol.Error_response.of_xml_light xml in
-    assert_equal ~msg:"Wrong code extracted" "PermanentRedirect" (error.Protocol.Error_response.code);
-    ()
-
-  let unit_test =
-    __MODULE__ >::: [
-      "parse_result" >:: parse_result;
-      "parse_error" >:: parse_error;
-    ]
-end
+let%test _ =
+  let module Protocol = Protocol(struct type 'a result = 'a end) in
+  let data =
+    {| <Error>
+         <Code>PermanentRedirect</Code>
+         <Message>The bucket you are attempting to access must be addressed using the specified endpoint. Please send all future requests to this endpoint.</Message>
+         <Bucket>stijntest</Bucket>
+         <Endpoint>stijntest.s3.amazonaws.com</Endpoint>
+         <RequestId>9E23E3919C24476C</RequestId>
+         <HostId>zdRmjNUli+pR+gwwhfGt2/s7VVerHquAPqgi9KpZ9OVsYhfF+9uAkkRJtxPcLCJKk2ZjzV1MTv8=</HostId>
+       </Error>
+    |}
+  in
+  let xml = Xml.parse_string data in
+  let error = Protocol.Error_response.of_xml_light xml in
+  "PermanentRedirect" = error.Protocol.Error_response.code

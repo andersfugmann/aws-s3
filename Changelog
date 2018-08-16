@@ -1,12 +1,24 @@
 -*- mode: fundamental -*-
 
-[ ] Zero copy support (data streaming)
-[ ] Support bigstring
+[ ] Support bigstring (zero copy)
 
-3.1.0: (unreleased)
+4.0.0: (unreleased)
 [x] Support HEAD operation on objects.
 [x] Change signature to use string for etag rather than
-    Caml.Digest.t === string for clearer documentation
+    Caml.Digest.t for clearer documentation
+[x] Support Digest 0.6
+[x] Remove dependency to Core
+[x] Rewrite authentication code
+[x] Switch to use Ptime for time conversion routines
+[x] Support chunked transfer (put)
+[x] Add streaming API
+[x] Remove dependency on Cohttp
+[x] Switch to dune
+[x] Support IPv6
+[x] Add option to use expect-100.
+[x] Add option to limit result of ls
+[x] Extend aws-cli
+[x] Move region related function to own Region module
 
 3.0.0: Released 2018-05-16
 [x] Add parameter to specify scheme(http|https)

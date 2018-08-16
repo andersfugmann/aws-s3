@@ -1,0 +1,6 @@
+(executable
+ (name        aws_cli_async)
+ (public_name aws-cli-async)
+ (libraries aws_cli aws-s3-async)
+ (package aws-s3-async)
+)
