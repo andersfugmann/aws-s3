@@ -3,14 +3,12 @@
 This library provides access to Amazon Simple Storage Solution (S3).
 
 The following S3 operations are supported:
-* Get (copy a file to s3)
-* Put (Get a file from s3)
-* Delete (Delete a file from s3)
-* Multipart upload (Including copy)
-* Multi delete
-* Head suport
-* Ls
-* Streaming API
+* Copying file to and from s3
+* List files in S3 (from root)
+* Delete single/multi object in S3
+* HEAD operation on single objects
+* Streaming transfer to and from aws
+* Multi part upload (including s3 -> s3 copy)
 
 The library also implements fetching credentials through IAM service.
 
