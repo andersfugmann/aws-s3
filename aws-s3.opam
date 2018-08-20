@@ -10,7 +10,7 @@ build: [
   ["dune" "build" "-p" name "-j" jobs]
 ]
 build-test: [["dune" "runtest" "-p" name "-j" jobs]]
-version: "4.0.0"
+version: "4.0.1"
 depends: [
   "dune" { build }
   "ocaml-inifiles"

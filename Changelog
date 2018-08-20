@@ -2,7 +2,7 @@
 
 [ ] Support bigstring (zero copy)
 
-4.0.1:
+4.0.1: Released 2018-08-20
 [x] Fix harmless bug when scanning for seperators with more than one character.
 [x] Fix bug when parsing multi delete reply in case of error
 
