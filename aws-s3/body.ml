@@ -69,6 +69,13 @@ module Make(Io : Types.Io) = struct
     in
     loop writer start length
 
+  let to_hex str =
+    let b = Buffer.create 64 in
+    String.iter ~f:(fun c ->
+        let s = Printf.sprintf "%X " (Char.code c) in
+        Buffer.add_string b s) str;
+    Buffer.contents b
+
   let read_until ~msg ?start ~sep reader =
     let buffer =
       let b = Buffer.create 256 in
@@ -92,7 +99,7 @@ module Make(Io : Types.Io) = struct
             Buffer.add_string buffer data;
             loop offset sep_index;
           | None ->
-            Or_error.fail (Failure (Printf.sprintf "%s: EOF while looking for '%d'. Data is: '%S'" msg (Char.code sep.[sep_index]) (Buffer.contents buffer)))
+            Or_error.fail (Failure (Printf.sprintf "%s: EOF while looking for '%d'. Data is: '%s'" msg (Char.code sep.[sep_index]) (Buffer.contents buffer |> to_hex)))
         end
       | sep_index when Buffer.nth buffer offset = sep.[sep_index] ->
         loop (offset + 1) (sep_index + 1)
