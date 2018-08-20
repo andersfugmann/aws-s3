@@ -15,6 +15,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
   }}}*)
+let () = Printf.eprintf "aws-s3.Debug version\n%!"
 open StdLabels
 let sprintf = Printf.sprintf
 open Protocol_conv_xml
@@ -227,6 +228,16 @@ module Make(Io : Types.Io) = struct
   type nonrec 'a result = ('a, error) result Deferred.t
   type 'a command = ?scheme:[`Http|`Https] -> ?credentials:Credentials.t -> ?region:Region.t -> 'a
 
+  let of_xml f data =
+    try
+      let xml= Xml.parse_string data in
+      f xml 
+    with
+    | exn -> Printf.eprintf "Exception while parsing result: %s\n===begin===\n%s\n===end====\n%!"
+               (Printexc.to_string exn)
+               data;
+      raise exn
+
   (**/**)
   let do_command ?region cmd =
     cmd ?region () >>=
@@ -241,8 +252,7 @@ module Make(Io : Types.Io) = struct
       Deferred.return (Error (Redirect (Region.of_string region)))
     | c when 400 <= c && c < 500 -> begin
         let open Error_response in
-        let xml = Xml.parse_string body in
-        match Error_response.of_xml_light xml with
+        match of_xml Error_response.of_xml_light body with
         | { code = "PermanentRedirect"; endpoint = Some host; _ }
         | { code = "TemporaryRedirect"; endpoint = Some host; _ } ->
           let region = Region.of_host host in
@@ -391,7 +401,7 @@ module Make(Io : Types.Io) = struct
       in
       do_command ?region cmd >>=? fun _headers ->
       body >>= fun body ->
-      let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
+      let result = of_xml Delete_multi.result_of_xml_light body in
       Deferred.return (Ok result)
 
   (** List contents of bucket in s3. *)
