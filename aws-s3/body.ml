@@ -105,9 +105,12 @@ module Make(Io : Types.Io) = struct
         end
       | sep_index when Buffer.nth buffer offset = sep.[sep_index] ->
         loop (offset + 1) (sep_index + 1)
-      | _ ->
-        (* Reset sep index. Look for the next element. *)
-        loop (offset + 1) 0
+      | sep_index ->
+        (* Move back + 1. Say we are looking for done. We have 0123456789donX in the buffer.
+           At this point we have sep_index = 3, and offset = 13 (10+3).
+           Then we should repeat scanning from ('o'), offset 11 = 13 - 3 + 1
+        *)
+        loop (offset - sep_index + 1) 0
     in
     loop 0 0
 
