@@ -601,14 +601,14 @@ let%test _ =
           <StorageClass>STANDARD</StorageClass>
           <Key>test</Key>
           <LastModified>2018-02-27T13:39:35.000Z</LastModified>
-          <ETag>&quot;7538d2bd85ea5dfb689ed65a0f60a7cf&quot;</ETag>
+          <ETag>"7538d2bd85ea5dfb689ed65a0f60a7aa"</ETag>
           <Size>20</Size>
         </Contents>
         <Contents>
           <StorageClass>STANDARD</StorageClass>
           <Key>test</Key>
           <LastModified>2018-02-27T13:39:35.000Z</LastModified>
-          <ETag>&quot;7538d2bd85ea5dfb689ed65a0f60a7cf&quot;</ETag>
+          <ETag>"7538d2bd85ea5dfb689ed65a0f60a7aa"</ETag>
           <Size>20</Size>
         </Contents>
       </ListBucketResult>
@@ -616,8 +616,8 @@ let%test _ =
     in
     let xml = Xml.parse_string data in
     let result = Protocol.Ls.result_of_xml_light xml in
-    ignore result;
-    true
+    2 = (List.length result.Protocol.Ls.contents) &&
+    "7538d2bd85ea5dfb689ed65a0f60a7aa" = (List.hd result.Protocol.Ls.contents).Protocol.etag
 
 let%test "parse Error_response.t" =
   let module Protocol = Protocol(struct type 'a result = 'a end) in
@@ -625,10 +625,10 @@ let%test "parse Error_response.t" =
     {| <Error>
          <Code>PermanentRedirect</Code>
          <Message>The bucket you are attempting to access must be addressed using the specified endpoint. Please send all future requests to this endpoint.</Message>
-         <Bucket>stijntest</Bucket>
-         <Endpoint>stijntest.s3.amazonaws.com</Endpoint>
+         <Bucket>testbucket</Bucket>
+         <Endpoint>testbucket.s3.amazonaws.com</Endpoint>
          <RequestId>9E23E3919C24476C</RequestId>
-         <HostId>zdRmjNUli+pR+gwwhfGt2/s7VVerHquAPqgi9KpZ9OVsYhfF+9uAkkRJtxPcLCJKk2ZjzV1MTv8=</HostId>
+         <HostId>zdQmjTUli+pR+gwwhfGt2/s7VVerHquAPqgi9KpZ9OVsYhfF+9uAkkRJtxPcLCJKk2ZjzV1VV=</HostId>
        </Error>
     |}
   in
@@ -639,8 +639,20 @@ let%test "parse Error_response.t" =
 let%test "parse Delete_multi.result" =
   let module Protocol = Protocol(struct type 'a result = 'a end) in
   let data =
-    {| <DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Error><Key>s3_bench/36e13fcf-1794-46df-a030-66c104ad612d_25579337</Key><Code>InternalError</Code><Message>We encountered an internal error. Please try again.</Message></Error></DeleteResult> |}
+    {| <DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+         <Error>
+           <Key>test key1</Key>
+           <Code>InternalError</Code>
+           <Message>We encountered an internal error. Please try again.</Message>
+         </Error>
+         <Error>
+           <Key>test key2</Key>
+           <Code>InternalError</Code>
+           <Message>We encountered an internal error. Please try again.</Message>
+         </Error>
+       </DeleteResult>
+    |}
   in
   let error = Protocol.Delete_multi.result_of_xml_light (Xml.parse_string data) in
-  let first = List.hd error.Protocol.Delete_multi.error in
-  "InternalError" = first.Protocol.Delete_multi.code
+  2 = (List.length error.Protocol.Delete_multi.error) &&
+  "InternalError" = (List.hd error.Protocol.Delete_multi.error).Protocol.Delete_multi.code
