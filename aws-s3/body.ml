@@ -69,7 +69,7 @@ module Make(Io : Types.Io) = struct
     in
     loop writer start length
 
-  let read_until ?start ~sep reader =
+  let read_until ~msg ?start ~sep reader =
     let buffer =
       let b = Buffer.create 256 in
       match start with
@@ -92,7 +92,7 @@ module Make(Io : Types.Io) = struct
             Buffer.add_string buffer data;
             loop offset sep_index;
           | None ->
-            Or_error.fail (Failure (Printf.sprintf "EOF while looking for '%d'" (Char.code sep.[sep_index])))
+            Or_error.fail (Failure (Printf.sprintf "%s: EOF while looking for '%d'" msg (Char.code sep.[sep_index])))
         end
       | sep_index when Buffer.nth buffer offset = sep.[sep_index] ->
         loop (offset + 1) (sep_index + 1)
@@ -122,13 +122,13 @@ module Make(Io : Types.Io) = struct
         end
     in
     let rec read remain =
-      read_until ?start:remain ~sep:"\r\n" reader >>=? fun (size_str, data) ->
+      read_until ~msg:"read chunk" ?start:remain ~sep:"\r\n" reader >>=? fun (size_str, data) ->
       begin
         try Scanf.sscanf size_str "%x" (fun x -> x) |> Or_error.return
         with _ -> Or_error.fail (Failure "Malformed chunk: Invalid length")
       end >>=? fun chunk_size ->
       match chunk_size with
-      | 0 -> read_until ?start:data ~sep:"\r\n" reader >>=? fun (_, remain) ->
+      | 0 -> read_until ~msg:"end chunk" ?start:data ~sep:"\r\n" reader >>=? fun (_, remain) ->
         Or_error.return remain
       | n ->
         read_chunk data n >>=? fun data ->

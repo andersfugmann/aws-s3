@@ -15,6 +15,7 @@ module Make(Io : Types.Io) : sig
     string Pipe.reader -> (string * string option) Deferred.Or_error.t
 
   val read_until :
+    msg:string ->
     ?start:string ->
     sep:string ->
     string Pipe.reader -> (string * string option) Deferred.Or_error.t

@@ -23,14 +23,14 @@ module Make(Io : Types.Io) = struct
   let read_status ?start reader =
     let remain = start in
     (* Start reading the reply *)
-    Body.read_until ?start:remain ~sep:" " reader >>=? fun (_http_version, remain) ->
-    Body.read_until ?start:remain ~sep:" " reader >>=? fun (status_code, remain) ->
-    Body.read_until ?start:remain ~sep:"\r\n" reader >>=? fun (status_message, remain) ->
+    Body.read_until ~msg:"version" ?start:remain ~sep:" " reader >>=? fun (_http_version, remain) ->
+    Body.read_until ~msg:"code" ?start:remain ~sep:" " reader >>=? fun (status_code, remain) ->
+    Body.read_until ~msg:"message" ?start:remain ~sep:"\r\n" reader >>=? fun (status_message, remain) ->
     Or_error.return ((int_of_string status_code, status_message), remain)
 
   let read_headers ?start reader =
     let rec inner ?start acc =
-      Body.read_until ?start ~sep:"\r\n" reader >>=? function
+      Body.read_until ~msg:"headers" ?start ~sep:"\r\n" reader >>=? function
       | ("", remain) -> Or_error.return (acc, remain)
       | (line, remain) ->
         let (key, value) =
