@@ -96,9 +96,9 @@ module Make(Io : Types.Io) = struct
         end
       | sep_index when Buffer.nth buffer offset = sep.[sep_index] ->
         loop (offset + 1) (sep_index + 1)
-      | _ ->
+      | sep_index ->
         (* Reset sep index. Look for the next element. *)
-        loop (offset + 1) 0
+        loop (offset - sep_index + 1) 0
     in
     loop 0 0
 
