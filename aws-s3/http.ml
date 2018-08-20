@@ -90,10 +90,10 @@ module Make(Io : Types.Io) = struct
     in
     match body with
     | None -> Or_error.return ()
-    | Some reader ->
-      catch (fun () -> transfer reader writer) >>= fun result ->
+    | Some body_reader ->
+      catch (fun () -> transfer body_reader writer) >>= fun result ->
       (* Close the reader and writer in any case *)
-      (* Pipe.close_reader reader;*)
+      Pipe.close_reader body_reader;
       return result (* Might contain an exception *)
 
   let read_data ?start ~sink ~headers reader =
