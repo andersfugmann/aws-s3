@@ -451,7 +451,7 @@ module Make(Io : Types.Io) = struct
     (** Upload a part of the file.
         Parts must be at least 5Mb except for the last part
         [part_number] specifies the part numer. Parts will be assembled in order, but
-        does not have to be consequtive
+        does not have to be consecutive
     *)
     let upload_part ?(scheme=`Http) ?credentials ?region t ~part_number ?expect ~data () =
       let path = sprintf "/%s/%s" t.bucket t.key in
