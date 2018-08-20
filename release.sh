@@ -1,6 +1,6 @@
 #!/bin/sh
 VERSION="$1"
-REMOTE=$(git config remote.origin.url | sed 's/git@github.com:\(.*\).git/\1/')
+REMOTE=$(git config remote.origin.url | sed 's/git@github.com:\([^.]*\)\([.]git\)\?/\1/')
 URL=https://github.com/${REMOTE}/archive/${VERSION}.tar.gz
 CHECKSUM=$(curl -s -L ${URL} | md5sum | cut -f1 -d' ')
 BASE="/home/afu/git/opam-repository/packages"
