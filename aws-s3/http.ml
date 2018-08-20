@@ -93,7 +93,7 @@ module Make(Io : Types.Io) = struct
     | Some reader ->
       catch (fun () -> transfer reader writer) >>= fun result ->
       (* Close the reader and writer in any case *)
-      Pipe.close_reader reader;
+      (* Pipe.close_reader reader;*)
       return result (* Might contain an exception *)
 
   let read_data ?start ~sink ~headers reader =
