@@ -169,7 +169,7 @@ module Net = struct
       | `Https -> `OpenSSL (`Hostname host, `IP addr, `Port 443)
     in
     Conduit_lwt_unix.connect
-      ~ctx:Conduit_lwt_unix.default_ctx endp >>= fun (_flow, ic, oc) ->
+      ~ctx:Conduit_lwt_unix.default_ctx endp >>= fun (flow, ic, oc) ->
 
     (*  Lwt_io.input_channel *)
     let reader, input = Pipe.create () in
@@ -202,6 +202,7 @@ module Net = struct
         Lwt_io.write oc data >>= fun () ->
         write ()
       | exception Queue.Empty when output.Pipe.closed ->
+        Conduit_lwt_unix.sexp_of_flow flow |> ignore;
         Lwt.return ()
       | exception Queue.Empty ->
         Lwt_condition.wait output.Pipe.cond >>= fun () ->
