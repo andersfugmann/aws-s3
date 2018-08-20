@@ -4,6 +4,7 @@
 
 4.0.1:
 [x] Fix harmless bug when scanning for seperators with more than one character.
+[x] Fix bug when parsing multi delete reply in case of error
 
 4.0.0: Released 2018-08-16
 [x] Support HEAD operation on objects.

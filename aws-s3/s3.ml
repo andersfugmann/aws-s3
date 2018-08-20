@@ -128,8 +128,8 @@ module Protocol(P: sig type 'a result end) = struct
     type error = {
       key: string [@key "Key"];
       version_id: string option [@key "VersionId"];
-      code: string;
-      message : string;
+      code: string [@key "Code"];
+      message : string [@key "Message"];
     } [@@deriving protocol ~driver:(module Xml_light)]
 
     type delete_marker = bool
@@ -619,7 +619,7 @@ let%test _ =
     ignore result;
     true
 
-let%test _ =
+let%test "parse Error_response.t" =
   let module Protocol = Protocol(struct type 'a result = 'a end) in
   let data =
     {| <Error>
@@ -635,3 +635,12 @@ let%test _ =
   let xml = Xml.parse_string data in
   let error = Protocol.Error_response.of_xml_light xml in
   "PermanentRedirect" = error.Protocol.Error_response.code
+
+let%test "parse Delete_multi.result" =
+  let module Protocol = Protocol(struct type 'a result = 'a end) in
+  let data =
+    {| <DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Error><Key>s3_bench/36e13fcf-1794-46df-a030-66c104ad612d_25579337</Key><Code>InternalError</Code><Message>We encountered an internal error. Please try again.</Message></Error></DeleteResult> |}
+  in
+  let error = Protocol.Delete_multi.result_of_xml_light (Xml.parse_string data) in
+  let first = List.hd error.Protocol.Delete_multi.error in
+  "InternalError" = first.Protocol.Delete_multi.code
