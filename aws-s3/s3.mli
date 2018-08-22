@@ -41,7 +41,7 @@ module Make(Io : Types.Io) : sig
 
   module Ls : sig
     type t = (content list * cont) result
-    and cont = More of (unit -> t) | Done
+    and cont = More of (?max_keys:int -> unit -> t) | Done
   end
 
   module Delete_multi : sig
@@ -115,9 +115,19 @@ module Make(Io : Types.Io) : sig
   (** List contents in [bucket]
       Aws will return at most 1000 keys per request. If not all keys are
       returned, the function will return a continuation.
+
+      Keys in s3 are stored in lexicographical order, and also returned as such.
+
+      If a [continuation_token] is given the result will continue from last call.
+
+      If [start_after] is given then keys only keys after start_with are returned.
+      Note that is both [start_after] and a [continuation_token] is given
+      then start_after argument is ignored.
+
+      If prefix is given, then only keys starting with the given prefix will be returned.
   *)
   val ls :
-    (?continuation_token:string -> ?prefix:string -> ?max_keys:int -> bucket:string -> unit -> Ls.t) command
+    (?start_after:string -> ?continuation_token:string -> ?prefix:string -> ?max_keys:int -> bucket:string -> unit -> Ls.t) command
 
   (** Streaming functions.
       Streaming function seeks to limit the amount of used memory used when

@@ -92,10 +92,11 @@ module Protocol(P: sig type 'a result end) = struct
       key_count: int [@key "KeyCount"];
       is_truncated: bool [@key "IsTruncated"];
       contents: content list [@key "Contents"];
+      start_after: string option [@key "StartAfter"];
     } [@@deriving of_protocol ~driver:(module Xml_light)]
 
     type t = (content list * cont) P.result
-    and cont = More of (unit -> t) | Done
+    and cont = More of (?max_keys:int -> unit -> t) | Done
 
   end
 
@@ -395,11 +396,16 @@ module Make(Io : Types.Io) = struct
       Deferred.return (Ok result)
 
   (** List contents of bucket in s3. *)
-  let rec ls ?(scheme=`Http) ?credentials ?region ?continuation_token ?prefix ?max_keys ~bucket () =
+  let rec ls ?(scheme=`Http) ?credentials ?region ?start_after ?continuation_token ?prefix ?max_keys ~bucket () =
+    let max_keys = match max_keys with
+      | Some n when n > 1000 -> None
+      | n -> n
+    in
     let query = [ Some ("list-type", "2");
                   Option.map ~f:(fun ct -> ("continuation-token", ct)) continuation_token;
                   Option.map ~f:(fun prefix -> ("prefix", prefix)) prefix;
                   Option.map ~f:(fun max_keys -> ("max-keys", string_of_int max_keys)) max_keys;
+                  Option.map ~f:(fun start_after -> ("start-after", start_after)) start_after;
                 ] |> filter_map ~f:(fun x -> x)
     in
     let body, sink = string_sink () in
@@ -411,7 +417,7 @@ module Make(Io : Types.Io) = struct
     let result = Ls.result_of_xml_light (Xml.parse_string body) in
     let continuation = match Ls.(result.next_continuation_token) with
       | Some ct ->
-        Ls.More (ls ~scheme ?credentials ?region ~continuation_token:ct ?max_keys ?prefix ~bucket)
+        Ls.More (ls ~scheme ?credentials ?region ?start_after:None ~continuation_token:ct ?prefix ~bucket)
       | None -> Ls.Done
     in
     Deferred.return (Ok (Ls.(result.contents, continuation)))

@@ -198,7 +198,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
       Deferred.return (Ok ())
     | Error _ as e -> Deferred.return e
 
-  let ls profile ~retries ~max_keys scheme ratelimit bucket prefix =
+  let ls profile ~retries scheme ?ratelimit ?start_after ?max_keys ?prefix bucket =
     let ratelimit_f = match ratelimit with
       | None -> fun () -> Deferred.return (Ok ())
       | Some n -> fun () -> after (1000. /. float n) >>= fun () -> Deferred.return (Ok ())
@@ -208,20 +208,23 @@ module Make(Io : Aws_s3.Types.Io) = struct
       | None -> "<Error>"
       | Some t -> Ptime.to_rfc3339 ~space:false t
     in
-    let rec ls_all (result, cont) =
+    let rec ls_all ?max_keys (result, cont) =
       List.iter ~f:(fun { S3.last_modified; key; size; etag; _ } -> Caml.Printf.printf "%s\t%d\t%s\t%s\n%!" (string_of_time last_modified) size key etag) result;
-
+      let max_keys = match max_keys with
+        | Some n -> Some (n - List.length result)
+        | None -> None
+      in
       match cont with
       | S3.Ls.More continuation -> ratelimit_f ()
-        >>=? S3.retry ~retries ~f:(fun ?region:_ () -> continuation ())
-        >>=? ls_all
+        >>=? S3.retry ~retries ~f:(fun ?region:_ () -> continuation ?max_keys ())
+        >>=? ls_all ?max_keys
       | S3.Ls.Done -> Deferred.return (Ok ())
     in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
-    S3.retry ~retries ~f:(S3.ls ~scheme ?continuation_token:None ~credentials ~max_keys ?prefix ~bucket) () >>=? ls_all
+    S3.retry ~retries ~f:(S3.ls ?start_after ~scheme ?continuation_token:None ~credentials ?max_keys ?prefix ~bucket) () >>=? ls_all ?max_keys
 
-  let exec ({ Cli.profile; https; retries; ipv6; expect; max_keys }, cmd) =
+  let exec ({ Cli.profile; https; retries; ipv6; expect }, cmd) =
     let () =
       match ipv6 with
       | true -> S3.set_connection_type Unix.PF_INET6
@@ -237,8 +240,8 @@ module Make(Io : Aws_s3.Types.Io) = struct
         cp profile ~retries ~expect scheme ~use_multi:multi ?first ?last ?chunk_size src dest
       | Rm { bucket; paths } ->
         rm profile ~retries scheme bucket paths
-      | Ls { ratelimit; bucket; prefix } ->
-        ls profile ~retries ~max_keys scheme ratelimit bucket prefix
+      | Ls { ratelimit; bucket; prefix; start_after; max_keys  } ->
+        ls profile ~retries scheme ?ratelimit ?start_after ?prefix ?max_keys bucket
       | Head { path } ->
         head profile ~retries scheme path
     end >>= function

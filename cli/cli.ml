@@ -2,13 +2,13 @@
 open Cmdliner
 
 type actions =
-  | Ls of { bucket: string; prefix: string option; ratelimit: int option; }
+  | Ls of { bucket: string; prefix: string option; start_after: string option; ratelimit: int option; max_keys: int option}
   | Head of { path: string; }
   | Rm of { bucket: string; paths : string list }
   | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool; chunk_size: int option}
 
 type options =
-  { profile: string option; https: bool; retries: int; ipv6: bool; expect: bool; max_keys:int }
+  { profile: string option; https: bool; retries: int; ipv6: bool; expect: bool }
 
 let parse exec =
   let profile =
@@ -41,14 +41,9 @@ let parse exec =
     Arg.(value & flag & info ["expect"; "e"] ~docv:"EXPECT" ~doc)
   in
 
-  let max_keys =
-    let doc = "Max keys returned per ls request" in
-    Arg.(value & opt int 1000 & info ["max-keys"] ~docv:"MAX_KEYS" ~doc)
-  in
-
   let common_opts =
-    let make profile https retries ipv6 expect max_keys = { profile; https; retries; ipv6; expect; max_keys} in
-    Term.(const make $ profile $ https $ retries $ ipv6 $ expect $ max_keys)
+    let make profile https retries ipv6 expect  = { profile; https; retries; ipv6; expect } in
+    Term.(const make $ profile $ https $ retries $ ipv6 $ expect)
   in
 
   let bucket n =
@@ -109,14 +104,24 @@ let parse exec =
   in
 
   let ls =
-    let make opts ratelimit prefix bucket = opts, Ls { bucket; prefix; ratelimit } in
+    let make opts ratelimit prefix start_after bucket max_keys = opts, Ls { bucket; prefix; start_after; ratelimit; max_keys } in
 
     let prefix =
       let doc = "Only list elements with the given prefix" in
       Arg.(value & opt (some string) None & info ["prefix"] ~docv:"PREFIX" ~doc)
     in
 
-    Term.(const make $ common_opts $ ratelimit $ prefix $ bucket 0),
+    let max_keys =
+      let doc = "Max keys returned per ls request" in
+      Arg.(value & opt (some int) None & info ["max-keys"] ~docv:"MAX_KEYS" ~doc)
+    in
+
+    let start_after =
+      let doc = "List objects after the given key" in
+      Arg.(value & opt (some string) None & info ["start_after"] ~docv:"START_AFTER" ~doc)
+    in
+
+    Term.(const make $ common_opts $ ratelimit $ prefix $ start_after $ bucket 0 $ max_keys),
     Term.info "ls" ~doc:"List files in bucket"
   in
 
