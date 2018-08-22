@@ -75,7 +75,7 @@ let parse exec =
 
     let chunk_size =
       let doc = "Use streaming get / put the given chunk_size" in
-      Arg.(value & opt (some int) None & info ["chunk_size"; "c"] ~docv:"CHUNK_SIZE" ~doc)
+      Arg.(value & opt (some int) None & info ["chunk-size"; "c"] ~docv:"CHUNK SIZE" ~doc)
     in
 
     Term.(const make $ common_opts $ first $ last $ multi $ chunk_size $ path 0 "SRC" $ path 1 "DEST"),
@@ -113,12 +113,12 @@ let parse exec =
 
     let max_keys =
       let doc = "Max keys returned per ls request" in
-      Arg.(value & opt (some int) None & info ["max-keys"] ~docv:"MAX_KEYS" ~doc)
+      Arg.(value & opt (some int) None & info ["max-keys"] ~docv:"MAX KEYS" ~doc)
     in
 
     let start_after =
       let doc = "List objects after the given key" in
-      Arg.(value & opt (some string) None & info ["start_after"] ~docv:"START_AFTER" ~doc)
+      Arg.(value & opt (some string) None & info ["start-after"] ~docv:"START AFTER" ~doc)
     in
 
     Term.(const make $ common_opts $ ratelimit $ prefix $ start_after $ bucket 0 $ max_keys),
