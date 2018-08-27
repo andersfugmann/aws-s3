@@ -5,6 +5,7 @@
 4.1.0: Unreleased
 [x]: Add start_after argument to ls
 [x]: Extend cli to accpet max_keys > 1000 and a start_after option for ls
+[x]: Reduce linked libaries
 
 4.0.1: Released 2018-08-20
 [x] Fix harmless bug when scanning for seperators with more than one character.
