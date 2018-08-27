@@ -2,7 +2,7 @@
 
 [ ] Support bigstring (zero copy)
 
-4.1.0: Unreleased
+4.1.0: Released 2018-08-27
 [x]: Add start_after argument to ls
 [x]: Extend cli to accpet max_keys > 1000 and a start_after option for ls
 [x]: Reduce linked libaries

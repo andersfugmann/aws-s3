@@ -9,10 +9,10 @@ build: [
   ["dune" "subst"] {pinned}
   ["dune" "build" "-p" name "-j" jobs]
 ]
-version: "4.0.1"
+version: "4.1.0"
 depends: [
   "dune" { build }
-  "aws-s3" { = "4.0.1" }
+  "aws-s3" { = "4.1.0" }
   "lwt"
   "conduit-lwt-unix"
 ]
