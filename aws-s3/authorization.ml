@@ -15,6 +15,8 @@ let hash_sha256 s =
 let hmac_sha256 ~key v =
   Digestif.SHA256.hmac_string ~key v
 
+let to_raw sha256 = Digestif.SHA256.to_raw_string sha256
+
 let to_hex str = Digestif.SHA256.to_hex str
 
 let make_signing_key =
@@ -24,9 +26,9 @@ let make_signing_key =
     | Some (d, signing_key) when d = date && not bypass_cache -> signing_key
     | Some _ | None ->
       let date_key = hmac_sha256 ~key:("AWS4" ^ credentials.Credentials.secret_key) date in
-      let date_region_key = hmac_sha256 ~key:(date_key :> string) region in
-      let date_region_service_key = hmac_sha256 ~key:(date_region_key :> string) service in
-      let signing_key = hmac_sha256 ~key:(date_region_service_key :> string) "aws4_request" in
+      let date_region_key = hmac_sha256 ~key:(to_raw date_key) region in
+      let date_region_service_key = hmac_sha256 ~key:(to_raw date_region_key) service in
+      let signing_key = hmac_sha256 ~key:(to_raw date_region_service_key) "aws4_request" in
       Hashtbl.replace cache (credentials.Credentials.access_key, region) (date, signing_key);
       signing_key
 
@@ -92,7 +94,7 @@ let make_signature ~date ~time ~verb ~path
   let (string_to_sign, signed_headers) =
     string_to_sign ~date ~time ~verb ~path ~query ~headers ~payload_sha ~scope
   in
-  (hmac_sha256 ~key:(signing_key :> string) string_to_sign |> to_hex, signed_headers)
+  (hmac_sha256 ~key:(to_raw signing_key) string_to_sign |> to_hex, signed_headers)
 
 let make_auth_header ~credentials ~scope ~signed_headers ~signature =
   sprintf "AWS4-HMAC-SHA256 Credential=%s/%s,SignedHeaders=%s,Signature=%s"
@@ -160,7 +162,7 @@ let chunk_signature ~(signing_key: Digestif.SHA256.t)  ~date ~time ~scope ~previ
       empty_sha_hex
       (to_hex sha)
   in
-  hmac_sha256 ~key:(signing_key :> string) string_to_sign
+  hmac_sha256 ~key:(to_raw signing_key) string_to_sign
 
 let%test "chunk_signature" =
   let credentials = Credentials.make
