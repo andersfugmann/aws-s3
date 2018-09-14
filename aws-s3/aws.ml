@@ -96,13 +96,7 @@ module Make(Io : Types.Io) = struct
     in
     Pipe.create_reader ~f:(transfer initial_signature Digestif.SHA256.empty 0 [] None)
 
-  let make_request ?(domain=Unix.PF_INET) ~scheme ?(expect=false) ~sink ?(body=Body.Empty) ?(region=Region.Us_east_1) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
-    let dualstack = match domain with
-      | Unix.PF_INET -> false
-      | Unix.PF_INET6 -> true
-      | Unix.PF_UNIX -> failwith "Unix domain calls are not supported"
-    in
-    let host_str = Region.to_host ~dualstack region in
+  let make_request ~(endpoint: Region.endpoint) ?(expect=false) ~sink ?(body=Body.Empty) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
     let (date, time)  = Unix.gettimeofday () |> Time.iso8601_of_time in
 
     (* Create headers structure *)
@@ -132,7 +126,7 @@ module Make(Io : Types.Io) = struct
       let open Headers in
       let headers =
         List.fold_left ~init:empty ~f:(fun m (key, value) -> add ~key ~value m) headers
-        |> add     ~key:"Host"                 ~value:host_str
+        |> add     ~key:"Host"                 ~value:endpoint.host
         |> add     ~key:"x-amz-content-sha256" ~value:payload_sha
         |> add     ~key:"x-amz-date"           ~value:(sprintf "%sT%sZ" date time)
         |> add_opt ~key:"x-amz-security-token" ~value:token
@@ -149,7 +143,7 @@ module Make(Io : Types.Io) = struct
         match credentials with
         | Some credentials ->
           let verb = Http.string_of_method meth in
-          let region = Region.to_string region in
+          let region = Region.to_string endpoint.region in
           let signing_key =
             Authorization.make_signing_key ~date ~region ~service:"s3" ~credentials ()
           in
@@ -191,6 +185,6 @@ module Make(Io : Types.Io) = struct
       (Headers.add_opt ~key:"Authorization" ~value:auth headers), body
     in
     body >>= fun body ->
-    Http.call ~domain ~scheme ~host:host_str ~path ~query ~headers ~expect ~sink ?body meth >>=? fun (code, msg, headers, body) ->
+    Http.call ~endpoint ~path ~query ~headers ~expect ~sink ?body meth >>=? fun (code, msg, headers, body) ->
     Deferred.Or_error.return (code, msg, headers, body)
 end

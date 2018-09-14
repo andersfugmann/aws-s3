@@ -2,6 +2,14 @@
 build:
 	dune build @install
 
+.PHONY: lwt
+lwt:
+	dune build aws-s3-lwt.install
+
+.PHONY: async
+async:
+	dune build aws-s3-async.install
+
 .PHONY: install
 install: build
 	dune install

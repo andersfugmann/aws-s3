@@ -2,12 +2,10 @@
 module Make(Io : Types.Io) : sig
   open Io
   val make_request :
-    ?domain:Unix.socket_domain ->
-    scheme:[`Http|`Https] ->
+    endpoint:Region.endpoint ->
     ?expect:bool ->
     sink:string Io.Pipe.writer ->
     ?body:Body.Make(Io).t ->
-    ?region:Region.t ->
     ?credentials:Credentials.t ->
     headers:(string * string) list ->
     meth:[`GET | `PUT | `POST | `DELETE | `HEAD ] ->

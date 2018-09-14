@@ -7,10 +7,8 @@ module Make : functor(Io: Types.Io) -> sig
   val string_of_method : meth -> string
 
   val call:
-    ?domain:Unix.socket_domain ->
     ?expect:bool ->
-    scheme:[< `Http | `Https ] ->
-    host:string ->
+    endpoint:Region.endpoint ->
     path:string ->
     ?query:(string * string) list ->
     headers:string Headers.t ->

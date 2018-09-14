@@ -156,8 +156,8 @@ module Make(Io : Types.Io) = struct
     Or_error.return (code, message, headers, error_body)
 
 
-  let call ?(domain=Unix.PF_INET) ?(expect=false) ~scheme ~host ~path ?(query=[]) ~headers ~sink ?body (meth:meth) =
-    Net.connect ~domain ~host ~scheme >>=? fun (reader, writer) ->
+  let call ?(expect=false) ~(endpoint:Region.endpoint) ~path ?(query=[]) ~headers ~sink ?body (meth:meth) =
+    Net.connect ~inet:endpoint.inet ~host:endpoint.host ~port:endpoint.port ~scheme:endpoint.scheme >>=? fun (reader, writer) ->
     (* At this point we need to make sure reader and writer are closed properly. *)
     do_request ~expect ~path ~query ~headers ~sink ?body meth reader writer >>= fun result ->
     (* Close the reader and writer regardless of status *)

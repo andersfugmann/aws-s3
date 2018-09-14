@@ -85,8 +85,9 @@ module type Io = sig
   (**/**)
   module Net : sig
     val connect :
-      domain:Unix.socket_domain ->
+      inet:[ `V4 | `V6 ] ->
       host:string ->
+      port:int ->
       scheme:[< `Http | `Https ] ->
       (string Pipe.reader * string Pipe.writer) Deferred.Or_error.t
   end

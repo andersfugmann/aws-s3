@@ -93,42 +93,42 @@ module Make(Io : Aws_s3.Types.Io) = struct
     | (true, true) -> S3toS3 (objekt_of_uri src, objekt_of_uri dst)
     | (false, false) -> failwith "Use cp(1)"
 
-  let rec upload_parts t scheme ~retries ~expect ~credentials ?(offset=0) ~total ?(part_number=1) ?chunk_size src =
-    let f ~size ?region ()=
+  let rec upload_parts t endpoint ~retries ~expect ~credentials ?(offset=0) ~total ?(part_number=1) ?chunk_size src =
+    let f ~size ~endpoint ()=
       match chunk_size with
       | None ->
         let data = read_file ~pos:offset ~len:size src in
-        S3.Multipart_upload.upload_part ~scheme ~expect ?region ~credentials t ~part_number ~data ()
+        S3.Multipart_upload.upload_part ~endpoint ~expect ~credentials t ~part_number ~data ()
       | Some chunk_size ->
         (* Create a reader for this section *)
         let reader = file_reader ~pos:offset ~len:size src in
-        S3.Multipart_upload.Stream.upload_part ~scheme ~expect ?region ~credentials t ~part_number ~data:reader ~chunk_size ~length:size ()
+        S3.Multipart_upload.Stream.upload_part ~endpoint ~expect ~credentials t ~part_number ~data:reader ~chunk_size ~length:size ()
     in
     match (total - offset) with
     | 0 -> []
     | len ->
       let size = min len (5*1024*1024) in
-      (S3.retry ~retries ~f:(f ~size)) () ::
-       upload_parts t scheme ~retries ~expect ~credentials ~offset:(offset + size) ~total ~part_number:(part_number + 1) ?chunk_size src
+      (S3.retry ~endpoint ~retries ~f:(f ~size)) () ::
+       upload_parts t endpoint ~retries ~expect ~credentials ~offset:(offset + size) ~total ~part_number:(part_number + 1) ?chunk_size src
 
-  let cp profile scheme ~retries ~expect ?(use_multi=false) ?first ?last ?chunk_size src dst =
+  let cp profile endpoint ~retries ~expect ?(use_multi=false) ?first ?last ?chunk_size src dst =
     let range = { S3.first; last } in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
     match determine_paths src dst with
     | S3toLocal (src, dst) ->
-      let f ?region () = match chunk_size with
+      let f ~endpoint () = match chunk_size with
         | None ->
-          S3.get ~scheme ?region ~credentials ~range ~bucket:src.bucket ~key:src.key ()
+          S3.get ~endpoint ~credentials ~range ~bucket:src.bucket ~key:src.key ()
         | Some _ ->
           let body, data =
             let r, w = Pipe.create () in
             Body.to_string r, w
           in
-          S3.Stream.get ~scheme ?region ~credentials ~range ~bucket:src.bucket ~key:src.key ~data () >>=? fun () ->
+          S3.Stream.get ~endpoint ~credentials ~range ~bucket:src.bucket ~key:src.key ~data () >>=? fun () ->
           body >>= fun body -> Deferred.return (Ok body)
       in
-      S3.retry ~retries ~f () >>=? fun data ->
+      S3.retry ~endpoint ~retries ~f () >>=? fun data ->
       save_file dst data;
       Deferred.return (Ok ())
     | LocaltoS3 (src, dst) when use_multi ->
@@ -140,12 +140,12 @@ module Make(Io : Aws_s3.Types.Io) = struct
         | None -> file_length src
         | Some n -> n
       in
-      S3.retry ~retries
-        ~f:(fun ?region () -> S3.Multipart_upload.init ~scheme ?region ~credentials ~bucket:dst.bucket ~key:dst.key ()) () >>=? fun t ->
-      let uploads = upload_parts t ~retries ~expect scheme ?chunk_size ~credentials ~offset ~total:last src in
+      S3.retry ~endpoint ~retries
+        ~f:(fun ~endpoint () -> S3.Multipart_upload.init ~endpoint ~credentials ~bucket:dst.bucket ~key:dst.key ()) () >>=? fun t ->
+      let uploads = upload_parts t endpoint ~retries ~expect ?chunk_size ~credentials ~offset ~total:last src in
       List.fold_left ~init:(Deferred.return (Ok ())) ~f:(fun acc x -> acc >>=? fun () -> x) uploads >>=?
-      S3.retry ~retries
-        ~f:(fun ?region () -> S3.Multipart_upload.complete ?region ~credentials t ()) >>=? fun _md5 ->
+      S3.retry ~endpoint ~retries
+        ~f:(fun ~endpoint () -> S3.Multipart_upload.complete ~endpoint ~credentials t ()) >>=? fun _md5 ->
       Deferred.return (Ok ())
     | LocaltoS3 (src, dst) ->
       let pos = Option.value ~default:0 first in
@@ -156,49 +156,49 @@ module Make(Io : Aws_s3.Types.Io) = struct
       let f = match chunk_size with
         | None ->
           let data = read_file ~pos ~len src in
-          fun ?region () -> S3.put ~scheme ?region ~expect ~credentials ~bucket:dst.bucket ~key:dst.key
+          fun ~endpoint () -> S3.put ~endpoint ~expect ~credentials ~bucket:dst.bucket ~key:dst.key
               ~data ()
         | Some chunk_size ->
           let reader = file_reader ~pos ~len src in
-          fun ?region () -> S3.Stream.put ~scheme ~expect ?region ~credentials ~bucket:dst.bucket ~key:dst.key
+          fun ~endpoint () -> S3.Stream.put ~endpoint ~expect ~credentials ~bucket:dst.bucket ~key:dst.key
               ~data:reader ~chunk_size ~length:len ()
       in
-      S3.retry ~retries ~f () >>=? fun _etag ->
+      S3.retry ~endpoint ~retries ~f () >>=? fun _etag ->
       Deferred.return (Ok ())
     | S3toS3 (src, dst) ->
-      S3.retry ~retries
-        ~f:(fun ?region () -> S3.Multipart_upload.init ~scheme ?region ~credentials ~bucket:dst.bucket ~key:dst.key ()) () >>=? fun t ->
-      S3.retry ~retries
-        ~f:(fun ?region () -> S3.Multipart_upload.copy_part ~scheme ?region ~credentials t ~bucket:src.bucket ~key:src.key ~part_number:1 ()) () >>=?
-      S3.retry ~retries
-        ~f:(fun ?region () -> S3.Multipart_upload.complete ~scheme ?region ~credentials t ()) >>=? fun _md5 ->
+      S3.retry ~endpoint ~retries
+        ~f:(fun ~endpoint () -> S3.Multipart_upload.init ~endpoint ~credentials ~bucket:dst.bucket ~key:dst.key ()) () >>=? fun t ->
+      S3.retry ~endpoint ~retries
+        ~f:(fun ~endpoint () -> S3.Multipart_upload.copy_part ~endpoint ~credentials t ~bucket:src.bucket ~key:src.key ~part_number:1 ()) () >>=?
+      S3.retry ~endpoint ~retries
+        ~f:(fun ~endpoint () -> S3.Multipart_upload.complete ~endpoint ~credentials t ()) >>=? fun _md5 ->
       Deferred.return (Ok ())
 
-  let rm profile ~retries scheme bucket paths =
+  let rm profile endpoint ~retries bucket paths =
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
     match paths with
     | [ key ] ->
-        S3.retry ~retries ~f:(S3.delete ~scheme ~credentials ~bucket ~key) ()
+        S3.retry ~endpoint ~retries ~f:(S3.delete ~credentials ~bucket ~key) ()
     | keys ->
       let objects : S3.Delete_multi.objekt list = List.map ~f:(fun key -> { S3.Delete_multi.key; version_id = None }) keys in
-      S3.retry ~retries
-        ~f:(S3.delete_multi ~scheme ~credentials ~bucket ~objects) () >>=? fun _deleted ->
+      S3.retry ~endpoint ~retries
+        ~f:(S3.delete_multi ~credentials ~bucket ~objects) () >>=? fun _deleted ->
       Deferred.return (Ok ())
 
-  let head profile ~retries scheme path =
+  let head profile endpoint ~retries path =
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
     let { bucket; key } = objekt_of_uri path in
-    S3.retry ~retries
-        ~f:(S3.head ~scheme ~credentials ~bucket ~key) () >>= function
+    S3.retry ~endpoint ~retries
+        ~f:(S3.head ~credentials ~bucket ~key) () >>= function
     | Ok { S3.key; etag; size; _ } ->
       Printf.printf "Key: %s, Size: %d, etag: %s\n"
         key size etag;
       Deferred.return (Ok ())
     | Error _ as e -> Deferred.return e
 
-  let ls profile ~retries scheme ?ratelimit ?start_after ?max_keys ?prefix bucket =
+  let ls profile endpoint ~retries ?ratelimit ?start_after ?max_keys ?prefix bucket =
     let ratelimit_f = match ratelimit with
       | None -> fun () -> Deferred.return (Ok ())
       | Some n -> fun () -> after (1000. /. float n) >>= fun () -> Deferred.return (Ok ())
@@ -216,34 +216,30 @@ module Make(Io : Aws_s3.Types.Io) = struct
       in
       match cont with
       | S3.Ls.More continuation -> ratelimit_f ()
-        >>=? S3.retry ~retries ~f:(fun ?region:_ () -> continuation ?max_keys ())
+        >>=? S3.retry ~endpoint ~retries ~f:(fun ~endpoint:_ () -> continuation ?max_keys ())
         >>=? ls_all ?max_keys
       | S3.Ls.Done -> Deferred.return (Ok ())
     in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
-    S3.retry ~retries ~f:(S3.ls ?start_after ~scheme ?continuation_token:None ~credentials ?max_keys ?prefix ~bucket) () >>=? ls_all ?max_keys
+    S3.retry ~endpoint ~retries ~f:(S3.ls ?start_after ?continuation_token:None ~credentials ?max_keys ?prefix ~bucket) () >>=? ls_all ?max_keys
 
   let exec ({ Cli.profile; https; retries; ipv6; expect }, cmd) =
-    let () =
-      match ipv6 with
-      | true -> S3.set_connection_type Unix.PF_INET6
-      | false -> ()
-    in
-    let scheme = match https with
-      | false -> `Http
-      | true -> `Https
-    in
+    let inet = if ipv6 then `V6 else `V4 in
+    let scheme = if https then `Https else `Http in
+    (* TODO: Get the region from the CLI *)
+    let region : Aws_s3.Region.t = Us_east_1 in
+    let endpoint = Aws_s3.Region.endpoint ~inet ~scheme region in
     begin
       match cmd with
       | Cli.Cp { src; dest; first; last; multi; chunk_size } ->
-        cp profile ~retries ~expect scheme ~use_multi:multi ?first ?last ?chunk_size src dest
+        cp profile endpoint ~retries ~expect ~use_multi:multi ?first ?last ?chunk_size src dest
       | Rm { bucket; paths } ->
-        rm profile ~retries scheme bucket paths
+        rm profile endpoint ~retries bucket paths
       | Ls { ratelimit; bucket; prefix; start_after; max_keys  } ->
-        ls profile ~retries scheme ?ratelimit ?start_after ?prefix ?max_keys bucket
+        ls profile endpoint ~retries ?ratelimit ?start_after ?prefix ?max_keys bucket
       | Head { path } ->
-        head profile ~retries scheme path
+        head profile endpoint ~retries path
     end >>= function
     | Ok _ -> return 0
     | Error e ->

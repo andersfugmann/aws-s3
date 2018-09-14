@@ -206,7 +206,7 @@ module Make(Io : Types.Io) = struct
   open Io
   open Deferred
   type error =
-    | Redirect of Region.t
+    | Redirect of Region.endpoint
     | Throttled
     | Unknown of int * string
     | Failed of exn
@@ -216,21 +216,16 @@ module Make(Io : Types.Io) = struct
     let reader, writer = Pipe.create () in
     Body.to_string reader, writer
 
-  let domain = ref Unix.PF_INET
-  let set_connection_type = function
-    | Unix.PF_UNIX -> raise (Invalid_argument "Unix domains are not supported")
-    | d -> domain := d
-
   include Protocol(struct type nonrec 'a result = ('a, error) result Deferred.t end)
 
   type range = { first: int option; last: int option }
 
   type nonrec 'a result = ('a, error) result Deferred.t
-  type 'a command = ?scheme:[`Http|`Https] -> ?credentials:Credentials.t -> ?region:Region.t -> 'a
+  type 'a command = ?credentials:Credentials.t -> endpoint:Region.endpoint -> 'a
 
   (**/**)
-  let do_command ?region cmd =
-    cmd ?region () >>=
+  let do_command ~(endpoint:Region.endpoint) cmd =
+    cmd () >>=
     (function Ok v -> return (Ok v) | Error exn -> return (Error (Failed exn))) >>=? fun (code, _message, headers, body) ->
     match code with
     | code when 200 <= code && code < 300 ->
@@ -238,8 +233,11 @@ module Make(Io : Types.Io) = struct
     | 404 -> Deferred.return (Error Not_found)
     | c when 300 <= c && c < 400 ->
       (* Redirect of sorts *)
-      let region = Headers.find "x-amz-bucket-region" headers in
-      Deferred.return (Error (Redirect (Region.of_string region)))
+      let region =
+        Region.of_string
+          (Headers.find "x-amz-bucket-region" headers)
+      in
+      Deferred.return (Error (Redirect {endpoint with region}))
     | c when 400 <= c && c < 500 -> begin
         let open Error_response in
         let xml = Xml.parse_string body in
@@ -247,10 +245,10 @@ module Make(Io : Types.Io) = struct
         | { code = "PermanentRedirect"; endpoint = Some host; _ }
         | { code = "TemporaryRedirect"; endpoint = Some host; _ } ->
           let region = Region.of_host host in
-          Deferred.return (Error (Redirect region))
+          Deferred.return (Error (Redirect {endpoint with region}))
         | { code = "AuthorizationHeaderMalformed"; region = Some region; _ } ->
           let region = Region.of_string region in
-          Deferred.return (Error (Redirect region))
+          Deferred.return (Error (Redirect {endpoint with region}))
         | { code; _ } ->
           Deferred.return (Error (Unknown (c, code)))
       end
@@ -261,7 +259,7 @@ module Make(Io : Types.Io) = struct
       let resp = Error_response.of_xml_light (Xml.parse_string body) in
       Deferred.return (Error (Unknown (code, resp.code)))
 
-  let put_common ?(scheme=`Http) ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body () =
+  let put_common ?credentials ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body () =
     let path = sprintf "/%s/%s" bucket key in
     let headers =
       [ "Content-Type", content_type;
@@ -273,14 +271,14 @@ module Make(Io : Types.Io) = struct
       |> List.map ~f:(function (k, Some v) -> (k, v) | (_, None) -> failwith "Impossible")
     in
     let sink = Body.null () in
-    let cmd ?region () =
-      Aws.make_request ~domain:!domain ~scheme ?expect ?credentials ?region ~headers ~meth:`PUT ~path ~sink ~body ~query:[] ()
+    let cmd () =
+      Aws.make_request ~endpoint ?expect ?credentials ~headers ~meth:`PUT ~path ~sink ~body ~query:[] ()
     in
 
-    do_command ?region cmd >>=? fun headers ->
+    do_command ~endpoint cmd >>=? fun headers ->
     let etag =
       match Headers.find_opt "etag" headers with
-      | None -> failwith "Put reply did not conatin an etag header"
+      | None -> failwith "Put reply did not contain an etag header"
       | Some etag -> unquote etag
     in
     Deferred.return (Ok etag)
@@ -289,7 +287,7 @@ module Make(Io : Types.Io) = struct
 
   module Stream = struct
 
-    let get ?(scheme=`Http) ?credentials ?region ?range ~bucket ~key ~data () =
+    let get ?credentials ~endpoint ?range ~bucket ~key ~data () =
       let headers =
         let r_opt = function
           | Some r -> (string_of_int r)
@@ -306,45 +304,45 @@ module Make(Io : Types.Io) = struct
         | None -> []
       in
       let path = sprintf "/%s/%s" bucket key in
-      let cmd ?region () =
-        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~sink:data ~headers ~meth:`GET ~path ~query:[] ()
+      let cmd () =
+        Aws.make_request ~endpoint ?credentials ~sink:data ~headers ~meth:`GET ~path ~query:[] ()
       in
-      do_command ?region cmd >>=? fun (_headers) ->
+      do_command ~endpoint cmd >>=? fun (_headers) ->
       Deferred.return (Ok ())
 
-    let put ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~data ~chunk_size ~length () =
+    let put ?credentials ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~data ~chunk_size ~length () =
       let body = Body.Chunked { length; chunk_size; pipe=data } in
-      put_common ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body ()
+      put_common ~endpoint ?credentials ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body ()
   end
   (* End streaming module *)
 
-  let put ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~data () =
+  let put ?credentials ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~data () =
     let body = Body.String data in
-    put_common ?scheme ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body ()
+    put_common ?credentials ?content_type ?content_encoding ?acl ?cache_control ?expect ~endpoint ~bucket ~key ~body ()
 
-  let get ?scheme ?credentials ?region ?range ~bucket ~key () =
+  let get ?credentials ~endpoint ?range ~bucket ~key () =
     let body, data = string_sink () in
-    Stream.get ?scheme ?credentials ?region ?range ~bucket ~key ~data () >>=? fun () ->
+    Stream.get ?credentials ?range ~endpoint ~bucket ~key ~data () >>=? fun () ->
     body >>= fun body ->
     Deferred.return (Ok body)
 
-  let delete ?(scheme=`Http) ?credentials ?region ~bucket ~key () =
+  let delete ?credentials ~endpoint ~bucket ~key () =
     let path = sprintf "/%s/%s" bucket key in
     let sink = Body.null () in
-    let cmd ?region () =
-      Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query:[] ~sink ()
+    let cmd () =
+      Aws.make_request ?credentials ~endpoint ~headers:[] ~meth:`DELETE ~path ~query:[] ~sink ()
     in
-    do_command ?region cmd >>=? fun _headers ->
+    do_command ~endpoint cmd >>=? fun _headers ->
     Deferred.return (Ok ())
 
 
-  let head ?(scheme=`Http) ?credentials ?region ~bucket ~key () =
+  let head ?credentials ~endpoint ~bucket ~key () =
     let path = sprintf "/%s/%s" bucket key in
     let sink = Body.null () in
-    let cmd ?region () =
-      Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`HEAD ~path ~query:[] ~sink ()
+    let cmd () =
+      Aws.make_request ?credentials ~endpoint ~headers:[] ~meth:`HEAD ~path ~query:[] ~sink ()
     in
-    do_command ?region cmd >>=? fun headers ->
+    do_command ~endpoint cmd >>=? fun headers ->
     let result =
       let (>>=) a f = match a with
         | Some x -> f x
@@ -366,7 +364,7 @@ module Make(Io : Types.Io) = struct
     | Some r -> Deferred.return (Ok r)
     | None -> Deferred.return (Error (Unknown (1, "Result did not return correct headers")))
 
-  let delete_multi ?(scheme=`Http) ?credentials ?region ~bucket ~objects () =
+  let delete_multi ?credentials ~endpoint ~bucket ~objects () =
     match objects with
     | [] -> Delete_multi.{
         delete_marker = false;
@@ -385,18 +383,18 @@ module Make(Io : Types.Io) = struct
       in
       let headers = [ "Content-MD5", B64.encode (Caml.Digest.string request) ] in
       let body, sink = string_sink () in
-      let cmd ?region () =
-        Aws.make_request ~domain:!domain ~scheme
-          ~body:(Body.String request) ?credentials ?region ~headers
+      let cmd () =
+        Aws.make_request ~endpoint
+          ~body:(Body.String request) ?credentials ~headers
           ~meth:`POST ~query:["delete", ""] ~path:("/" ^ bucket) ~sink ()
       in
-      do_command ?region cmd >>=? fun _headers ->
+      do_command ~endpoint cmd >>=? fun _headers ->
       body >>= fun body ->
       let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
       Deferred.return (Ok result)
 
   (** List contents of bucket in s3. *)
-  let rec ls ?(scheme=`Http) ?credentials ?region ?start_after ?continuation_token ?prefix ?max_keys ~bucket () =
+  let rec ls ?credentials ~endpoint ?start_after ?continuation_token ?prefix ?max_keys ~bucket () =
     let max_keys = match max_keys with
       | Some n when n > 1000 -> None
       | n -> n
@@ -409,15 +407,15 @@ module Make(Io : Types.Io) = struct
                 ] |> filter_map ~f:(fun x -> x)
     in
     let body, sink = string_sink () in
-    let cmd ?region () =
-      Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`GET ~path:("/" ^ bucket) ~query ~sink ()
+    let cmd () =
+      Aws.make_request ?credentials ~endpoint ~headers:[] ~meth:`GET ~path:("/" ^ bucket) ~query ~sink ()
     in
-    do_command ?region cmd >>=? fun _headers ->
+    do_command ~endpoint cmd >>=? fun _headers ->
     body >>= fun body ->
     let result = Ls.result_of_xml_light (Xml.parse_string body) in
     let continuation = match Ls.(result.next_continuation_token) with
       | Some ct ->
-        Ls.More (ls ~scheme ?credentials ?region ?start_after:None ~continuation_token:ct ?prefix ~bucket)
+        Ls.More (ls ?credentials ?start_after:None ~continuation_token:ct ?prefix ~endpoint ~bucket)
       | None -> Ls.Done
     in
     Deferred.return (Ok (Ls.(result.contents, continuation)))
@@ -431,7 +429,7 @@ module Make(Io : Types.Io) = struct
              }
 
     (** Initiate a multipart upload *)
-    let init ?(scheme=`Http) ?credentials ?region ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key  () =
+    let init ?credentials ~endpoint ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key  () =
       let path = sprintf "/%s/%s" bucket key in
       let query = ["uploads", ""] in
       let headers =
@@ -441,10 +439,10 @@ module Make(Io : Types.Io) = struct
         filter_map ~f:(fun x -> x) [ content_type; content_encoding; cache_control; acl ]
       in
       let body, sink = string_sink () in
-      let cmd ?region () =
-        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers ~meth:`POST ~path ~query ~sink ()
+      let cmd () =
+        Aws.make_request ?credentials ~endpoint ~headers ~meth:`POST ~path ~query ~sink ()
       in
-      do_command ?region cmd >>=? fun _headers ->
+      do_command ~endpoint cmd >>=? fun _headers ->
       body >>= fun body ->
       let resp = Multipart.Initiate.of_xml_light (Xml.parse_string body) in
       Ok { id = resp.Multipart.Initiate.upload_id;
@@ -459,18 +457,18 @@ module Make(Io : Types.Io) = struct
         [part_number] specifies the part numer. Parts will be assembled in order, but
         does not have to be consecutive
     *)
-    let upload_part ?(scheme=`Http) ?credentials ?region t ~part_number ?expect ~data () =
+    let upload_part ?credentials ~endpoint t ~part_number ?expect ~data () =
       let path = sprintf "/%s/%s" t.bucket t.key in
       let query =
         [ "partNumber", string_of_int part_number;
           "uploadId", t.id ]
       in
       let sink = Body.null () in
-      let cmd ?region () =
-        Aws.make_request ~domain:!domain ~scheme ?expect ?credentials ?region ~headers:[] ~meth:`PUT ~path
+      let cmd () =
+        Aws.make_request ?expect ?credentials ~endpoint ~headers:[] ~meth:`PUT ~path
           ~body:(Body.String data) ~query ~sink ()
       in
-      do_command ?region cmd >>=? fun headers ->
+      do_command ~endpoint cmd >>=? fun headers ->
       let etag =
         Headers.find_opt "etag" headers
         |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
@@ -482,7 +480,7 @@ module Make(Io : Types.Io) = struct
     (** Specify a part to be a file on s3.
         [range] can be used to only include a part of the s3 file
     *)
-    let copy_part ?(scheme=`Http) ?credentials ?region t ~part_number ?range ~bucket ~key () =
+    let copy_part ?credentials ~endpoint t ~part_number ?range ~bucket ~key () =
       let path = sprintf "/%s/%s" t.bucket t.key in
       let query =
         [ "partNumber", string_of_int part_number;
@@ -494,11 +492,11 @@ module Make(Io : Types.Io) = struct
             [ "x-amz-copy-source-range", sprintf "bytes=%d-%d" first last ]) range
       in
       let body, sink = string_sink () in
-      let cmd ?region () =
-        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers ~meth:`PUT ~path ~query ~sink ()
+      let cmd () =
+        Aws.make_request ?credentials ~endpoint ~headers ~meth:`PUT ~path ~query ~sink ()
       in
 
-      do_command ?region cmd >>=? fun _headers ->
+      do_command ~endpoint cmd >>=? fun _headers ->
       body >>= fun body ->
       let xml = Xml.parse_string body in
       match Multipart.Copy.of_xml_light xml with
@@ -509,7 +507,7 @@ module Make(Io : Types.Io) = struct
     (** Complete the multipart upload.
         The returned etag is a opaque identifier (not md5)
     *)
-    let complete ?(scheme=`Http) ?credentials ?region t () =
+    let complete ?credentials ~endpoint t () =
       let path = sprintf "/%s/%s" t.bucket t.key in
       let query = [ "uploadId", t.id ] in
       let request =
@@ -519,10 +517,10 @@ module Make(Io : Types.Io) = struct
         |> Xml.to_string_fmt
       in
       let body, sink = string_sink () in
-      let cmd ?region () =
-        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`POST ~path ~query ~body:(Body.String request) ~sink ()
+      let cmd () =
+        Aws.make_request ?credentials ~endpoint ~headers:[] ~meth:`POST ~path ~query ~body:(Body.String request) ~sink ()
       in
-      do_command ?region cmd >>=? fun _headers ->
+      do_command ~endpoint cmd >>=? fun _headers ->
       body >>= fun body ->
       let xml = Xml.parse_string body in
       match Multipart.Complete.response_of_xml_light xml with
@@ -534,18 +532,18 @@ module Make(Io : Types.Io) = struct
 
 
     (** Abort a multipart upload, deleting all specified parts *)
-    let abort ?(scheme=`Http) ?credentials ?region t () =
+    let abort ?credentials ~endpoint t () =
       let path = sprintf "/%s/%s" t.bucket t.key in
       let query = [ "uploadId", t.id ] in
       let sink = Body.null () in
-      let cmd ?region () =
-        Aws.make_request ~domain:!domain ~scheme ?credentials ?region ~headers:[] ~meth:`DELETE ~path ~query ~sink ()
+      let cmd () =
+        Aws.make_request ?credentials ~endpoint ~headers:[] ~meth:`DELETE ~path ~query ~sink ()
       in
-      do_command ?region cmd >>=? fun _headers ->
+      do_command ~endpoint cmd >>=? fun _headers ->
       Deferred.return (Ok ())
 
     module Stream = struct
-      let upload_part ?(scheme=`Http) ?credentials ?region t ~part_number ?expect ~data ~length ~chunk_size () =
+      let upload_part ?credentials ~endpoint t ~part_number ?expect ~data ~length ~chunk_size () =
         let path = sprintf "/%s/%s" t.bucket t.key in
         let query =
           [ "partNumber", string_of_int part_number;
@@ -553,12 +551,12 @@ module Make(Io : Types.Io) = struct
         in
         let body = Body.Chunked { length; chunk_size; pipe=data } in
         let sink = Body.null () in
-        let cmd ?region () =
-          Aws.make_request ~domain:!domain ?expect ~scheme ?credentials ?region ~headers:[] ~meth:`PUT ~path
+        let cmd () =
+          Aws.make_request ?expect ?credentials ~endpoint ~headers:[] ~meth:`PUT ~path
             ~body ~query ~sink ()
         in
 
-        do_command ?region cmd >>=? fun headers ->
+        do_command ~endpoint cmd >>=? fun headers ->
         let etag =
           Headers.find_opt "etag" headers
           |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
@@ -570,28 +568,28 @@ module Make(Io : Types.Io) = struct
 
   end
 
-  let retry ?region ~retries ~f () =
+  let retry ~endpoint ~retries ~f () =
     let delay n =
       let jitter = Random.float 0.5 +. 0.5 in
       let backoff = 2.0 ** (float n) in
       (min 60.0 backoff) *. jitter
       in
-    let rec inner ?region ~retry_count ~redirected () =
-      f ?region () >>= function
+    let rec inner ~endpoint ~retry_count ~redirected () =
+      f ~endpoint () >>= function
       | Error (Redirect _) as e when redirected ->
         Deferred.return e
-      | Error (Redirect region) ->
-        inner ~region ~retry_count ~redirected:true ()
+      | Error (Redirect endpoint) ->
+        inner ~endpoint ~retry_count ~redirected:true ()
       | Error _ as e when retry_count = retries ->
         Deferred.return e
       | Error (Throttled) ->
         Deferred.after (delay (retry_count + 1)) >>= fun () ->
-        inner ?region ~retry_count:(retry_count + 1) ~redirected ()
+        inner ~endpoint ~retry_count:(retry_count + 1) ~redirected ()
       | Error _ ->
-        inner ?region ~retry_count:(retry_count + 1) ~redirected ()
+        inner ~endpoint ~retry_count:(retry_count + 1) ~redirected ()
       | Ok r -> Deferred.return (Ok r)
     in
-    inner ?region ~retry_count:0 ~redirected:false ()
+    inner ~endpoint ~retry_count:0 ~redirected:false ()
 end
 
 let%test _ =

@@ -20,7 +20,7 @@ module Make(Io : Types.Io) : sig
   open Io
 
   type error =
-    | Redirect of Region.t
+    | Redirect of Region.endpoint
     | Throttled
     | Unknown of int * string
     | Failed of exn
@@ -37,7 +37,7 @@ module Make(Io : Types.Io) : sig
   }
 
   type nonrec 'a result = ('a, error) result Deferred.t
-  type 'a command = ?scheme:[`Http|`Https] -> ?credentials:Credentials.t -> ?region:Region.t -> 'a
+  type 'a command = ?credentials:Credentials.t -> endpoint:Region.endpoint -> 'a
 
   module Ls : sig
     type t = (content list * cont) result
@@ -61,13 +61,6 @@ module Make(Io : Types.Io) : sig
   end
 
   type range = { first: int option; last:int option }
-
-  (** Globally switch between IPv4 or IPv6 connections.
-      This will affect all following operations on buckets/objects.
-      Defaut is to use IPv4, but may change in the future.
-      Unix domain sockets are not supported.
-  *)
-  val set_connection_type: Unix.socket_domain -> unit
 
   (** Upload [data] to [bucket]/[key].
       Returns the etag of the object. The etag is the md5 checksum (RFC 1864)
@@ -245,6 +238,6 @@ module Make(Io : Types.Io) : sig
   (** Helper function to handle error codes.
       The function handle redirects and throttling.
   *)
-  val retry : ?region:Region.t -> retries:int ->
-    f:(?region:Region.t -> unit -> 'a result) -> unit -> 'a result
+  val retry : endpoint:Region.endpoint -> retries:int ->
+    f:(endpoint:Region.endpoint -> unit -> 'a result) -> unit -> 'a result
 end
