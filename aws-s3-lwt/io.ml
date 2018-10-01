@@ -166,7 +166,7 @@ module Net = struct
     let addr = Ipaddr_unix.of_inet_addr addr in
     let endp = match scheme with
       | `Http -> `TCP (`IP addr, `Port 80)
-      | `Https -> `OpenSSL (`Hostname host, `IP addr, `Port 443)
+      | `Https -> `TLS (`Hostname host, `IP addr, `Port 443)
     in
     Conduit_lwt_unix.connect
       ~ctx:Conduit_lwt_unix.default_ctx endp >>= fun (_flow, ic, oc) ->
