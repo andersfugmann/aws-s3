@@ -75,12 +75,17 @@ module Net = struct
       Deferred.Or_error.return addr
     | _ -> Deferred.Or_error.fail (failwith ("Failed to resolve host: " ^ host))
 
-  let connect ~domain ~host ~scheme =
+  let connect ~inet ~host ~port ~scheme =
+    let domain : Async_unix.Unix.socket_domain =
+      match inet with
+      | `V4 -> PF_INET
+      | `V6 -> PF_INET6
+    in
     lookup ~domain host >>=? fun addr ->
     let ip_addr = Ipaddr_unix.of_inet_addr addr in
     let endp = match scheme with
-      | `Http -> `TCP (ip_addr, 80)
-      | `Https -> `OpenSSL (host, ip_addr, 443)
+      | `Http -> `TCP (ip_addr, port)
+      | `Https -> `OpenSSL (host, ip_addr, port)
     in
     Conduit_async.connect endp >>= fun (ic, oc) ->
     let reader = Reader.pipe ic in

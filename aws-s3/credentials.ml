@@ -26,15 +26,17 @@ module Make(Io : Types.Io) = struct
   open Deferred
 
   module Iam = struct
-    let instance_data_host = "instance-data.ec2.internal"
+    let instance_data_endpoint =
+      let instance_data_host = "instance-data.ec2.internal" in
+      let instance_region = Region.Other instance_data_host in
+      Region.endpoint ~inet:`V4 ~scheme:`Http instance_region
     let get_role () =
       let path = "/latest/meta-data/iam/security-credentials/" in
-      let host = instance_data_host in
       let body, sink =
         let reader, writer = Pipe.create () in
         Body.to_string reader, writer
       in
-      Http.call ~scheme:`Http ~path ~host ~sink ~headers:Headers.empty `GET >>=? fun (status, message, _headers, error_body) ->
+      Http.call ~endpoint:instance_data_endpoint ~path ~sink ~headers:Headers.empty `GET >>=? fun (status, message, _headers, error_body) ->
       match status with
       | code when code >= 200 && code < 300 ->
         body >>= fun body ->
@@ -45,12 +47,11 @@ module Make(Io : Types.Io) = struct
 
     let get_credentials role =
       let path = sprintf "/latest/meta-data/iam/security-credentials/%s" role in
-      let host = instance_data_host in
       let body, sink =
         let reader, writer = Pipe.create () in
         Body.to_string reader, writer
       in
-      Http.call ~scheme:`Http ~path ~host ~sink ~headers:Headers.empty `GET >>=? fun (status, message, _headers, error_body) ->
+      Http.call ~endpoint:instance_data_endpoint ~path ~sink ~headers:Headers.empty `GET >>=? fun (status, message, _headers, error_body) ->
       match status with
       | code when code >= 200 && code < 300 ->
         body >>= fun body ->
