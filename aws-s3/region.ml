@@ -1,26 +1,33 @@
 open !StdLabels
 let sprintf = Printf.sprintf
 
+type vendor = {
+  region_name: string;
+  host: string;
+  port: int;
+}
+
 type t =
- | Ap_northeast_1  (* Asia Pacific (Tokyo) *)
- | Ap_northeast_2  (* Asia Pacific (Seoul) *)
- | Ap_northeast_3  (* Asia Pacific (Osaka-Local) *)
- | Ap_southeast_1  (* Asia Pacific (Singapore) *)
- | Ap_southeast_2  (* Asia Pacific (Sydney) *)
- | Ap_south_1      (* Asia Pacific (Mumbai) *)
- | Eu_central_1    (* EU (Frankfurt) *)
- | Cn_northwest_1  (* China (Ningxia)        *)
- | Cn_north_1      (* China (Beijing)        *)
- | Eu_west_1       (* EU (Ireland)   *)
- | Eu_west_2       (* EU (London)    *)
- | Eu_west_3       (* EU (Paris)     *)
- | Sa_east_1       (* South America (São Paulo)      *)
- | Us_east_1       (* US East (N. Virginia) *)
- | Us_east_2       (* US East (Ohio) *)
- | Us_west_1       (* US West (N. California) *)
- | Us_west_2       (* US West (Oregon) *)
- | Ca_central_1    (* Canada - central *)
- | Other of string (* Other unknown *)
+ | Ap_northeast_1   (* Asia Pacific (Tokyo) *)
+ | Ap_northeast_2   (* Asia Pacific (Seoul) *)
+ | Ap_northeast_3   (* Asia Pacific (Osaka-Local) *)
+ | Ap_southeast_1   (* Asia Pacific (Singapore) *)
+ | Ap_southeast_2   (* Asia Pacific (Sydney) *)
+ | Ap_south_1       (* Asia Pacific (Mumbai) *)
+ | Eu_central_1     (* EU (Frankfurt) *)
+ | Cn_northwest_1   (* China (Ningxia)        *)
+ | Cn_north_1       (* China (Beijing)        *)
+ | Eu_west_1        (* EU (Ireland)   *)
+ | Eu_west_2        (* EU (London)    *)
+ | Eu_west_3        (* EU (Paris)     *)
+ | Sa_east_1        (* South America (São Paulo)      *)
+ | Us_east_1        (* US East (N. Virginia) *)
+ | Us_east_2        (* US East (Ohio) *)
+ | Us_west_1        (* US West (N. California) *)
+ | Us_west_2        (* US West (Oregon) *)
+ | Ca_central_1     (* Canada - central *)
+ | Other of string  (* Other unknown *)
+ | Vendor of vendor (* S3-compatible vendor/service *)
 
 let to_string = function
   | Ap_northeast_1 -> "ap-northeast-1"
@@ -42,6 +49,7 @@ let to_string = function
   | Us_west_2      -> "us-west-2"
   | Ca_central_1   -> "ca-central-1"
   | Other s        -> s
+  | Vendor v       -> v.region_name
 
 let of_string = function
   | "ap-northeast-1" -> Ap_northeast_1
@@ -64,6 +72,20 @@ let of_string = function
   | "ca-central-1"   -> Ca_central_1
   | s                -> failwith ("Unknown region: " ^ s)
 
+let vendor ~region_name ~host ~port =
+  Vendor { region_name; host; port }
+
+let minio ~host ~port =
+  vendor ~region_name:(to_string Us_east_1) ~host ~port
+
+type endpoint = {
+  inet: [`V4 | `V6];
+  scheme: [`Http | `Https];
+  host: string;
+  port: int;
+  region: t;
+}
+
 
 let of_host host =
   match String.split_on_char ~sep:'.' host |> List.rev with
@@ -80,9 +102,33 @@ let of_host host =
     host |> of_string
   | _ -> failwith "Cannot parse region from host"
 
-let to_host ?(dualstack=false) region =
-  let dualstack = match dualstack with
-    | true -> ".dualstack"
-    | false -> ""
+let to_host ~dualstack region =
+  match region with
+  | Vendor v -> v.host
+  | _ ->
+    let dualstack = match dualstack with
+      | true -> ".dualstack"
+      | false -> ""
+    in
+    to_string region |> sprintf "s3%s.%s.amazonaws.com" dualstack
+
+let to_port region =
+  match region with
+  | Vendor v -> Some v.port
+  | _ -> None
+
+let endpoint ~inet ~scheme region =
+  let port =
+    match to_port region with
+    | Some p -> p
+    | None ->
+      match scheme with
+      | `Http -> 80
+      | `Https -> 443
   in
-  to_string region |> sprintf "s3%s.%s.amazonaws.com" dualstack
+  let dualstack =
+    match inet with
+    | `V4 -> false
+    | `V6 -> true
+  in
+  { inet; scheme; host = to_host ~dualstack region; port; region }

@@ -1,3 +1,5 @@
+type vendor
+
 type t =
   | Ap_northeast_1
   | Ap_northeast_2
@@ -18,8 +20,23 @@ type t =
   | Us_west_2
   | Ca_central_1
   | Other of string
+  | Vendor of vendor
+
+val vendor : region_name:string -> host:string -> port:int -> t
+
+val minio : host:string -> port:int -> t
+
+type endpoint = {
+  inet: [`V4 | `V6];
+  scheme: [`Http | `Https];
+  host: string;
+  port: int;
+  region: t;
+}
+
+val endpoint :
+  inet:[`V4 | `V6] -> scheme:[`Http | `Https] -> t -> endpoint
 
 val to_string : t -> string
 val of_string : string -> t
 val of_host : string -> t
-val to_host : ?dualstack:bool -> t -> string

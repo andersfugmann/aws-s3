@@ -161,20 +161,26 @@ module Net = struct
     | {ai_addr=ADDR_INET (addr, _);_} :: _ -> Deferred.Or_error.return addr
     | _ -> Deferred.Or_error.fail (failwith ("Failed to resolve host: " ^ host))
 
-  let connect ~domain ~host ~scheme =
+  let connect ~inet ~host ~port ~scheme =
+    let domain : Lwt_unix.socket_domain =
+      match inet with
+      | `V4 -> PF_INET
+      | `V6 -> PF_INET6
+    in
     lookup ~domain host >>=? fun addr ->
     let addr = Ipaddr_unix.of_inet_addr addr in
     let endp = match scheme with
-      | `Http -> `TCP (`IP addr, `Port 80)
-      | `Https -> `OpenSSL (`Hostname host, `IP addr, `Port 443)
+      | `Http -> `TCP (`IP addr, `Port port)
+      | `Https -> `TLS (`Hostname host, `IP addr, `Port port)
     in
     Conduit_lwt_unix.connect
       ~ctx:Conduit_lwt_unix.default_ctx endp >>= fun (_flow, ic, oc) ->
 
     (*  Lwt_io.input_channel *)
     let reader, input = Pipe.create () in
+    let buffer_size = Lwt_io.buffer_size ic in
     let rec read () =
-      Lwt_result.catch (Lwt_io.read ~count:(128 * 1024) ic) >>= fun data ->
+      Lwt_result.catch (Lwt_io.read ~count:buffer_size ic) >>= fun data ->
       match input.Pipe.closed, data with
       | _, Ok ""
       | _, Error _ ->
