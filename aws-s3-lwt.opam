@@ -13,7 +13,7 @@ build: [
 depends: [
   "ocaml" {>= "4.04.0"}
   "dune" {build}
-  "aws-s3" {= "4.1.0"}
+  "aws-s3" {= "4.2.0" }
   "lwt"
   "conduit-lwt-unix"
 ]
