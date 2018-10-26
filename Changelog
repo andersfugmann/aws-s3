@@ -2,6 +2,12 @@
 
 [ ] Support bigstring (zero copy)
 
+4.2.0:
+[x]: Opdate opam files to opam 2.0
+[x]: Depend on digestif 0.7 [hcarty]
+[x]: Add support for 3rd party s3 compatible providers [hcarty]
+[x]: Support ocaml-tls [hcarty]
+
 4.1.0: Released 2018-08-27
 [x]: Add start_after argument to ls
 [x]: Extend cli to accpet max_keys > 1000 and a start_after option for ls
