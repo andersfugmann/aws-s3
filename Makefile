@@ -33,8 +33,8 @@ update-version:
 	@sed -i 's/"\(aws-s3[-a-z]*\)"[ ]*{ = .* }/"\1" { = "$(VERSION)" }/' *.opam
 
 release: VERSION=$(shell cat Changelog | grep -E '^[0-9]' | head -n 1 | cut -f1 -d':')
-release:
-	@./release.sh $(VERSION)
+release: update-version
+	opam publish
 
 doc:
 	dune build @doc
