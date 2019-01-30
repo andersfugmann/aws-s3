@@ -103,6 +103,50 @@ let make_auth_header ~credentials ~scope ~signed_headers ~signature =
     signed_headers
     signature
 
+let make_presigned_url ?(scheme="https") ~credentials ~date ~region ~path ~bucket ~verb ~duration () =
+  let service = "s3" in
+  let ((y, m, d), ((h, mi, s), _)) = Ptime.to_date_time date in
+  let date = sprintf "%02d%02d%02d" y m d in
+  let time = sprintf "%02d%02d%02d" h mi s in
+  let host = sprintf "%s.s3.amazonaws.com" bucket in
+  let duration = string_of_int duration in
+  let region = Region.to_string region in
+  let headers =
+      [ ("Host", host);
+      ]
+      |> List.fold_left ~f:(fun acc (key, value) -> Headers.add ~key ~value acc) ~init:Headers.empty
+  in
+  let query = [
+        ("X-Amz-Algorithm", "AWS4-HMAC-SHA256");
+        ("X-Amz-Credential", sprintf "%s/%s/%s/s3/aws4_request" credentials.Credentials.access_key date region);
+        ("X-Amz-Date", sprintf "%sT%sZ" date time);
+        ("X-Amz-Expires", duration);
+        ("X-Amz-SignedHeaders", "host");
+      ] in
+  let scope = make_scope ~date ~region ~service in
+  let signing_key = make_signing_key ~date ~region ~service ~credentials () in
+  let signature, _signed_headers =
+    make_signature ~date ~time ~verb ~path ~headers ~query ~signing_key ~scope ~payload_sha:"UNSIGNED-PAYLOAD"
+  in
+  let base_uri = Uri.make ~scheme ~host ~path () in
+  List.fold_left ~f:Uri.add_query_param'~init:base_uri (List.append query [("X-Amz-Signature", signature)] |> List.rev)
+
+let%test "presigned_url" =
+  let credentials = Credentials.make
+      ~access_key:"AKIAIOSFODNN7EXAMPLE"
+      ~secret_key:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+      ()
+  in
+  let date = match Ptime.of_date (2013, 5, 24) with Some x -> x | _ -> Ptime.epoch in
+  let region = Region.of_string "us-east-1" in
+  let path = "/test.txt" in
+  let bucket = "examplebucket" in
+  let verb = "GET" in
+  let duration = 86400 in
+  let expected = "https://examplebucket.s3.amazonaws.com/test.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request&X-Amz-Date=20130524T000000Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host&X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404" in
+  let actual = make_presigned_url ~credentials ~date ~region ~path ~bucket ~verb ~duration () |> Uri.to_string in
+  expected = actual
+
 let%test "signing key" =
   let credentials = Credentials.make
       ~access_key:"AKIAIOSFODNN7EXAMPLE"

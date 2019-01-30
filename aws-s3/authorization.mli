@@ -47,4 +47,16 @@ val chunk_signature:
   scope:string ->
   previous_signature:string ->
   sha:Digestif.SHA256.t -> Digestif.SHA256.t
+
+val make_presigned_url :
+  ?scheme:string ->
+  credentials:Credentials.t ->
+  date:Ptime.t ->
+  region:Region.t ->
+  path:string ->
+  bucket:string ->
+  verb:string ->
+  duration:int ->
+  unit ->
+  Uri.t
 (**/**)
