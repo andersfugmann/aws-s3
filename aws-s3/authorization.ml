@@ -111,11 +111,7 @@ let make_presigned_url ?(scheme="https") ~credentials ~date ~region ~path ~bucke
   let host = sprintf "%s.s3.amazonaws.com" bucket in
   let duration = string_of_int duration in
   let region = Region.to_string region in
-  let headers =
-      [ ("Host", host);
-      ]
-      |> List.fold_left ~f:(fun acc (key, value) -> Headers.add ~key ~value acc) ~init:Headers.empty
-  in
+  let headers = Headers.singleton "Host" host in
   let query = [
         ("X-Amz-Algorithm", "AWS4-HMAC-SHA256");
         ("X-Amz-Credential", sprintf "%s/%s/%s/s3/aws4_request" credentials.Credentials.access_key date region);
@@ -128,8 +124,11 @@ let make_presigned_url ?(scheme="https") ~credentials ~date ~region ~path ~bucke
   let signature, _signed_headers =
     make_signature ~date ~time ~verb ~path ~headers ~query ~signing_key ~scope ~payload_sha:"UNSIGNED-PAYLOAD"
   in
-  let base_uri = Uri.make ~scheme ~host ~path () in
-  List.fold_left ~f:Uri.add_query_param'~init:base_uri (List.append query [("X-Amz-Signature", signature)] |> List.rev)
+  let query =
+    ("X-Amz-Signature", signature) :: query
+    |> List.map ~f:(fun (k, v) -> (k, [v]))
+  in
+  Uri.make ~scheme ~host ~path ~query ()
 
 let%test "presigned_url" =
   let credentials = Credentials.make
