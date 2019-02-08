@@ -103,9 +103,15 @@ let make_auth_header ~credentials ~scope ~signed_headers ~signature =
     signed_headers
     signature
 
-let make_presigned_url ?(scheme="https") ~credentials ~date ~region ~path ~bucket ~verb ~duration () =
+let make_presigned_url ?(scheme=`Https) ~credentials ~date ~region ~path ~bucket ~verb ~duration () =
   let service = "s3" in
   let ((y, m, d), ((h, mi, s), _)) = Ptime.to_date_time date in
+  let verb = match verb with
+    | `Get -> "GET"
+    | `Put -> "PUT" in
+  let scheme = match scheme with
+    | `Http -> "http"
+    | `Https -> "https" in
   let date = sprintf "%02d%02d%02d" y m d in
   let time = sprintf "%02d%02d%02d" h mi s in
   let host = sprintf "%s.s3.amazonaws.com" bucket in
@@ -140,7 +146,7 @@ let%test "presigned_url" =
   let region = Region.of_string "us-east-1" in
   let path = "/test.txt" in
   let bucket = "examplebucket" in
-  let verb = "GET" in
+  let verb = `Get in
   let duration = 86400 in
   let expected = "https://examplebucket.s3.amazonaws.com/test.txt?X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request&X-Amz-Date=20130524T000000Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host" in
   let actual = make_presigned_url ~credentials ~date ~region ~path ~bucket ~verb ~duration () |> Uri.to_string in
