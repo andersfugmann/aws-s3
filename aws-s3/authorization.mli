@@ -57,7 +57,7 @@ val make_presigned_url :
   region:Region.t ->
   path:string ->
   bucket:string ->
-          verb:[`Get | `Put] ->
+  verb:[`Get | `Put] ->
   duration:int ->
   unit ->
   Uri.t
