@@ -25,7 +25,7 @@ depends: [
   "ppx_protocol_conv_json"
   "cmdliner"
   "ppx_inline_test"
-  "base64"
+  "base64" {> "3.1.0"}
 ]
 synopsis: "Ocaml library for accessing Amazon S3"
 description: """
