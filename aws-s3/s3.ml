@@ -381,7 +381,7 @@ module Make(Io : Types.Io) = struct
         |> Delete_multi.xml_of_request
         |> Xml.to_string
       in
-      let headers = [ "Content-MD5", B64.encode (Caml.Digest.string request) ] in
+      let headers = [ "Content-MD5", Base64.encode_string (Caml.Digest.string request) ] in
       let body, sink = string_sink () in
       let cmd () =
         Aws.make_request ~endpoint
