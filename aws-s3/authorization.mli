@@ -48,3 +48,16 @@ val chunk_signature:
   previous_signature:string ->
   sha:Digestif.SHA256.t -> Digestif.SHA256.t
 (**/**)
+
+  (** This makes a presigned url that can be used to upload or download a file from s3 without any credentials other than those embedded in the url. [verb] should be either the string GET for download or PUT for upload.*)
+val make_presigned_url :
+  ?scheme:[`Http | `Https] ->
+  credentials:Credentials.t ->
+  date:Ptime.t ->
+  region:Region.t ->
+  path:string ->
+  bucket:string ->
+  verb:[`Get | `Put] ->
+  duration:int ->
+  unit ->
+  Uri.t
