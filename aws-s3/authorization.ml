@@ -103,7 +103,7 @@ let make_auth_header ~credentials ~scope ~signed_headers ~signature =
     signed_headers
     signature
 
-let make_presigned_url ?(scheme=`Https) ~credentials ~date ~region ~path ~bucket ~verb ~duration () =
+let make_presigned_url ?(scheme=`Https) ?host ?port ~credentials ~date ~region ~path ~bucket ~verb ~duration () =
   let service = "s3" in
   let ((y, m, d), ((h, mi, s), _)) = Ptime.to_date_time date in
   let verb = match verb with
@@ -114,10 +114,18 @@ let make_presigned_url ?(scheme=`Https) ~credentials ~date ~region ~path ~bucket
     | `Https -> "https" in
   let date = sprintf "%02d%02d%02d" y m d in
   let time = sprintf "%02d%02d%02d" h mi s in
-  let host = sprintf "%s.s3.amazonaws.com" bucket in
+  let (host, path) =
+    match host with
+    | None -> (sprintf "%s.s3.amazonaws.com" bucket, path)
+    | Some h -> (h, sprintf "/%s/%s" bucket path)
+  in
+  let host_header = match port with
+    | None -> host
+    | Some p -> String.concat ~sep:":" [host; string_of_int p]
+  in
   let duration = string_of_int duration in
   let region = Region.to_string region in
-  let headers = Headers.singleton "Host" host in
+  let headers = Headers.singleton "Host" host_header in
   let query = [
         ("X-Amz-Algorithm", "AWS4-HMAC-SHA256");
         ("X-Amz-Credential", sprintf "%s/%s/%s/s3/aws4_request" credentials.Credentials.access_key date region);
@@ -134,7 +142,7 @@ let make_presigned_url ?(scheme=`Https) ~credentials ~date ~region ~path ~bucket
     ("X-Amz-Signature", signature) :: query
     |> List.map ~f:(fun (k, v) -> (k, [v]))
   in
-  Uri.make ~scheme ~host ~path ~query ()
+  Uri.make ~scheme ~host ?port ~path ~query ()
 
 let%test "presigned_url" =
   let credentials = Credentials.make
