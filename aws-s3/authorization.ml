@@ -144,7 +144,7 @@ let make_presigned_url ?(scheme=`Https) ?host ?port ~credentials ~date ~region ~
   in
   Uri.make ~scheme ~host ?port ~path ~query ()
 
-let%test "presigned_url" =
+let%test "presigned_url (aws)" =
   let credentials = Credentials.make
       ~access_key:"AKIAIOSFODNN7EXAMPLE"
       ~secret_key:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
@@ -158,6 +158,22 @@ let%test "presigned_url" =
   let duration = 86400 in
   let expected = "https://examplebucket.s3.amazonaws.com/test.txt?X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request&X-Amz-Date=20130524T000000Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host" in
   let actual = make_presigned_url ~credentials ~date ~region ~path ~bucket ~verb ~duration () |> Uri.to_string in
+  expected = actual
+
+let%test "presigned_url (minio)" =
+  let credentials = Credentials.make
+      ~access_key:"access"
+      ~secret_key:"secretsecret"
+      ()
+  in
+  let date = match Ptime.of_date_time ((2019, 3, 6), ((23, 49, 50), 0)) with Some x -> x | _ -> assert false in
+  let region = Region.Us_east_1 in
+  let path = "dune" in
+  let bucket = "example" in
+  let verb = `Get in
+  let duration = 604800 in
+  let expected = "https://localhost:9000/example/dune?X-Amz-Signature=977ea9a866571ffba77fa1c0d843177bdba8cf004a2f61544cb3fade3f98d434&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=access/20190306/us-east-1/s3/aws4_request&X-Amz-Date=20190306T234950Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host" in
+  let actual = make_presigned_url ~host:"localhost" ~port:9000 ~credentials ~date ~region ~path ~bucket ~verb ~duration () |> Uri.to_string in
   expected = actual
 
 let%test "signing key" =
