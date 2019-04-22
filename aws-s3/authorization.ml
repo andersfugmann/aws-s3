@@ -103,7 +103,7 @@ let make_auth_header ~credentials ~scope ~signed_headers ~signature =
     signed_headers
     signature
 
-let make_presigned_url ?(scheme=`Https) ~credentials ~date ~region ~path ~bucket ~verb ~duration () =
+let make_presigned_url ?(scheme=`Https) ?host ?port ~credentials ~date ~region ~path ~bucket ~verb ~duration () =
   let service = "s3" in
   let ((y, m, d), ((h, mi, s), _)) = Ptime.to_date_time date in
   let verb = match verb with
@@ -114,10 +114,18 @@ let make_presigned_url ?(scheme=`Https) ~credentials ~date ~region ~path ~bucket
     | `Https -> "https" in
   let date = sprintf "%02d%02d%02d" y m d in
   let time = sprintf "%02d%02d%02d" h mi s in
-  let host = sprintf "%s.s3.amazonaws.com" bucket in
+  let (host, path) =
+    match host with
+    | None -> (sprintf "%s.s3.amazonaws.com" bucket, path)
+    | Some h -> (h, sprintf "/%s/%s" bucket path)
+  in
+  let host_header = match port with
+    | None -> host
+    | Some p -> String.concat ~sep:":" [host; string_of_int p]
+  in
   let duration = string_of_int duration in
   let region = Region.to_string region in
-  let headers = Headers.singleton "Host" host in
+  let headers = Headers.singleton "Host" host_header in
   let query = [
         ("X-Amz-Algorithm", "AWS4-HMAC-SHA256");
         ("X-Amz-Credential", sprintf "%s/%s/%s/s3/aws4_request" credentials.Credentials.access_key date region);
@@ -134,9 +142,9 @@ let make_presigned_url ?(scheme=`Https) ~credentials ~date ~region ~path ~bucket
     ("X-Amz-Signature", signature) :: query
     |> List.map ~f:(fun (k, v) -> (k, [v]))
   in
-  Uri.make ~scheme ~host ~path ~query ()
+  Uri.make ~scheme ~host ?port ~path ~query ()
 
-let%test "presigned_url" =
+let%test "presigned_url (aws)" =
   let credentials = Credentials.make
       ~access_key:"AKIAIOSFODNN7EXAMPLE"
       ~secret_key:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
@@ -150,6 +158,22 @@ let%test "presigned_url" =
   let duration = 86400 in
   let expected = "https://examplebucket.s3.amazonaws.com/test.txt?X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request&X-Amz-Date=20130524T000000Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host" in
   let actual = make_presigned_url ~credentials ~date ~region ~path ~bucket ~verb ~duration () |> Uri.to_string in
+  expected = actual
+
+let%test "presigned_url (minio)" =
+  let credentials = Credentials.make
+      ~access_key:"access"
+      ~secret_key:"secretsecret"
+      ()
+  in
+  let date = match Ptime.of_date_time ((2019, 3, 6), ((23, 49, 50), 0)) with Some x -> x | _ -> assert false in
+  let region = Region.Us_east_1 in
+  let path = "dune" in
+  let bucket = "example" in
+  let verb = `Get in
+  let duration = 604800 in
+  let expected = "https://localhost:9000/example/dune?X-Amz-Signature=977ea9a866571ffba77fa1c0d843177bdba8cf004a2f61544cb3fade3f98d434&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=access/20190306/us-east-1/s3/aws4_request&X-Amz-Date=20190306T234950Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host" in
+  let actual = make_presigned_url ~host:"localhost" ~port:9000 ~credentials ~date ~region ~path ~bucket ~verb ~duration () |> Uri.to_string in
   expected = actual
 
 let%test "signing key" =
