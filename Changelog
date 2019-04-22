@@ -4,6 +4,7 @@
 
 4.4.0:
 [x]: Update to newest version of ppx_protocol_conv
+[x]: Support for custom hosts in presigned URLs (@hcarty)
 
 4.3.0:
 [x]: Require Base64 >= 3.1 [Adam Ringwood]
