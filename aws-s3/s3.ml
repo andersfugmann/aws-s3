@@ -50,9 +50,11 @@ let rec filter_map ~f = function
 (* Protocol definitions *)
 module Protocol(P: sig type 'a result end) = struct
   type time = float
-  let time_of_xml_light t =
-    Xml_light.to_string t
-    |> Time.parse_iso8601_string
+  let time_of_xml_light_exn t =
+    try
+      Xml_light.to_string t |> Time.parse_iso8601_string
+    with
+    | _ -> raise Xml_light.(Protocol_error (make_error ~value:t "Not an iso8601 string"))
 
   let unquote s =
     match String.length s with
@@ -62,7 +64,7 @@ module Protocol(P: sig type 'a result end) = struct
     | _ -> s
 
   type etag = string
-  let etag_of_xml_light t =
+  let etag_of_xml_light_exn t =
     Xml_light.to_string t |> unquote
 
   type storage_class =
@@ -131,23 +133,21 @@ module Protocol(P: sig type 'a result end) = struct
       version_id: string option [@key "VersionId"];
       code: string [@key "Code"];
       message : string [@key "Message"];
-    } [@@deriving protocol ~driver:(module Xml_light)]
+    } [@@deriving of_protocol ~driver:(module Xml_light)]
 
     type delete_marker = bool
 
-    let delete_marker_of_xml_light t =
+    let delete_marker_of_xml_light_exn t =
       Xml_light.to_option (Xml_light.to_bool) t
       |> function None -> false
                 | Some x -> x
-
-    let delete_marker_to_xml_light _t = failwith "Not implemented"
 
     type result = {
       delete_marker: delete_marker [@key "DeleteMarker"];
       delete_marker_version_id: string option [@key "DeleteMarkerVersionId"];
       deleted: objekt list [@key "Deleted"];
       error: error list  [@key "Error"];
-    } [@@deriving protocol ~driver:(module Xml_light)]
+    } [@@deriving of_protocol ~driver:(module Xml_light)]
 
   end
 
@@ -241,7 +241,7 @@ module Make(Io : Types.Io) = struct
     | c when 400 <= c && c < 500 -> begin
         let open Error_response in
         let xml = Xml.parse_string body in
-        match Error_response.of_xml_light xml with
+        match Error_response.of_xml_light_exn xml with
         | { code = "PermanentRedirect"; endpoint = Some host; _ }
         | { code = "TemporaryRedirect"; endpoint = Some host; _ } ->
           let region = Region.of_host host in
@@ -256,7 +256,7 @@ module Make(Io : Types.Io) = struct
       (* 500, InternalError | 503, SlowDown | 503, ServiceUnavailable -> Throttle *)
       Deferred.return (Error Throttled)
     | code ->
-      let resp = Error_response.of_xml_light (Xml.parse_string body) in
+      let resp = Error_response.of_xml_light_exn (Xml.parse_string body) in
       Deferred.return (Error (Unknown (code, resp.code)))
 
   let put_common ?credentials ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body () =
@@ -356,7 +356,7 @@ module Make(Io : Types.Io) = struct
       let storage_class =
         Headers.find_opt "x-amz-storage-class" headers
         |> Option.value_map ~default:Standard ~f:(fun s ->
-            storage_class_of_xml_light (Xml.Element ("p", [], [Xml.PCData s])))
+            storage_class_of_xml_light_exn (Xml.Element ("p", [], [Xml.PCData s])))
       in
       Some { storage_class; size; last_modified; key; etag = unquote etag}
     in
@@ -390,7 +390,7 @@ module Make(Io : Types.Io) = struct
       in
       do_command ~endpoint cmd >>=? fun _headers ->
       body >>= fun body ->
-      let result = Delete_multi.result_of_xml_light (Xml.parse_string body) in
+      let result = Delete_multi.result_of_xml_light_exn (Xml.parse_string body) in
       Deferred.return (Ok result)
 
   (** List contents of bucket in s3. *)
@@ -412,7 +412,7 @@ module Make(Io : Types.Io) = struct
     in
     do_command ~endpoint cmd >>=? fun _headers ->
     body >>= fun body ->
-    let result = Ls.result_of_xml_light (Xml.parse_string body) in
+    let result = Ls.result_of_xml_light_exn (Xml.parse_string body) in
     let continuation = match Ls.(result.next_continuation_token) with
       | Some ct ->
         Ls.More (ls ?credentials ?start_after:None ~continuation_token:ct ?prefix ~endpoint ~bucket)
@@ -444,7 +444,7 @@ module Make(Io : Types.Io) = struct
       in
       do_command ~endpoint cmd >>=? fun _headers ->
       body >>= fun body ->
-      let resp = Multipart.Initiate.of_xml_light (Xml.parse_string body) in
+      let resp = Multipart.Initiate.of_xml_light_exn (Xml.parse_string body) in
       Ok { id = resp.Multipart.Initiate.upload_id;
            parts = [];
            bucket;
@@ -499,7 +499,7 @@ module Make(Io : Types.Io) = struct
       do_command ~endpoint cmd >>=? fun _headers ->
       body >>= fun body ->
       let xml = Xml.parse_string body in
-      match Multipart.Copy.of_xml_light xml with
+      match Multipart.Copy.of_xml_light_exn xml with
       | { Multipart.Copy.etag; _ } ->
         t.parts <- { etag; part_number } :: t.parts;
         Deferred.return (Ok ())
@@ -523,7 +523,7 @@ module Make(Io : Types.Io) = struct
       do_command ~endpoint cmd >>=? fun _headers ->
       body >>= fun body ->
       let xml = Xml.parse_string body in
-      match Multipart.Complete.response_of_xml_light xml with
+      match Multipart.Complete.response_of_xml_light_exn xml with
       | { location=_; etag; bucket; key } when bucket = t.bucket && key = t.key ->
         Ok etag |> Deferred.return
       | _ ->
@@ -619,7 +619,7 @@ let%test _ =
       |}
     in
     let xml = Xml.parse_string data in
-    let result = Protocol.Ls.result_of_xml_light xml in
+    let result = Protocol.Ls.result_of_xml_light_exn xml in
     2 = (List.length result.Protocol.Ls.contents) &&
     "7538d2bd85ea5dfb689ed65a0f60a7aa" = (List.hd result.Protocol.Ls.contents).Protocol.etag
 
@@ -637,7 +637,7 @@ let%test "parse Error_response.t" =
     |}
   in
   let xml = Xml.parse_string data in
-  let error = Protocol.Error_response.of_xml_light xml in
+  let error = Protocol.Error_response.of_xml_light_exn xml in
   "PermanentRedirect" = error.Protocol.Error_response.code
 
 let%test "parse Delete_multi.result" =
@@ -657,6 +657,6 @@ let%test "parse Delete_multi.result" =
        </DeleteResult>
     |}
   in
-  let error = Protocol.Delete_multi.result_of_xml_light (Xml.parse_string data) in
+  let error = Protocol.Delete_multi.result_of_xml_light_exn (Xml.parse_string data) in
   2 = (List.length error.Protocol.Delete_multi.error) &&
   "InternalError" = (List.hd error.Protocol.Delete_multi.error).Protocol.Delete_multi.code

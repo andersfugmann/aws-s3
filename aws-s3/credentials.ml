@@ -3,11 +3,14 @@ let sprintf = Printf.sprintf
 open Protocol_conv_json
 
 type time = float
-let time_of_json t =
-  Json.to_string t |> Time.parse_iso8601_string
+let time_of_json_exn t =
+  try
+    Json.to_string t |> Time.parse_iso8601_string
+  with
+  | _ -> raise Json.(Protocol_error (make_error ~value:t "Not an iso8601 string"))
 
 let%test "time conv" =
-  time_of_json (`String "2018-08-06T19:26:20Z") = 1533583580.
+  time_of_json_exn (`String "2018-08-06T19:26:20Z") = 1533583580.
 
 type t = {
   access_key: string [@key "AccessKeyId"];
@@ -56,7 +59,7 @@ module Make(Io : Types.Io) = struct
       | code when code >= 200 && code < 300 ->
         body >>= fun body ->
         let json = Yojson.Safe.from_string body in
-        of_json json |> Deferred.Or_error.return
+        Deferred.Or_error.catch (fun () -> of_json_exn json |> Deferred.Or_error.return)
       | _ ->
         let msg = sprintf "Failed to get credentials. %s. Reponse %s" message error_body in
         Deferred.Or_error.fail (Failure msg)
