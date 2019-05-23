@@ -24,6 +24,7 @@ module Make(Io : Types.Io) : sig
     | Throttled
     | Unknown of int * string
     | Failed of exn
+    | Forbidden
     | Not_found
 
   type etag = string

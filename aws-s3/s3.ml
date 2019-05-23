@@ -210,6 +210,7 @@ module Make(Io : Types.Io) = struct
     | Throttled
     | Unknown of int * string
     | Failed of exn
+    | Forbidden
     | Not_found
 
   let string_sink () =
@@ -230,6 +231,7 @@ module Make(Io : Types.Io) = struct
     match code with
     | code when 200 <= code && code < 300 ->
       Deferred.return (Ok headers)
+    | 403 -> Deferred.return (Error Forbidden)
     | 404 -> Deferred.return (Error Not_found)
     | c when 300 <= c && c < 400 ->
       (* Redirect of sorts *)

@@ -74,6 +74,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
     | S3.Throttled -> "Throttled"
     | S3.Unknown (code, msg) -> sprintf "Unknown: %d, %s" code msg
     | S3.Failed exn -> sprintf "Failed: %s" (Printexc.to_string exn)
+    | S3.Forbidden -> "Forbidden"
     | S3.Not_found -> "Not_found"
 
   type cmd =
