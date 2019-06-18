@@ -44,10 +44,10 @@ module Make(Io : Aws_s3.Types.Io) = struct
       match len with
       | 0 -> return ()
       | n when n < chunk_size ->
-        let data = Pervasives.really_input_string ic n in
+        let data = really_input_string ic n in
         Io.Pipe.write writer data
       | n ->
-        let data = Pervasives.really_input_string ic chunk_size in
+        let data = really_input_string ic chunk_size in
         Io.Pipe.write writer data >>= fun () ->
         (* Yield *)
         after 0.0 >>= fun () ->

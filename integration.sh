@@ -57,10 +57,10 @@ function test_complete () {
     RETRIES=$1;shift
     echo "TEST $(basename $BIN)"
 
-    test "redirect upload expect" ${BIN} cp -e --retries=${RETRIES} $FILE s3://${REDIRECT_BUKCET}/test
-    test "redirect head" ${BIN} head --retries=${RETRIES} s3://${REDIRECT_BUKCET}/test
-    test "redirect download" ${BIN} cp --retries=${RETRIES} s3://${REDIRECT_BUKCET}/test ${TEMP}
-    test "redirect data" diff -u $FILE ${TEMP}
+    #test "redirect upload expect" ${BIN} cp -e --retries=${RETRIES} $FILE s3://${REDIRECT_BUKCET}/test
+    #test "redirect head" ${BIN} head --retries=${RETRIES} s3://${REDIRECT_BUKCET}/test
+    #test "redirect download" ${BIN} cp --retries=${RETRIES} s3://${REDIRECT_BUKCET}/test ${TEMP}
+    #test "redirect data" diff -u $FILE ${TEMP}
 
     test "upload expect" ${BIN} cp -e --retries=${RETRIES} $FILE s3://${BUKCET}/test
     test "head" ${BIN} head --retries=${RETRIES} s3://${BUKCET}/test

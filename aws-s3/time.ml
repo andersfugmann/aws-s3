@@ -1,4 +1,4 @@
-open !StdLabels
+open !StdLabels [@@warning "-66"]
 let sprintf = Printf.sprintf
 
 (* Use ptime for time conversions. This is error prone as we fiddle with the environment *)

@@ -1,4 +1,4 @@
-open !StdLabels
+open !StdLabels [@@warning "-66"]
 let sprintf = Printf.sprintf
 open Protocol_conv_json
 
