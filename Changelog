@@ -2,6 +2,9 @@
 
 [ ] Support bigstring (zero copy)
 
+4.4.1:
+[x]: Remove warnings when compiling with 4.08
+
 4.4.0:
 [x]: Update to newest version of ppx_protocol_conv
 [x]: Support for custom hosts in presigned URLs (@hcarty)
