@@ -3,6 +3,7 @@
 [ ] Support bigstring (zero copy)
 
 4.4.1:
+[x]: Aws-s3-async: Fix uncaught error if connection timed out.
 [x]: Remove warnings when compiling with 4.08
 
 4.4.0:

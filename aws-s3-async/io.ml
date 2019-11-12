@@ -87,7 +87,7 @@ module Net = struct
       | `Http -> `TCP (ip_addr, port)
       | `Https -> `OpenSSL (host, ip_addr, port)
     in
-    Conduit_async.connect endp >>= fun (ic, oc) ->
+    Async.try_with (fun () -> Conduit_async.connect endp) >>=? fun (ic, oc) ->
     let reader = Reader.pipe ic in
     don't_wait_for (Async_kernel.Pipe.closed reader >>= fun () ->
                     Reader.close ic >>= fun () ->
