@@ -1,7 +1,6 @@
 opam-version: "2.0"
 maintainer: "Anders Fugmann <anders@fugmann.net>"
 authors: "Anders Fugmann"
-version: "4.4.0"
 license: "BSD-3"
 homepage: "https://github.com/andersfugmann/aws-s3"
 dev-repo: "git+https://github.com/andersfugmann/aws-s3"
@@ -12,8 +11,8 @@ build: [
 ]
 depends: [
   "ocaml" {>= "4.05.0"}
-  "dune" {build}
-  "aws-s3" {= "4.4.0" }
+  "dune"
+  "aws-s3" {= version}
   "lwt"
   "conduit-lwt-unix"
 ]
