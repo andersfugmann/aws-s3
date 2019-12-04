@@ -2,19 +2,22 @@
 
 [ ] Support bigstring (zero copy)
 
-4.4.1:
+4.5.0: Released 2019-12-04
+[x]: Add connection_timeout_ms option to all calls
+
+4.4.1: Released 2019-11-12
 [x]: Aws-s3-async: Fix uncaught error if connection timed out.
 [x]: Remove warnings when compiling with 4.08
 
-4.4.0:
+4.4.0: Released 2019-04-22
 [x]: Update to newest version of ppx_protocol_conv
 [x]: Support for custom hosts in presigned URLs (@hcarty)
 
-4.3.0:
+4.3.0: Released 2019-03-03
 [x]: Require Base64 >= 3.1 [Adam Ringwood]
 [x]: Add support for generating s3 presigned urls [Adam Ringwood]
 
-4.2.0:
+4.2.0: Released 2018-10-26
 [x]: Update opam files to opam 2.0
 [x]: Depend on digestif 0.7 [hcarty]
 [x]: Add support for 3rd party s3 compatible providers [hcarty]
