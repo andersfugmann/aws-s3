@@ -3,6 +3,7 @@ module Make(Io : Types.Io) : sig
   open Io
   val make_request :
     endpoint:Region.endpoint ->
+    ?connect_timeout_ms:int ->
     ?expect:bool ->
     sink:string Io.Pipe.writer ->
     ?body:Body.Make(Io).t ->

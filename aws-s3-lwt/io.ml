@@ -161,7 +161,8 @@ module Net = struct
     | {ai_addr=ADDR_INET (addr, _);_} :: _ -> Deferred.Or_error.return addr
     | _ -> Deferred.Or_error.fail (failwith ("Failed to resolve host: " ^ host))
 
-  let connect ~inet ~host ~port ~scheme =
+  let connect ?connect_timeout_ms ~inet ~host ~port ~scheme =
+    ignore connect_timeout_ms;
     let domain : Lwt_unix.socket_domain =
       match inet with
       | `V4 -> PF_INET
@@ -173,8 +174,13 @@ module Net = struct
       | `Http -> `TCP (`IP addr, `Port port)
       | `Https -> `TLS (`Hostname host, `IP addr, `Port port)
     in
-    Conduit_lwt_unix.connect
-      ~ctx:Conduit_lwt_unix.default_ctx endp >>= fun (_flow, ic, oc) ->
+    let connect () =
+      let f () = Conduit_lwt_unix.connect ~ctx:Conduit_lwt_unix.default_ctx endp in
+      match connect_timeout_ms with
+        | Some ms -> Lwt_unix.with_timeout (float ms /. 1000.) f
+        | None -> f ()
+    in
+    connect () >>= fun (_flow, ic, oc) ->
 
     (*  Lwt_io.input_channel *)
     let reader, input = Pipe.create () in

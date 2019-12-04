@@ -38,7 +38,7 @@ module Make(Io : Types.Io) : sig
   }
 
   type nonrec 'a result = ('a, error) result Deferred.t
-  type 'a command = ?credentials:Credentials.t -> endpoint:Region.endpoint -> 'a
+  type 'a command = ?credentials:Credentials.t -> ?connect_timeout_ms:int -> endpoint:Region.endpoint -> 'a
 
   module Ls : sig
     type t = (content list * cont) result

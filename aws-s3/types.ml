@@ -85,6 +85,7 @@ module type Io = sig
   (**/**)
   module Net : sig
     val connect :
+      ?connect_timeout_ms:int ->
       inet:[ `V4 | `V6 ] ->
       host:string ->
       port:int ->

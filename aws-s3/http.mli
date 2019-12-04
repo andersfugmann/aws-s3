@@ -8,6 +8,7 @@ module Make : functor(Io: Types.Io) -> sig
 
   val call:
     ?expect:bool ->
+    ?connect_timeout_ms:int ->
     endpoint:Region.endpoint ->
     path:string ->
     ?query:(string * string) list ->

@@ -96,7 +96,7 @@ module Make(Io : Types.Io) = struct
     in
     Pipe.create_reader ~f:(transfer initial_signature Digestif.SHA256.empty 0 [] None)
 
-  let make_request ~(endpoint: Region.endpoint) ?(expect=false) ~sink ?(body=Body.Empty) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
+  let make_request ~(endpoint: Region.endpoint) ?connect_timeout_ms ?(expect=false) ~sink ?(body=Body.Empty) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
     let (date, time)  = Unix.gettimeofday () |> Time.iso8601_of_time in
 
     (* Create headers structure *)
@@ -185,6 +185,6 @@ module Make(Io : Types.Io) = struct
       (Headers.add_opt ~key:"Authorization" ~value:auth headers), body
     in
     body >>= fun body ->
-    Http.call ~endpoint ~path ~query ~headers ~expect ~sink ?body meth >>=? fun (code, msg, headers, body) ->
+    Http.call ?connect_timeout_ms ~endpoint ~path ~query ~headers ~expect ~sink ?body meth >>=? fun (code, msg, headers, body) ->
     Deferred.Or_error.return (code, msg, headers, body)
 end

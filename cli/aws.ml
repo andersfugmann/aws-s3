@@ -180,11 +180,11 @@ module Make(Io : Aws_s3.Types.Io) = struct
     let credentials = ok_exn credentials in
     match paths with
     | [ key ] ->
-        S3.retry ~endpoint ~retries ~f:(S3.delete ~credentials ~bucket ~key) ()
+        S3.retry ~endpoint ~retries ~f:(S3.delete ~connect_timeout_ms:5000 ~credentials ~bucket ~key) ()
     | keys ->
       let objects : S3.Delete_multi.objekt list = List.map ~f:(fun key -> { S3.Delete_multi.key; version_id = None }) keys in
       S3.retry ~endpoint ~retries
-        ~f:(S3.delete_multi ~credentials ~bucket ~objects) () >>=? fun _deleted ->
+        ~f:(S3.delete_multi ~connect_timeout_ms:5000 ~credentials ~bucket ~objects) () >>=? fun _deleted ->
       Deferred.return (Ok ())
 
   let head profile endpoint ~retries path =
@@ -192,7 +192,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
     let credentials = ok_exn credentials in
     let { bucket; key } = objekt_of_uri path in
     S3.retry ~endpoint ~retries
-        ~f:(S3.head ~credentials ~bucket ~key) () >>= function
+        ~f:(S3.head ~connect_timeout_ms:5000 ~credentials ~bucket ~key) () >>= function
     | Ok { S3.key; etag; size; _ } ->
       Printf.printf "Key: %s, Size: %d, etag: %s\n"
         key size etag;
@@ -223,7 +223,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
     in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
-    S3.retry ~endpoint ~retries ~f:(S3.ls ?start_after ?continuation_token:None ~credentials ?max_keys ?prefix ~bucket) () >>=? ls_all ?max_keys
+    S3.retry ~endpoint ~retries ~f:(S3.ls ?connect_timeout_ms:None ?start_after ?continuation_token:None ~credentials ?max_keys ?prefix ~bucket) () >>=? ls_all ?max_keys
 
   let exec ({ Cli.profile; https; retries; ipv6; expect }, cmd) =
     let inet = if ipv6 then `V6 else `V4 in

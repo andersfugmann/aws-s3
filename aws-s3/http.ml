@@ -156,13 +156,13 @@ module Make(Io : Types.Io) = struct
     Or_error.return (code, message, headers, error_body)
 
 
-  let call ?(expect=false) ~(endpoint:Region.endpoint) ~path ?(query=[]) ~headers ~sink ?body (meth:meth) =
-    Net.connect ~inet:endpoint.inet ~host:endpoint.host ~port:endpoint.port ~scheme:endpoint.scheme >>=? fun (reader, writer) ->
+  let call ?(expect=false) ?connect_timeout_ms ~(endpoint:Region.endpoint) ~path ?(query=[]) ~headers ~sink ?body (meth:meth) =
+    Net.connect ?connect_timeout_ms ~inet:endpoint.inet ~host:endpoint.host ~port:endpoint.port ~scheme:endpoint.scheme >>=? fun (reader, writer) ->
     (* At this point we need to make sure reader and writer are closed properly. *)
     do_request ~expect ~path ~query ~headers ~sink ?body meth reader writer >>= fun result ->
     (* Close the reader and writer regardless of status *)
-    Pipe.close_reader reader;
     Pipe.close writer;
+    Pipe.close_reader reader;
     Pipe.close sink;
     return result
 end

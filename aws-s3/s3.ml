@@ -222,7 +222,7 @@ module Make(Io : Types.Io) = struct
   type range = { first: int option; last: int option }
 
   type nonrec 'a result = ('a, error) result Deferred.t
-  type 'a command = ?credentials:Credentials.t -> endpoint:Region.endpoint -> 'a
+  type 'a command = ?credentials:Credentials.t -> ?connect_timeout_ms:int -> endpoint:Region.endpoint -> 'a
 
   (**/**)
   let do_command ~(endpoint:Region.endpoint) cmd =
@@ -261,7 +261,7 @@ module Make(Io : Types.Io) = struct
       let resp = Error_response.of_xml_light_exn (Xml.parse_string body) in
       Deferred.return (Error (Unknown (code, resp.code)))
 
-  let put_common ?credentials ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body () =
+  let put_common ?credentials ?connect_timeout_ms ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body () =
     let path = sprintf "/%s/%s" bucket key in
     let headers =
       [ "Content-Type", content_type;
@@ -274,7 +274,7 @@ module Make(Io : Types.Io) = struct
     in
     let sink = Body.null () in
     let cmd () =
-      Aws.make_request ~endpoint ?expect ?credentials ~headers ~meth:`PUT ~path ~sink ~body ~query:[] ()
+      Aws.make_request ~endpoint ?expect ?credentials ?connect_timeout_ms ~headers ~meth:`PUT ~path ~sink ~body ~query:[] ()
     in
 
     do_command ~endpoint cmd >>=? fun headers ->
@@ -289,7 +289,7 @@ module Make(Io : Types.Io) = struct
 
   module Stream = struct
 
-    let get ?credentials ~endpoint ?range ~bucket ~key ~data () =
+    let get ?credentials ?connect_timeout_ms ~endpoint ?range ~bucket ~key ~data () =
       let headers =
         let r_opt = function
           | Some r -> (string_of_int r)
@@ -307,42 +307,42 @@ module Make(Io : Types.Io) = struct
       in
       let path = sprintf "/%s/%s" bucket key in
       let cmd () =
-        Aws.make_request ~endpoint ?credentials ~sink:data ~headers ~meth:`GET ~path ~query:[] ()
+        Aws.make_request ~endpoint ?credentials ?connect_timeout_ms ~sink:data ~headers ~meth:`GET ~path ~query:[] ()
       in
       do_command ~endpoint cmd >>=? fun (_headers) ->
       Deferred.return (Ok ())
 
-    let put ?credentials ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~data ~chunk_size ~length () =
+    let put ?credentials ?connect_timeout_ms ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~data ~chunk_size ~length () =
       let body = Body.Chunked { length; chunk_size; pipe=data } in
-      put_common ~endpoint ?credentials ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body ()
+      put_common ~endpoint ?credentials ?connect_timeout_ms ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body ()
   end
   (* End streaming module *)
 
-  let put ?credentials ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~data () =
+  let put ?credentials ?connect_timeout_ms ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~data () =
     let body = Body.String data in
-    put_common ?credentials ?content_type ?content_encoding ?acl ?cache_control ?expect ~endpoint ~bucket ~key ~body ()
+    put_common ?credentials ?connect_timeout_ms ?content_type ?content_encoding ?acl ?cache_control ?expect ~endpoint ~bucket ~key ~body ()
 
-  let get ?credentials ~endpoint ?range ~bucket ~key () =
+  let get ?credentials ?connect_timeout_ms ~endpoint ?range ~bucket ~key () =
     let body, data = string_sink () in
-    Stream.get ?credentials ?range ~endpoint ~bucket ~key ~data () >>=? fun () ->
+    Stream.get ?credentials ?connect_timeout_ms ?range ~endpoint ~bucket ~key ~data () >>=? fun () ->
     body >>= fun body ->
     Deferred.return (Ok body)
 
-  let delete ?credentials ~endpoint ~bucket ~key () =
+  let delete ?credentials ?connect_timeout_ms ~endpoint ~bucket ~key () =
     let path = sprintf "/%s/%s" bucket key in
     let sink = Body.null () in
     let cmd () =
-      Aws.make_request ?credentials ~endpoint ~headers:[] ~meth:`DELETE ~path ~query:[] ~sink ()
+      Aws.make_request ?credentials ?connect_timeout_ms ~endpoint ~headers:[] ~meth:`DELETE ~path ~query:[] ~sink ()
     in
     do_command ~endpoint cmd >>=? fun _headers ->
     Deferred.return (Ok ())
 
 
-  let head ?credentials ~endpoint ~bucket ~key () =
+  let head ?credentials ?connect_timeout_ms ~endpoint ~bucket ~key () =
     let path = sprintf "/%s/%s" bucket key in
     let sink = Body.null () in
     let cmd () =
-      Aws.make_request ?credentials ~endpoint ~headers:[] ~meth:`HEAD ~path ~query:[] ~sink ()
+      Aws.make_request ?credentials ?connect_timeout_ms ~endpoint ~headers:[] ~meth:`HEAD ~path ~query:[] ~sink ()
     in
     do_command ~endpoint cmd >>=? fun headers ->
     let result =
@@ -366,7 +366,7 @@ module Make(Io : Types.Io) = struct
     | Some r -> Deferred.return (Ok r)
     | None -> Deferred.return (Error (Unknown (1, "Result did not return correct headers")))
 
-  let delete_multi ?credentials ~endpoint ~bucket ~objects () =
+  let delete_multi ?credentials ?connect_timeout_ms ~endpoint ~bucket ~objects () =
     match objects with
     | [] -> Delete_multi.{
         delete_marker = false;
@@ -387,7 +387,7 @@ module Make(Io : Types.Io) = struct
       let body, sink = string_sink () in
       let cmd () =
         Aws.make_request ~endpoint
-          ~body:(Body.String request) ?credentials ~headers
+          ~body:(Body.String request) ?credentials ?connect_timeout_ms ~headers
           ~meth:`POST ~query:["delete", ""] ~path:("/" ^ bucket) ~sink ()
       in
       do_command ~endpoint cmd >>=? fun _headers ->
@@ -396,7 +396,7 @@ module Make(Io : Types.Io) = struct
       Deferred.return (Ok result)
 
   (** List contents of bucket in s3. *)
-  let rec ls ?credentials ~endpoint ?start_after ?continuation_token ?prefix ?max_keys ~bucket () =
+  let rec ls ?credentials ?connect_timeout_ms ~endpoint ?start_after ?continuation_token ?prefix ?max_keys ~bucket () =
     let max_keys = match max_keys with
       | Some n when n > 1000 -> None
       | n -> n
@@ -410,14 +410,14 @@ module Make(Io : Types.Io) = struct
     in
     let body, sink = string_sink () in
     let cmd () =
-      Aws.make_request ?credentials ~endpoint ~headers:[] ~meth:`GET ~path:("/" ^ bucket) ~query ~sink ()
+      Aws.make_request ?credentials ?connect_timeout_ms ~endpoint ~headers:[] ~meth:`GET ~path:("/" ^ bucket) ~query ~sink ()
     in
     do_command ~endpoint cmd >>=? fun _headers ->
     body >>= fun body ->
     let result = Ls.result_of_xml_light_exn (Xml.parse_string body) in
     let continuation = match Ls.(result.next_continuation_token) with
       | Some ct ->
-        Ls.More (ls ?credentials ?start_after:None ~continuation_token:ct ?prefix ~endpoint ~bucket)
+        Ls.More (ls ?credentials ?connect_timeout_ms ?start_after:None ~continuation_token:ct ?prefix ~endpoint ~bucket)
       | None -> Ls.Done
     in
     Deferred.return (Ok (Ls.(result.contents, continuation)))
@@ -431,7 +431,7 @@ module Make(Io : Types.Io) = struct
              }
 
     (** Initiate a multipart upload *)
-    let init ?credentials ~endpoint ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key  () =
+    let init ?credentials ?connect_timeout_ms ~endpoint ?content_type ?content_encoding ?acl ?cache_control ~bucket ~key  () =
       let path = sprintf "/%s/%s" bucket key in
       let query = ["uploads", ""] in
       let headers =
@@ -442,7 +442,7 @@ module Make(Io : Types.Io) = struct
       in
       let body, sink = string_sink () in
       let cmd () =
-        Aws.make_request ?credentials ~endpoint ~headers ~meth:`POST ~path ~query ~sink ()
+        Aws.make_request ?credentials ?connect_timeout_ms ~endpoint ~headers ~meth:`POST ~path ~query ~sink ()
       in
       do_command ~endpoint cmd >>=? fun _headers ->
       body >>= fun body ->
@@ -459,7 +459,7 @@ module Make(Io : Types.Io) = struct
         [part_number] specifies the part numer. Parts will be assembled in order, but
         does not have to be consecutive
     *)
-    let upload_part ?credentials ~endpoint t ~part_number ?expect ~data () =
+    let upload_part ?credentials ?connect_timeout_ms ~endpoint t ~part_number ?expect ~data () =
       let path = sprintf "/%s/%s" t.bucket t.key in
       let query =
         [ "partNumber", string_of_int part_number;
@@ -467,7 +467,7 @@ module Make(Io : Types.Io) = struct
       in
       let sink = Body.null () in
       let cmd () =
-        Aws.make_request ?expect ?credentials ~endpoint ~headers:[] ~meth:`PUT ~path
+        Aws.make_request ?expect ?credentials ?connect_timeout_ms ~endpoint ~headers:[] ~meth:`PUT ~path
           ~body:(Body.String data) ~query ~sink ()
       in
       do_command ~endpoint cmd >>=? fun headers ->
@@ -482,7 +482,7 @@ module Make(Io : Types.Io) = struct
     (** Specify a part to be a file on s3.
         [range] can be used to only include a part of the s3 file
     *)
-    let copy_part ?credentials ~endpoint t ~part_number ?range ~bucket ~key () =
+    let copy_part ?credentials ?connect_timeout_ms ~endpoint t ~part_number ?range ~bucket ~key () =
       let path = sprintf "/%s/%s" t.bucket t.key in
       let query =
         [ "partNumber", string_of_int part_number;
@@ -495,7 +495,7 @@ module Make(Io : Types.Io) = struct
       in
       let body, sink = string_sink () in
       let cmd () =
-        Aws.make_request ?credentials ~endpoint ~headers ~meth:`PUT ~path ~query ~sink ()
+        Aws.make_request ?credentials ?connect_timeout_ms ~endpoint ~headers ~meth:`PUT ~path ~query ~sink ()
       in
 
       do_command ~endpoint cmd >>=? fun _headers ->
@@ -509,7 +509,7 @@ module Make(Io : Types.Io) = struct
     (** Complete the multipart upload.
         The returned etag is a opaque identifier (not md5)
     *)
-    let complete ?credentials ~endpoint t () =
+    let complete ?credentials ?connect_timeout_ms ~endpoint t () =
       let path = sprintf "/%s/%s" t.bucket t.key in
       let query = [ "uploadId", t.id ] in
       let request =
@@ -520,7 +520,7 @@ module Make(Io : Types.Io) = struct
       in
       let body, sink = string_sink () in
       let cmd () =
-        Aws.make_request ?credentials ~endpoint ~headers:[] ~meth:`POST ~path ~query ~body:(Body.String request) ~sink ()
+        Aws.make_request ?credentials ?connect_timeout_ms ~endpoint ~headers:[] ~meth:`POST ~path ~query ~body:(Body.String request) ~sink ()
       in
       do_command ~endpoint cmd >>=? fun _headers ->
       body >>= fun body ->
@@ -534,18 +534,18 @@ module Make(Io : Types.Io) = struct
 
 
     (** Abort a multipart upload, deleting all specified parts *)
-    let abort ?credentials ~endpoint t () =
+    let abort ?credentials ?connect_timeout_ms ~endpoint t () =
       let path = sprintf "/%s/%s" t.bucket t.key in
       let query = [ "uploadId", t.id ] in
       let sink = Body.null () in
       let cmd () =
-        Aws.make_request ?credentials ~endpoint ~headers:[] ~meth:`DELETE ~path ~query ~sink ()
+        Aws.make_request ?credentials ~endpoint ?connect_timeout_ms ~headers:[] ~meth:`DELETE ~path ~query ~sink ()
       in
       do_command ~endpoint cmd >>=? fun _headers ->
       Deferred.return (Ok ())
 
     module Stream = struct
-      let upload_part ?credentials ~endpoint t ~part_number ?expect ~data ~length ~chunk_size () =
+      let upload_part ?credentials ?connect_timeout_ms ~endpoint t ~part_number ?expect ~data ~length ~chunk_size () =
         let path = sprintf "/%s/%s" t.bucket t.key in
         let query =
           [ "partNumber", string_of_int part_number;
@@ -554,7 +554,7 @@ module Make(Io : Types.Io) = struct
         let body = Body.Chunked { length; chunk_size; pipe=data } in
         let sink = Body.null () in
         let cmd () =
-          Aws.make_request ?expect ?credentials ~endpoint ~headers:[] ~meth:`PUT ~path
+          Aws.make_request ?expect ?credentials ?connect_timeout_ms ~endpoint ~headers:[] ~meth:`PUT ~path
             ~body ~query ~sink ()
         in
 

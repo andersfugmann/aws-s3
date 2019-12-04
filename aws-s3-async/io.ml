@@ -66,33 +66,41 @@ module Pipe = struct
 end
 
 module Net = struct
-  let lookup ~domain host =
-    let open Async_unix.Unix in
-    Addr_info.get ~host [ Addr_info.AI_FAMILY domain;
-                          Addr_info.AI_SOCKTYPE SOCK_STREAM]
-    >>= function
-    | { Addr_info.ai_addr=ADDR_INET (addr, _); _ }::_ ->
-      Deferred.Or_error.return addr
-    | _ -> Deferred.Or_error.fail (failwith ("Failed to resolve host: " ^ host))
-
-  let connect ~inet ~host ~port ~scheme =
-    let domain : Async_unix.Unix.socket_domain =
-      match inet with
-      | `V4 -> PF_INET
-      | `V6 -> PF_INET6
+  let connect ?connect_timeout_ms ~inet ~host ~port ~scheme =
+    let uri =
+      let scheme = match scheme with
+        | `Http -> "http"
+        | `Https -> "https"
+      in
+      Uri.make ~scheme ~host:host ~port ()
     in
-    lookup ~domain host >>=? fun addr ->
-    let ip_addr = Ipaddr_unix.of_inet_addr addr in
-    let endp = match scheme with
-      | `Http -> `TCP (ip_addr, port)
-      | `Https -> `OpenSSL (host, ip_addr, port)
+    let options =
+      let domain : Async_unix.Unix.socket_domain =
+        match inet with
+          | `V4 -> PF_INET
+          | `V6 -> PF_INET6
+      in
+      Core.Unix.[AI_FAMILY domain]
     in
-    Async.try_with (fun () -> Conduit_async.connect endp) >>=? fun (ic, oc) ->
+    let close_socket_no_error = function
+      | Conduit_async.V3.Inet_sock socket -> try Socket.shutdown socket `Both; with _ -> ()
+    in
+    let interrupt = match connect_timeout_ms with
+      | None -> None
+      | Some ms -> Some (Async.after (Core.Time.Span.of_ms (float ms)))
+    in
+    Async.try_with (fun () -> Conduit_async.V3.connect_uri ?interrupt ~options uri) >>=? fun (socket, ic, oc) ->
     let reader = Reader.pipe ic in
-    don't_wait_for (Async_kernel.Pipe.closed reader >>= fun () ->
-                    Reader.close ic >>= fun () ->
-                    Writer.close oc
-                   );
+    don't_wait_for (
+      Async_kernel.Pipe.closed reader >>= fun () ->
+      Monitor.try_with ~name:"Io.Net.connect connection-cleanup" (fun () ->
+        Writer.close oc >>= fun () ->
+        Reader.close ic >>= fun () ->
+        return ()
+      ) >>= fun _ ->
+      close_socket_no_error socket;
+      return ()
+    );
     let writer = Writer.pipe oc in
     Deferred.Or_error.return (reader, writer)
 end
