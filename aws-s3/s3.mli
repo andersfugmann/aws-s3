@@ -13,8 +13,6 @@
     If no credentials is provided, the requests will not be signed,
     The bucket / objects need to be configured accordingly.
 
-    IPv6 connection can be set globally using the function:
-    {!Aws_s3.S3.Make.set_connection_type}.
 *)
 module Make(Io : Types.Io) : sig
   open Io

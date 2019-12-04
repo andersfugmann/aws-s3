@@ -26,14 +26,7 @@ test: build
 integration:
 	./integration.sh
 
-update-version: VERSION=$(shell cat Changelog | grep -E '^[0-9]' | head -n 1 | cut -f1 -d':' )
-update-version:
-	@echo "Set version to $(VERSION)"
-	@sed -i 's/^version: .*/version: "$(VERSION)"/' *.opam
-	@sed -i 's/"\(aws-s3[-a-z]*\)"[ ]*{= .*}/"\1" {= "$(VERSION)" }/' *.opam
-
-release: VERSION=$(shell cat Changelog | grep -E '^[0-9]' | head -n 1 | cut -f1 -d':')
-release: update-version
+release:
 	opam publish
 
 doc:
