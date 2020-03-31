@@ -2,6 +2,9 @@
 
 [ ] Support bigstring (zero copy)
 
+4.5.1: Released 2020-03-31
+[x]: Allow compilation with core/async 0.13
+
 4.5.0: Released 2019-12-04
 [x]: Add connection_timeout_ms option to all calls
 
