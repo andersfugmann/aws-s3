@@ -5,7 +5,7 @@
  (libraries ptime inifiles digestif.c
             base64 uri
             ppx_protocol_conv_json
-            ppx_protocol_conv_xml_light str)
+            ppx_protocol_conv_xmlm str)
  (preprocess (pps ppx_inline_test ppx_protocol_conv))
  (inline_tests)
 )
