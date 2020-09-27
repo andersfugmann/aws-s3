@@ -11,7 +11,7 @@ build: [
 ]
 depends: [
   "ocaml" {>= "4.05.0"}
-  "dune"
+  "dune" {>= "2.0.0"}
   "aws-s3" {= version}
   "lwt"
   "conduit-lwt-unix"
