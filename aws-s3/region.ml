@@ -4,7 +4,7 @@ let sprintf = Printf.sprintf
 type vendor = {
   region_name: string;
   host: string;
-  port: int;
+  port: int option;
 }
 
 type t =
@@ -72,11 +72,16 @@ let of_string = function
   | "ca-central-1"   -> Ca_central_1
   | s                -> failwith ("Unknown region: " ^ s)
 
-let vendor ~region_name ~host ~port =
+let vendor ~region_name ?port ~host =
   Vendor { region_name; host; port }
 
-let minio ~host ~port =
-  vendor ~region_name:(to_string Us_east_1) ~host ~port
+let minio ?port ~host  =
+  vendor ~region_name:(to_string Us_east_1) ~host ?port
+
+let backblaze ~region_name =
+  vendor ~region_name
+    ?port:None
+    ~host:(sprintf "s3.%s.backblazeb2.com" region_name)
 
 type endpoint = {
   inet: [`V4 | `V6];
@@ -114,7 +119,7 @@ let to_host ~dualstack region =
 
 let to_port region =
   match region with
-  | Vendor v -> Some v.port
+  | Vendor v -> v.port
   | _ -> None
 
 let endpoint ~inet ~scheme region =
