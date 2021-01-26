@@ -74,7 +74,12 @@ module Make(Io : Types.Io) = struct
       let ini = new Inifiles.inifile creds_file in
       let access_key = ini#getval profile "aws_access_key_id" in
       let secret_key = ini#getval profile "aws_secret_access_key" in
-      make ~access_key ~secret_key () |> Deferred.Or_error.return
+      let token = match ini#getval profile "aws_session_token" with
+      | x -> Some x
+      | exception Inifiles.Invalid_element _ -> None
+      | exception Inifiles.Invalid_section _ -> None
+      in
+      make ~access_key ~secret_key ?token () |> Deferred.Or_error.return
   end
 
   module Env = struct
