@@ -126,13 +126,17 @@ let make_presigned_url ?(scheme=`Https) ?host ?port ~credentials ~date ~region ~
   let duration = string_of_int duration in
   let region = Region.to_string region in
   let headers = Headers.singleton "Host" host_header in
-  let query = [
+  let partial_query = [
         ("X-Amz-Algorithm", "AWS4-HMAC-SHA256");
         ("X-Amz-Credential", sprintf "%s/%s/%s/s3/aws4_request" credentials.Credentials.access_key date region);
         ("X-Amz-Date", sprintf "%sT%sZ" date time);
         ("X-Amz-Expires", duration);
         ("X-Amz-SignedHeaders", "host");
       ] in
+  let query = match credentials.token with
+  | Some t -> ("X-Amz-Security-Token", t) :: partial_query
+  | None -> partial_query
+  in
   let scope = make_scope ~date ~region ~service in
   let signing_key = make_signing_key ~date ~region ~service ~credentials () in
   let signature, _signed_headers =
