@@ -17,7 +17,13 @@
   }}}*)
 open StdLabels
 let sprintf = Printf.sprintf
-open Protocol_conv_xml
+
+let xmlm_of_string string =
+  let (_dtd, nodes) = Ezxmlm.from_string string in
+  List.hd nodes
+
+let make_xmlm_node ?(ns = "") name attrs nodes : 'a Xmlm.frag =
+  `El (((ns, name), attrs), nodes)
 
 module Option = struct
   let map ?default ~f = function
@@ -50,11 +56,11 @@ let rec filter_map ~f = function
 (* Protocol definitions *)
 module Protocol(P: sig type 'a result end) = struct
   type time = float
-  let time_of_xml_light_exn t =
+  let time_of_xmlm_exn t =
     try
-      Xml_light.to_string t |> Time.parse_iso8601_string
+      Protocol_conv_xmlm.Xmlm.to_string t |> Time.parse_iso8601_string
     with
-    | _ -> raise Xml_light.(Protocol_error (make_error ~value:t "Not an iso8601 string"))
+    | _ -> raise Protocol_conv_xmlm.Xmlm.(Protocol_error (make_error ~value:t "Not an iso8601 string"))
 
   let unquote s =
     match String.length s with
@@ -64,8 +70,8 @@ module Protocol(P: sig type 'a result end) = struct
     | _ -> s
 
   type etag = string
-  let etag_of_xml_light_exn t =
-    Xml_light.to_string t |> unquote
+  let etag_of_xmlm_exn t =
+    Protocol_conv_xmlm.Xmlm.to_string t |> unquote
 
   type storage_class =
     | Standard           [@key "STANDARD"]
@@ -80,7 +86,7 @@ module Protocol(P: sig type 'a result end) = struct
     key: string [@key "Key"];
     etag: etag [@key "ETag"];
     (** Add expiration date option *)
-  } [@@deriving of_protocol ~driver:(module Xml_light)]
+  } [@@deriving of_protocol ~driver:(module Protocol_conv_xmlm.Xmlm)]
 
   module Ls = struct
 
@@ -95,50 +101,53 @@ module Protocol(P: sig type 'a result end) = struct
       is_truncated: bool [@key "IsTruncated"];
       contents: content list [@key "Contents"];
       start_after: string option [@key "StartAfter"];
-    } [@@deriving of_protocol ~driver:(module Xml_light)]
+    } [@@deriving of_protocol ~driver:(module Protocol_conv_xmlm.Xmlm)]
 
     type t = (content list * cont) P.result
     and cont = More of (?max_keys:int -> unit -> t) | Done
 
   end
 
-  let set_element_name name = function
-    | Xml.Element (_, attribs, ts) -> Xml.Element (name, attribs, ts)
-    | _ -> failwith "Not an element"
+  let set_element_name: string -> 'a Xmlm.frag -> 'a Xmlm.frag = fun name -> function
+    | `El (((ns, _), attrs), elems) ->
+      make_xmlm_node ~ns name attrs elems
+    | `Data _ -> failwith "Not an element"
 
   module Delete_multi = struct
     type objekt = {
       key: string [@key "Key"];
       version_id: string option [@key "VersionId"];
-    } [@@deriving of_protocol ~driver:(module Xml_light)]
+    } [@@deriving of_protocol ~driver:(module Protocol_conv_xmlm.Xmlm)]
 
     (** We must not transmit the version id at all if not specified *)
-    let objekt_to_xml_light = function
+    let objekt_to_xmlm = function
       | { key; version_id = None } ->
-        Xml.Element ("object", [], [Xml.Element ("Key", [], [Xml.PCData key])])
+        make_xmlm_node "object" [] [ make_xmlm_node "Key" [] [`Data key] ]
       | { key; version_id = Some version } ->
-        Xml.Element ("object", [], [Xml.Element ("Key", [], [Xml.PCData key]);
-                                    Xml.Element ("VersionId", [], [Xml.PCData version])])
+        make_xmlm_node "object" [] [
+          make_xmlm_node "Key" [] [`Data key];
+          make_xmlm_node "VersionId" [] [`Data version];
+        ]
 
     type request = {
       quiet: bool [@key "Quiet"];
       objects: objekt list [@key "Object"]
-    } [@@deriving to_protocol ~driver:(module Xml_light)]
+    } [@@deriving to_protocol ~driver:(module Protocol_conv_xmlm.Xmlm)]
 
     let xml_of_request request =
-      request_to_xml_light request |> set_element_name "Delete"
+      request_to_xmlm request |> set_element_name "Delete"
 
     type error = {
       key: string [@key "Key"];
       version_id: string option [@key "VersionId"];
       code: string [@key "Code"];
       message : string [@key "Message"];
-    } [@@deriving of_protocol ~driver:(module Xml_light)]
+    } [@@deriving of_protocol ~driver:(module Protocol_conv_xmlm.Xmlm)]
 
     type delete_marker = bool
 
-    let delete_marker_of_xml_light_exn t =
-      Xml_light.to_option (Xml_light.to_bool) t
+    let delete_marker_of_xmlm_exn t =
+      Protocol_conv_xmlm.Xmlm.to_option (Protocol_conv_xmlm.Xmlm.to_bool) t
       |> function None -> false
                 | Some x -> x
 
@@ -147,7 +156,7 @@ module Protocol(P: sig type 'a result end) = struct
       delete_marker_version_id: string option [@key "DeleteMarkerVersionId"];
       deleted: objekt list [@key "Deleted"];
       error: error list  [@key "Error"];
-    } [@@deriving of_protocol ~driver:(module Xml_light)]
+    } [@@deriving of_protocol ~driver:(module Protocol_conv_xmlm.Xmlm)]
 
   end
 
@@ -160,42 +169,42 @@ module Protocol(P: sig type 'a result end) = struct
       region: string option [@key "Region"];
       request_id: string [@key "RequestId"];
       host_id: string [@key "HostId"];
-    } [@@deriving of_protocol ~driver:(module Xml_light)]
+    } [@@deriving of_protocol ~driver:(module Protocol_conv_xmlm.Xmlm)]
   end
 
   module Multipart = struct
     type part = { part_number: int [@key "PartNumber"];
                   etag: string [@key "ETag"];
                 }
-    [@@deriving to_protocol ~driver:(module Xml_light)]
+    [@@deriving to_protocol ~driver:(module Protocol_conv_xmlm.Xmlm)]
 
     module Initiate = struct
       type t = {
         bucket: string [@key "Bucket"];
         key: string [@key "Key"];
         upload_id: string [@key "UploadId"];
-      } [@@deriving of_protocol ~driver:(module Xml_light)]
+      } [@@deriving of_protocol ~driver:(module Protocol_conv_xmlm.Xmlm)]
     end
     module Complete = struct
       type request = {
         parts: part list [@key "Part"];
       }
-      [@@deriving to_protocol ~driver:(module Xml_light)]
+      [@@deriving to_protocol ~driver:(module Protocol_conv_xmlm.Xmlm)]
       let xml_of_request request =
-        request_to_xml_light request |> set_element_name "CompleteMultipartUpload"
+        request_to_xmlm request |> set_element_name "CompleteMultipartUpload"
       type response = { location: string [@key "Location"];
                         bucket: string [@key "Bucket"];
                         key: string [@key "Key"];
                         etag: string [@key "ETag"];
                       }
-      [@@deriving of_protocol ~driver:(module Xml_light)]
+      [@@deriving of_protocol ~driver:(module Protocol_conv_xmlm.Xmlm)]
     end
     module Copy = struct
       type t = {
         etag: string [@key "ETag"];
         last_modified: time [@key "LastModified"];
       }
-      [@@deriving of_protocol ~driver:(module Xml_light)]
+      [@@deriving of_protocol ~driver:(module Protocol_conv_xmlm.Xmlm)]
     end
   end
 end
@@ -242,8 +251,8 @@ module Make(Io : Types.Io) = struct
       Deferred.return (Error (Redirect {endpoint with region}))
     | c when 400 <= c && c < 500 -> begin
         let open Error_response in
-        let xml = Xml.parse_string body in
-        match Error_response.of_xml_light_exn xml with
+        let xml = xmlm_of_string body in
+        match Error_response.of_xmlm_exn xml with
         | { code = "PermanentRedirect"; endpoint = Some host; _ }
         | { code = "TemporaryRedirect"; endpoint = Some host; _ } ->
           let region = Region.of_host host in
@@ -258,7 +267,7 @@ module Make(Io : Types.Io) = struct
       (* 500, InternalError | 503, SlowDown | 503, ServiceUnavailable -> Throttle *)
       Deferred.return (Error Throttled)
     | code ->
-      let resp = Error_response.of_xml_light_exn (Xml.parse_string body) in
+      let resp = Error_response.of_xmlm_exn (xmlm_of_string body) in
       Deferred.return (Error (Unknown (code, resp.code)))
 
   let put_common ?credentials ?connect_timeout_ms ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body () =
@@ -358,7 +367,8 @@ module Make(Io : Types.Io) = struct
       let storage_class =
         Headers.find_opt "x-amz-storage-class" headers
         |> Option.value_map ~default:Standard ~f:(fun s ->
-            storage_class_of_xml_light_exn (Xml.Element ("p", [], [Xml.PCData s])))
+            storage_class_of_xmlm_exn (make_xmlm_node "p" [] [`Data s])
+          )
       in
       Some { storage_class; size; last_modified; key; etag = unquote etag}
     in
@@ -381,7 +391,7 @@ module Make(Io : Types.Io) = struct
             objects=objects;
           }
         |> Delete_multi.xml_of_request
-        |> Xml.to_string
+        |> fun req -> Ezxmlm.to_string [ req ]
       in
       let headers = [ "Content-MD5", Base64.encode_string (Caml.Digest.string request) ] in
       let body, sink = string_sink () in
@@ -392,7 +402,7 @@ module Make(Io : Types.Io) = struct
       in
       do_command ~endpoint cmd >>=? fun _headers ->
       body >>= fun body ->
-      let result = Delete_multi.result_of_xml_light_exn (Xml.parse_string body) in
+      let result = Delete_multi.result_of_xmlm_exn (xmlm_of_string body) in
       Deferred.return (Ok result)
 
   (** List contents of bucket in s3. *)
@@ -414,7 +424,7 @@ module Make(Io : Types.Io) = struct
     in
     do_command ~endpoint cmd >>=? fun _headers ->
     body >>= fun body ->
-    let result = Ls.result_of_xml_light_exn (Xml.parse_string body) in
+    let result = Ls.result_of_xmlm_exn (xmlm_of_string body) in
     let continuation = match Ls.(result.next_continuation_token) with
       | Some ct ->
         Ls.More (ls ?credentials ?connect_timeout_ms ?start_after:None ~continuation_token:ct ?prefix ~endpoint ~bucket)
@@ -446,7 +456,7 @@ module Make(Io : Types.Io) = struct
       in
       do_command ~endpoint cmd >>=? fun _headers ->
       body >>= fun body ->
-      let resp = Multipart.Initiate.of_xml_light_exn (Xml.parse_string body) in
+      let resp = Multipart.Initiate.of_xmlm_exn (xmlm_of_string body) in
       Ok { id = resp.Multipart.Initiate.upload_id;
            parts = [];
            bucket;
@@ -500,8 +510,8 @@ module Make(Io : Types.Io) = struct
 
       do_command ~endpoint cmd >>=? fun _headers ->
       body >>= fun body ->
-      let xml = Xml.parse_string body in
-      match Multipart.Copy.of_xml_light_exn xml with
+      let xml = xmlm_of_string body in
+      match Multipart.Copy.of_xmlm_exn xml with
       | { Multipart.Copy.etag; _ } ->
         t.parts <- { etag; part_number } :: t.parts;
         Deferred.return (Ok ())
@@ -516,7 +526,7 @@ module Make(Io : Types.Io) = struct
         (* TODO: Sort the parts by partNumber *)
         let parts = Caml.List.sort (fun a b -> compare a.Multipart.part_number b.part_number) t.parts in
         Multipart.Complete.(xml_of_request { parts })
-        |> Xml.to_string_fmt
+        |> (fun node -> Format.asprintf "%a" Ezxmlm.pp [node])
       in
       let body, sink = string_sink () in
       let cmd () =
@@ -524,8 +534,8 @@ module Make(Io : Types.Io) = struct
       in
       do_command ~endpoint cmd >>=? fun _headers ->
       body >>= fun body ->
-      let xml = Xml.parse_string body in
-      match Multipart.Complete.response_of_xml_light_exn xml with
+      let xml = xmlm_of_string body in
+      match Multipart.Complete.response_of_xmlm_exn xml with
       | { location=_; etag; bucket; key } when bucket = t.bucket && key = t.key ->
         Ok etag |> Deferred.return
       | _ ->
@@ -620,8 +630,8 @@ let%test _ =
       </ListBucketResult>
       |}
     in
-    let xml = Xml.parse_string data in
-    let result = Protocol.Ls.result_of_xml_light_exn xml in
+    let xml = xmlm_of_string data in
+    let result = Protocol.Ls.result_of_xmlm_exn xml in
     2 = (List.length result.Protocol.Ls.contents) &&
     "7538d2bd85ea5dfb689ed65a0f60a7aa" = (List.hd result.Protocol.Ls.contents).Protocol.etag
 
@@ -638,8 +648,8 @@ let%test "parse Error_response.t" =
        </Error>
     |}
   in
-  let xml = Xml.parse_string data in
-  let error = Protocol.Error_response.of_xml_light_exn xml in
+  let xml = xmlm_of_string data in
+  let error = Protocol.Error_response.of_xmlm_exn xml in
   "PermanentRedirect" = error.Protocol.Error_response.code
 
 let%test "parse Delete_multi.result" =
@@ -659,6 +669,7 @@ let%test "parse Delete_multi.result" =
        </DeleteResult>
     |}
   in
-  let error = Protocol.Delete_multi.result_of_xml_light_exn (Xml.parse_string data) in
+  let xml = xmlm_of_string data in
+  let error = Protocol.Delete_multi.result_of_xmlm_exn xml in
   2 = (List.length error.Protocol.Delete_multi.error) &&
   "InternalError" = (List.hd error.Protocol.Delete_multi.error).Protocol.Delete_multi.code

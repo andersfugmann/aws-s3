@@ -13,12 +13,12 @@ build: [
 ]
 depends: [
   "ocaml" {>= "4.05.0"}
-  "dune"
+  "dune" {>= "2.0.0"}
   "ocaml-inifiles"
   "digestif" {>= "0.7"}
   "ptime"
   "uri"
-  "ppx_protocol_conv_xml_light" {>= "5.0.0" & < "6.0.0"}
+  "ppx_protocol_conv_xmlm" {>= "5.0.0" & < "6.0.0"}
   "ppx_protocol_conv_json" {>= "5.0.0" & < "6.0.0"}
   "cmdliner"
   "ppx_inline_test" {with-test}
