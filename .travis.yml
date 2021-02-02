@@ -11,12 +11,9 @@ env:
   - PACKAGE="aws-s3"                                          OCAML_VERSION=4.05
   - PACKAGE="aws-s3-async"     PINS="aws-s3:. aws-s3-async:." OCAML_VERSION=4.05
   - PACKAGE="aws-s3-lwt"       PINS="aws-s3:. aws-s3-lwt:."   OCAML_VERSION=4.05
-  - PACKAGE="aws-s3"                                          OCAML_VERSION=4.09
-  - PACKAGE="aws-s3-async"     PINS="aws-s3:. aws-s3-async:." OCAML_VERSION=4.09
-  - PACKAGE="aws-s3-lwt"       PINS="aws-s3:. aws-s3-lwt:."   OCAML_VERSION=4.09
-  - PACKAGE="aws-s3"                                          OCAML_VERSION=4.10
-  - PACKAGE="aws-s3-async"     PINS="aws-s3:. aws-s3-async:." OCAML_VERSION=4.10
-  - PACKAGE="aws-s3-lwt"       PINS="aws-s3:. aws-s3-lwt:."   OCAML_VERSION=4.10
+  - PACKAGE="aws-s3"                                          OCAML_VERSION=4.11
+  - PACKAGE="aws-s3-async"     PINS="aws-s3:. aws-s3-async:." OCAML_VERSION=4.11
+  - PACKAGE="aws-s3-lwt"       PINS="aws-s3:. aws-s3-lwt:."   OCAML_VERSION=4.11
 
 os:
   - linux
