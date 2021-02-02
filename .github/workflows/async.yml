@@ -1,0 +1,40 @@
+name: Main workflow
+
+on:
+  - pull_request
+  - push
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+        ocaml-version:
+          - 4.11.1
+          - 4.05.0
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Use OCaml ${{ matrix.ocaml-version }}
+        uses: avsm/setup-ocaml@v1
+        with:
+          ocaml-version: ${{ matrix.ocaml-version }}
+
+      - run: opam pin aws-s3 . --no-action
+      - run: opam depext aws-s3 --yes --with-doc --with-test
+      - run: opam install aws-s3 --deps-only --with-doc --with-test
+      - run: opam exec -- dune build aws-s3
+      - run: opam exec -- dune runtest aws-s3
+
+      - run: opam pin aws-s3-async . --no-action
+      - run: opam depext aws-s3-async --yes --with-doc --with-test
+      - run: opam install aws-s3-async --deps-only --with-doc --with-test
+      - run: opam exec -- dune build aws-s3-async
+      - run: opam exec -- dune runtest aws-s3-async
