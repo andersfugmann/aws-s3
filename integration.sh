@@ -5,15 +5,15 @@
 
 # Simple tests using the awscli
 
-BUCKET=aws-s3-test
-PREFIX=aws-s3-test/
+BUCKET=${BUCKET:-aws-s3-test}
+PREFIX=${PREFIX:-aws-s3-test/}
 
 #REDIRECT_BUCKET=aws-s3-test-eu
 TEMP=/tmp/test_data.bin
 
 LARGE_FILE=/tmp/rnd_big.bin
 FILE=/tmp/rnd.bin
-dd if=/dev/urandom of=$LARGE_FILE ibs=1k count=170k
+dd if=/dev/urandom of=$LARGE_FILE ibs=1k count=17k
 dd if=$LARGE_FILE  of=$FILE       ibs=1k count=129
 
 FIRST_PART=1000
@@ -67,7 +67,7 @@ function test_complete () {
     #test "redirect download" ${BIN} cp --retries=${RETRIES} s3://${REDIRECT_BUCKET}/${PREFIX}test ${TEMP}
     #test "redirect data" diff -u $FILE ${TEMP}
 
-    test "upload expect" ${BIN} cp -e --https=${HTTPS} --retries=${RETRIES} $FILE s3://${BUCKET}/${PREFIX}test
+    test "upload expect" ${BIN} cp -e --https=${HTTPS} --retries=${RETRIES} $FILE "s3://${BUCKET}/${PREFIX}test"
     test "head" ${BIN} head --https=${HTTPS} --retries=${RETRIES} "s3://${BUCKET}/${PREFIX}test"
     test "download" ${BIN} cp --https=${HTTPS} --retries=${RETRIES} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
     test "data" diff -u $FILE ${TEMP}
@@ -105,11 +105,11 @@ function test_complete () {
 }
 
 # Test complete functionality for both lwt and async
-for b in lwt async; do
+for b in async lwt; do
     BIN=_build/install/default/bin/aws-cli-$b
     dune build $BIN || exit
-    test_simple $BIN 0 false
     test_simple $BIN 0 true
+    test_simple $BIN 0 false
     test_complete $BIN 0 true
     test_complete $BIN 0 false
 done
