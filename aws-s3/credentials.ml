@@ -74,19 +74,41 @@ module Make(Io : Types.Io) = struct
       let ini = new Inifiles.inifile creds_file in
       let access_key = ini#getval profile "aws_access_key_id" in
       let secret_key = ini#getval profile "aws_secret_access_key" in
-      make ~access_key ~secret_key () |> Deferred.Or_error.return
+      let token = match ini#getval profile "aws_session_token" with
+      | x -> Some x
+      | exception Inifiles.Invalid_element _ -> None
+      | exception Inifiles.Invalid_section _ -> None
+      in
+      make ~access_key ~secret_key ?token () |> Deferred.Or_error.return
+  end
+
+  module Env = struct
+    let get_credentials () =
+      let access_key = Sys.getenv_opt "AWS_ACCESS_KEY_ID" in
+      let secret_key = Sys.getenv_opt "AWS_SECRET_ACCESS_KEY" in
+      let token = Sys.getenv_opt "AWS_SESSION_TOKEN" in
+      match access_key, secret_key with
+      | None, _ -> None
+      | _, None -> None
+      | Some access_key, Some secret_key ->
+        Some (make ~access_key ~secret_key ?token () |> Deferred.Or_error.return)
   end
 
   module Helper = struct
     let get_credentials ?profile () =
-      match profile with
-      | Some profile -> Local.get_credentials ~profile ()
+      let env_creds = Env.get_credentials () in
+      match env_creds with
+      | Some creds -> creds
       | None -> begin
-          Local.get_credentials ~profile:"default" () >>= function
-          | Result.Ok c -> Deferred.Or_error.return c
-          | Error _ ->
-            Iam.get_role () >>=? fun role ->
-            Iam.get_credentials role
-        end
+        match profile with
+        | Some profile -> Local.get_credentials ~profile ()
+        | None -> begin
+            Local.get_credentials ~profile:"default" () >>= function
+            | Result.Ok c -> Deferred.Or_error.return c
+            | Error _ ->
+              Iam.get_role () >>=? fun role ->
+              Iam.get_credentials role
+          end
+      end
   end
 end
