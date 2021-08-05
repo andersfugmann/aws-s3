@@ -66,7 +66,7 @@ module Pipe = struct
 end
 
 module Net = struct
-  let connect ?connect_timeout_ms ~inet ~host ~port ~scheme =
+  let connect ?connect_timeout_ms ~inet ~host ~port ~scheme () =
     let uri =
       let scheme = match scheme with
         | `Http -> "http"

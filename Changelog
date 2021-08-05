@@ -2,11 +2,14 @@
 
 [ ] Support bigstring (zero copy)
 
+
+
 4.6.0: Unreleased
 [x]: Added Backblaze vendor region (thanks @roddyyaga)
 [ ]: Add support for fetching credentials from environment
 [ ]: Support session tokens
 [x]: Use xmlm instead of xml_light
+[x]: Fix compilation warning on 4.12.0
 
 4.5.1: Released 2020-03-31
 [x]: Allow compilation with core/async 0.13

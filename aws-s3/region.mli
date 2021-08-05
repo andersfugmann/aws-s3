@@ -22,11 +22,11 @@ type t =
   | Other of string
   | Vendor of vendor
 
-val vendor : region_name:string -> ?port:int -> host:string -> t
+val vendor : region_name:string -> ?port:int -> host:string -> unit -> t
 
-val minio : ?port:int -> host:string -> t
+val minio : ?port:int -> host:string -> unit -> t
 
-val backblaze : region_name:string -> t
+val backblaze : region_name:string -> unit -> t
 
 type endpoint = {
   inet: [`V4 | `V6];

@@ -161,7 +161,7 @@ module Net = struct
     | {ai_addr=ADDR_INET (addr, _);_} :: _ -> Deferred.Or_error.return addr
     | _ -> Deferred.Or_error.fail (failwith ("Failed to resolve host: " ^ host))
 
-  let connect ?connect_timeout_ms ~inet ~host ~port ~scheme =
+  let connect ?connect_timeout_ms ~inet ~host ~port ~scheme () =
     ignore connect_timeout_ms;
     let domain : Lwt_unix.socket_domain =
       match inet with

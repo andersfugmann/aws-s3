@@ -90,6 +90,7 @@ module type Io = sig
       host:string ->
       port:int ->
       scheme:[< `Http | `Https ] ->
+      unit ->
       (string Pipe.reader * string Pipe.writer) Deferred.Or_error.t
   end
   (**/**)
