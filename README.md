@@ -1,6 +1,7 @@
 # Ocaml library for accessing Amazon S3
 
-[![BuildStatus](https://travis-ci.org/andersfugmann/aws-s3.svg?branch=master)](https://travis-ci.org/andersfugmann/aws-s3)
+[![Main workflow](https://github.com/andersfugmann/aws-s3/actions/workflows/async.yml/badge.svg)](https://github.com/andersfugmann/aws-s3/actions/workflows/async.yml)
+
 
 This library provides access to Amazon Simple Storage Solution (S3).
 
