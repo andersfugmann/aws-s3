@@ -270,16 +270,18 @@ module Make(Io : Types.Io) = struct
       let resp = Error_response.of_xmlm_exn (xmlm_of_string body) in
       Deferred.return (Error (Unknown (code, resp.code)))
 
-  let put_common ?credentials ?connect_timeout_ms ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body () =
+  let put_common ?credentials ?connect_timeout_ms ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ?(meta_headers=[]) ~bucket ~key ~body () =
     let path = sprintf "/%s/%s" bucket key in
     let headers =
-      [ "Content-Type", content_type;
-        "Content-Encoding", content_encoding;
-        "Cache-Control", cache_control;
-        "x-amz-acl", acl;
-      ]
-      |> List.filter ~f:(function (_, Some _) -> true | (_, None) -> false)
-      |> List.map ~f:(function (k, Some v) -> (k, v) | (_, None) -> failwith "Impossible")
+      (
+        [ "Content-Type", content_type;
+          "Content-Encoding", content_encoding;
+          "Cache-Control", cache_control;
+          "x-amz-acl", acl;
+        ]
+        |> List.filter ~f:(function (_, Some _) -> true | (_, None) -> false)
+        |> List.map ~f:(function (k, Some v) -> (k, v) | (_, None) -> failwith "Impossible")
+      ) @ (meta_headers |> List.map ~f:(fun (k, v) -> (Printf.sprintf "x-amz-meta-%s" k, v)))
     in
     let sink = Body.null () in
     let cmd () =
@@ -321,15 +323,15 @@ module Make(Io : Types.Io) = struct
       do_command ~endpoint cmd >>=? fun (_headers) ->
       Deferred.return (Ok ())
 
-    let put ?credentials ?connect_timeout_ms ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~data ~chunk_size ~length () =
+    let put ?credentials ?connect_timeout_ms ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ?meta_headers ~bucket ~key ~data ~chunk_size ~length () =
       let body = Body.Chunked { length; chunk_size; pipe=data } in
-      put_common ~endpoint ?credentials ?connect_timeout_ms ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~body ()
+      put_common ~endpoint ?credentials ?connect_timeout_ms ?content_type ?content_encoding ?acl ?cache_control ?expect ?meta_headers ~bucket ~key ~body ()
   end
   (* End streaming module *)
 
-  let put ?credentials ?connect_timeout_ms ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ~bucket ~key ~data () =
+  let put ?credentials ?connect_timeout_ms ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ?meta_headers ~bucket ~key ~data () =
     let body = Body.String data in
-    put_common ?credentials ?connect_timeout_ms ?content_type ?content_encoding ?acl ?cache_control ?expect ~endpoint ~bucket ~key ~body ()
+    put_common ?credentials ?connect_timeout_ms ?content_type ?content_encoding ?acl ?cache_control ?expect ?meta_headers ~endpoint ~bucket ~key ~body ()
 
   let get ?credentials ?connect_timeout_ms ~endpoint ?range ~bucket ~key () =
     let body, data = string_sink () in

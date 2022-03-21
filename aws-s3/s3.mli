@@ -75,6 +75,7 @@ module Make(Io : Types.Io) : sig
      ?acl:string ->
      ?cache_control:string ->
      ?expect:bool ->
+     ?meta_headers:(string * string) list ->
      bucket:string ->
      key:string ->
      data:string -> unit -> etag result) command
@@ -143,6 +144,7 @@ module Make(Io : Types.Io) : sig
        ?acl:string ->
        ?cache_control:string ->
        ?expect:bool ->
+       ?meta_headers:(string * string) list ->
        bucket:string ->
        key:string ->
        data:string Io.Pipe.reader ->
