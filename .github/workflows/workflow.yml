@@ -25,7 +25,9 @@ jobs:
       AWS_SECRET_ACCESS_KEY: minioadmin
     services:
       minio:
-        image: fclairamb/minio-github-actions
+        image: minio/minio:latest
+        entrypoint: sh
+        command: -c 'mkdir -p /data/fugmann && /usr/bin/minio server /data'
         ports:
           - 9000:9000
 
@@ -43,3 +45,10 @@ jobs:
       - run: opam install aws-s3 aws-s3-${{ matrix.concurrency }} --deps-only --with-doc --with-test
       - run: opam exec -- dune build aws-s3 aws-s3-${{ matrix.concurrency }}
       - run: opam exec -- dune runtest aws-s3 aws-s3-${{ matrix.concurrency }}
+
+      - run: |
+          mkdir ~/.aws
+          echo '[default]' > ~/.aws/credentials
+          echo 'aws_access_key_id = minioadmin' >> ~/.aws/credentials
+          echo 'aws_secret_access_key = minioadmin' >> ~/.aws/credentials
+      - run ./integration.sh
