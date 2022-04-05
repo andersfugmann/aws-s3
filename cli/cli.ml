@@ -77,9 +77,9 @@ let parse exec =
       let doc = "Use streaming get / put the given chunk_size" in
       Arg.(value & opt (some int) None & info ["chunk-size"; "c"] ~docv:"CHUNK SIZE" ~doc)
     in
-
-    Term.(const make $ common_opts $ first $ last $ multi $ chunk_size $ path 0 "SRC" $ path 1 "DEST"),
-    Term.info "cp" ~doc:"Copy files to and from S3"
+    Cmd.v
+      Cmd.(info "cp" ~doc:"Copy files to and from S3")
+      Term.(const make $ common_opts $ first $ last $ multi $ chunk_size $ path 0 "SRC" $ path 1 "DEST")
   in
   let rm =
     let objects =
@@ -88,8 +88,9 @@ let parse exec =
     in
 
     let make opts bucket paths = opts, Rm { bucket; paths } in
-    Term.(const make $ common_opts $ bucket 0 $ objects),
-    Term.info "rm" ~doc:"Delete files from s3"
+    Cmd.v
+      Cmd.(info "rm" ~doc:"Delete files from s3")
+      Term.(const make $ common_opts $ bucket 0 $ objects)
   in
 
   let head =
@@ -99,8 +100,9 @@ let parse exec =
     in
 
     let make opts path = opts, Head { path } in
-    Term.(const make $ common_opts $ path),
-    Term.info "head" ~doc:"Head files from s3"
+    Cmd.v
+      Cmd.(info "head" ~doc:"Head files from s3")
+      Term.(const make $ common_opts $ path)
   in
 
   let ls =
@@ -121,24 +123,24 @@ let parse exec =
       Arg.(value & opt (some string) None & info ["start-after"] ~docv:"START AFTER" ~doc)
     in
 
-    Term.(const make $ common_opts $ ratelimit $ prefix $ start_after $ bucket 0 $ max_keys),
-    Term.info "ls" ~doc:"List files in bucket"
+    Cmd.v
+    (Cmd.info "ls" ~doc:"List files in bucket")
+    (Term.(const make $ common_opts $ ratelimit $ prefix $ start_after $ bucket 0 $ max_keys))
   in
 
   (* Where do the result go? *)
   let help =
     let doc = "Amazon s3 command line interface" in
-    let exits = Term.default_exits in
-    Term.(ret (const (fun _ -> `Help (`Pager, None)) $ common_opts)),
-    Term.info Sys.argv.(0) ~doc ~exits
+    Cmd.info Sys.argv.(0) ~doc
   in
 
   let commands =
     let cmds = [cp; rm; ls; head] in
-    Term.(eval_choice help cmds)
+    Cmd.group (help) cmds
+    |> Cmd.eval_value
   in
   let run = function
-    | `Ok cmd -> exec cmd
+    | Ok (`Ok cmd) -> exec cmd
     | _ -> 254
   in
   run @@ commands |> exit

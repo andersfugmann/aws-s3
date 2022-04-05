@@ -175,7 +175,7 @@ module Net = struct
       | `Https -> `TLS (`Hostname host, `IP addr, `Port port)
     in
     let connect () =
-      let f () = Conduit_lwt_unix.connect ~ctx:Conduit_lwt_unix.default_ctx endp in
+      let f () = Conduit_lwt_unix.connect ~ctx:(Lazy.force Conduit_lwt_unix.default_ctx) endp in
       match connect_timeout_ms with
         | Some ms -> Lwt_unix.with_timeout (float ms /. 1000.) f
         | None -> f ()
