@@ -20,6 +20,15 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
+    env:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+    services:
+      minio:
+        image: fclairamb/minio-github-actions
+        ports:
+          - 9000:9000
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
