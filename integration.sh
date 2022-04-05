@@ -112,7 +112,7 @@ function test_complete () {
 # Test complete functionality for both lwt and async
 for b in async lwt; do
     BIN=_build/install/default/bin/aws-cli-$b
-    dune build $BIN || exit
+    opam exec -- dune build $BIN || exit
 
     if [ "${MINIO}" -eq "" ]; then
         test_simple $BIN 0 true
