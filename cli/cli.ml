@@ -8,7 +8,7 @@ type actions =
   | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool; chunk_size: int option}
 
 type options =
-  { profile: string option; https: bool; retries: int; ipv6: bool; expect: bool }
+  { profile: string option; minio: string option; https: bool; retries: int; ipv6: bool; expect: bool }
 
 let parse exec =
   let profile =
@@ -24,6 +24,11 @@ let parse exec =
   let https =
     let doc = "Enable/disable https." in
     Arg.(value & opt bool false & info ["https"] ~docv:"HTTPS" ~doc)
+  in
+
+  let minio =
+    let doc = "Connect to minio address <host>[:port]" in
+    Arg.(value & opt (some string) None & info ["minio"] ~docv:"MINIO" ~doc)
   in
 
   let ipv6 =
@@ -42,8 +47,8 @@ let parse exec =
   in
 
   let common_opts =
-    let make profile https retries ipv6 expect  = { profile; https; retries; ipv6; expect } in
-    Term.(const make $ profile $ https $ retries $ ipv6 $ expect)
+    let make profile minio https retries ipv6 expect  = { profile; minio; https; retries; ipv6; expect } in
+    Term.(const make $ profile $ minio $ https $ retries $ ipv6 $ expect)
   in
 
   let bucket n =

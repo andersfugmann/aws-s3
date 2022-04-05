@@ -5,8 +5,9 @@
 
 # Simple tests using the awscli
 
-BUCKET=${BUCKET:-aws-s3-test}
+BUCKET=${BUCKET:-fugmann}
 PREFIX=${PREFIX:-aws-s3-test/}
+MINIO=127.0.0.1:9000
 
 #REDIRECT_BUCKET=aws-s3-test-eu
 TEMP=/tmp/test_data.bin
@@ -48,10 +49,12 @@ function test_simple () {
     RETRIES=$1;shift
     HTTPS=$1;shift
 
+    OPTIONS="--minio=${MINIO} --https=${HTTPS} --retries=${RETRIES}"
+
     echo "TEST SIMPLE $(basename $BIN) HTTPS=${HTTPS}"
-    test "upload" ${BIN} cp --https=${HTTPS} --retries=${RETRIES} $FILE "s3://${BUCKET}/${PREFIX}test"
-    test "head" ${BIN} head --https=${HTTPS} --retries=${RETRIES} "s3://${BUCKET}/${PREFIX}test"
-    test "download" ${BIN} cp --https=${HTTPS} --retries=${RETRIES} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
+    test "upload" ${BIN} cp ${OPTIONS} $FILE "s3://${BUCKET}/${PREFIX}test"
+    test "head" ${BIN} head ${OPTIONS} "s3://${BUCKET}/${PREFIX}test"
+    test "download" ${BIN} cp ${OPTIONS} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
     test "data" diff -u $FILE ${TEMP}
 }
 
@@ -60,6 +63,8 @@ function test_complete () {
     RETRIES=$1;shift
     HTTPS=$1;shift
 
+    OPTIONS="--minio=${MINIO} --https=${HTTPS} --retries=${RETRIES}"
+
     echo "TEST $(basename $BIN) https:${HTTPS}"
 
     #test "redirect upload expect" ${BIN} cp -e --retries=${RETRIES} $FILE s3://${REDIRECT_BUCKET}/${PREFIX}test
@@ -67,49 +72,55 @@ function test_complete () {
     #test "redirect download" ${BIN} cp --retries=${RETRIES} s3://${REDIRECT_BUCKET}/${PREFIX}test ${TEMP}
     #test "redirect data" diff -u $FILE ${TEMP}
 
-    test "upload expect" ${BIN} cp -e --https=${HTTPS} --retries=${RETRIES} $FILE "s3://${BUCKET}/${PREFIX}test"
-    test "head" ${BIN} head --https=${HTTPS} --retries=${RETRIES} "s3://${BUCKET}/${PREFIX}test"
-    test "download" ${BIN} cp --https=${HTTPS} --retries=${RETRIES} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
+    test "upload expect" ${BIN} cp -e ${OPTIONS} $FILE "s3://${BUCKET}/${PREFIX}test"
+    test "head" ${BIN} head ${OPTIONS} "s3://${BUCKET}/${PREFIX}test"
+    test "download" ${BIN} cp ${OPTIONS} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
     test "data" diff -u $FILE ${TEMP}
 
-    test "download stream" ${BIN} cp -c 8209 --https=${HTTPS} --retries=${RETRIES} "s3://${BUCKET}/${PREFIX}test ${TEMP}"
+    test "download stream" ${BIN} cp -c 8209 ${OPTIONS} "s3://${BUCKET}/${PREFIX}test ${TEMP}"
     test "data" diff -u $FILE ${TEMP}
 
-    test "upload chunked expect" ${BIN} cp -e -c 8209 --https=${HTTPS} --retries=${RETRIES} $FILE "s3://${BUCKET}/${PREFIX}test"
-    test "download stream" ${BIN} cp -c 8209 --https=${HTTPS} --retries=${RETRIES} "s3://${BUCKET}/${PREFIX}test ${TEMP}"
+    test "upload chunked expect" ${BIN} cp -e -c 8209 ${OPTIONS} $FILE "s3://${BUCKET}/${PREFIX}test"
+    test "download stream" ${BIN} cp -c 8209 ${OPTIONS} "s3://${BUCKET}/${PREFIX}test ${TEMP}"
     test "data" diff -u $FILE ${TEMP}
 
-    test "multi_upload" ${BIN} cp --https=${HTTPS} --retries=${RETRIES} -m $LARGE_FILE "s3://${BUCKET}/${PREFIX}test"
-    test "download" ${BIN} cp --https=${HTTPS} --retries=${RETRIES} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
+    test "multi_upload" ${BIN} cp ${OPTIONS} -m $LARGE_FILE "s3://${BUCKET}/${PREFIX}test"
+    test "download" ${BIN} cp ${OPTIONS} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
     test "data" diff -u $LARGE_FILE ${TEMP}
 
-    test "multi_upload chunked" ${BIN} cp -c 8209 --https=${HTTPS} --retries=${RETRIES} -m $LARGE_FILE "s3://${BUCKET}/${PREFIX}test"
-    test "download" ${BIN} cp --https=${HTTPS} --retries=${RETRIES} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
+    test "multi_upload chunked" ${BIN} cp -c 8209 ${OPTIONS} -m $LARGE_FILE "s3://${BUCKET}/${PREFIX}test"
+    test "download" ${BIN} cp ${OPTIONS} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
     test "data" diff -u $LARGE_FILE ${TEMP}
 
-    test "multi_upload chunked expect" ${BIN} cp -e -c 8209 --https=${HTTPS} --retries=${RETRIES} -m $LARGE_FILE "s3://${BUCKET}/${PREFIX}test"
-    test "download" ${BIN} cp --https=${HTTPS} --retries=${RETRIES} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
+    test "multi_upload chunked expect" ${BIN} cp -e -c 8209 ${OPTIONS} -m $LARGE_FILE "s3://${BUCKET}/${PREFIX}test"
+    test "download" ${BIN} cp ${OPTIONS} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
     test "data" diff -u $LARGE_FILE ${TEMP}
 
-    test "partial download" ${BIN} cp --https=${HTTPS} --retries=${RETRIES} "s3://${BUCKET}/${PREFIX}test" --first=$FIRST_PART --last=$LAST_PART ${TEMP}
+    test "partial download" ${BIN} cp ${OPTIONS} "s3://${BUCKET}/${PREFIX}test" --first=$FIRST_PART --last=$LAST_PART ${TEMP}
     test "partial data" diff -u ${PART} ${TEMP}
 
-    test "partial download stream" ${BIN} cp --https=${HTTPS} --retries=${RETRIES} --first=$FIRST_PART --last=$LAST_PART "s3://${BUCKET}/${PREFIX}test ${TEMP}"
+    test "partial download stream" ${BIN} cp ${OPTIONS} --first=$FIRST_PART --last=$LAST_PART "s3://${BUCKET}/${PREFIX}test ${TEMP}"
     test "partial data" diff -u ${PART} ${TEMP}
 
-    test "rm" ${BIN} rm --https=${HTTPS} --retries=${RETRIES} ${BUCKET} "${PREFIX}test"
-    test "upload" ${BIN} cp --https=${HTTPS} --retries=${RETRIES} $FILE "s3://${BUCKET}/${PREFIX}test1"
-    test "s3 cp" ${BIN} cp --https=${HTTPS} --retries=${RETRIES} "s3://${BUCKET}/${PREFIX}test1" "s3://${BUCKET}/${PREFIX}test2"
-    test "ls" ${BIN} ls --max-keys=1 --https=${HTTPS} --retries=${RETRIES} ${BUCKET} --prefix="$PREFIX"
-    test "multi rm" ${BIN} rm --https=${HTTPS} --retries=${RETRIES} ${BUCKET} "${PREFIX}test1" "${PREFIX}test2"
+    test "rm" ${BIN} rm ${OPTIONS} ${BUCKET} "${PREFIX}test"
+    test "upload" ${BIN} cp ${OPTIONS} $FILE "s3://${BUCKET}/${PREFIX}test1"
+    test "s3 cp" ${BIN} cp ${OPTIONS} "s3://${BUCKET}/${PREFIX}test1" "s3://${BUCKET}/${PREFIX}test2"
+    test "ls" ${BIN} ls --max-keys=1 ${OPTIONS} ${BUCKET} --prefix="$PREFIX"
+    test "multi rm" ${BIN} rm ${OPTIONS} ${BUCKET} "${PREFIX}test1" "${PREFIX}test2"
 }
 
 # Test complete functionality for both lwt and async
 for b in async lwt; do
     BIN=_build/install/default/bin/aws-cli-$b
     dune build $BIN || exit
-    test_simple $BIN 0 true
+
+    if [ "${MINIO}" -eq "" ]; then
+        test_simple $BIN 0 true
+    fi
     test_simple $BIN 0 false
-    test_complete $BIN 0 true
+
+    if [ "${MINIO}" -eq "" ]; then
+        test_complete $BIN 0 true
+    fi
     test_complete $BIN 0 false
 done
