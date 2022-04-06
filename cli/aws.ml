@@ -193,9 +193,10 @@ module Make(Io : Aws_s3.Types.Io) = struct
     let { bucket; key } = objekt_of_uri path in
     S3.retry ~endpoint ~retries
         ~f:(S3.head ~connect_timeout_ms:5000 ~credentials ~bucket ~key) () >>= function
-    | Ok { S3.key; etag; size; _ } ->
-      Printf.printf "Key: %s, Size: %d, etag: %s\n"
-        key size etag;
+    | Ok { S3.key; etag; size; meta_headers; _ } ->
+      let meta_headers = List.map ~f:(fun (key, value) -> sprintf "%s=%s" key value) (Option.value ~default:[] meta_headers) |> String.concat ~sep:"; " in
+      Printf.printf "Key: %s, Size: %d, etag: %s, meta_headers: [%s]\n"
+        key size etag meta_headers;
       Deferred.return (Ok ())
     | Error _ as e -> Deferred.return e
 

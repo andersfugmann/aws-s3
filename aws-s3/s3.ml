@@ -85,6 +85,7 @@ module Protocol(P: sig type 'a result end) = struct
     last_modified: time [@key "LastModified"];
     key: string [@key "Key"];
     etag: etag [@key "ETag"];
+    meta_headers: (string * string) list option; [@default None]
     (** Add expiration date option *)
   } [@@deriving of_protocol ~driver:(module Protocol_conv_xmlm.Xmlm)]
 
@@ -364,15 +365,16 @@ module Make(Io : Types.Io) = struct
       Headers.find_opt "content-length" headers >>= fun size ->
       Headers.find_opt "etag" headers >>= fun etag ->
       Headers.find_opt "last-modified" headers >>= fun last_modified ->
+      let meta_headers = Headers.find_prefix ~prefix:"x-amz-meta-" headers in
       let last_modified = Time.parse_rcf1123_string last_modified in
       let size = size |> int_of_string in
       let storage_class =
         Headers.find_opt "x-amz-storage-class" headers
         |> Option.value_map ~default:Standard ~f:(fun s ->
             storage_class_of_xmlm_exn (make_xmlm_node "p" [] [`Data s])
-          )
+        )
       in
-      Some { storage_class; size; last_modified; key; etag = unquote etag}
+      Some { storage_class; size; last_modified; key; etag = unquote etag; meta_headers = Some meta_headers}
     in
     match result with
     | Some r -> Deferred.return (Ok r)

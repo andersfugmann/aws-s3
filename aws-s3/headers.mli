@@ -29,3 +29,4 @@ val mapi : (key -> 'a -> 'b) -> 'a t -> 'b t
 val change : key:key -> f:('a option -> 'a option) -> 'a t -> 'a t
 val add : key:key -> value:'a -> 'a t -> 'a t
 val add_opt : key:key -> value:'a option -> 'a t -> 'a t
+val find_prefix : prefix:string -> 'a t -> (key * 'a) list

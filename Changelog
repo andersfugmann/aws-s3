@@ -13,7 +13,7 @@
 [x]: Add option to add user-supplied headers on object put (thanks @AndreasDahl)
 [x]: Adding support to specify minio address for cli
 [x]: Enable CI tests against minio-server
-[ ]: extend head request to return user defined metadata headers
+[x]: extend head request to return user defined metadata headers
 
 4.5.1: Released 2020-03-31
 [x]: Allow compilation with core/async 0.13

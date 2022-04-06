@@ -4,7 +4,7 @@
 #set -o pipefail
 
 BUCKET=aws-s3-bucket
-PREFIX=aws-s3-test
+PREFIX=aws-s3-test/
 TYPE=async
 MINIO=127.0.0.1:9000
 #REDIRECT_BUCKET=aws-s3-test-eu
@@ -27,13 +27,13 @@ TEMP=/tmp/test_data.bin
 
 LARGE_FILE=/tmp/rnd_big.bin
 FILE=/tmp/rnd.bin
-dd if=/dev/urandom of=$LARGE_FILE ibs=1k count=17k
-dd if=$LARGE_FILE  of=$FILE       ibs=1k count=129
+dd if=/dev/urandom of=$LARGE_FILE ibs=1k count=17k > /dev/null 2>&1
+dd if=$LARGE_FILE  of=$FILE       ibs=1k count=129 > /dev/null 2>&1
 
 FIRST_PART=1000
 LAST_PART=68000
 PART=/tmp/part.bin
-dd if=${LARGE_FILE} of=${PART} ibs=1 skip=$(( FIRST_PART )) count=$(( LAST_PART - FIRST_PART + 1))
+dd if=${LARGE_FILE} of=${PART} ibs=1 skip=$(( FIRST_PART )) count=$(( LAST_PART - FIRST_PART + 1)) > /dev/null 2>&1
 
 TEST=0
 function test {
