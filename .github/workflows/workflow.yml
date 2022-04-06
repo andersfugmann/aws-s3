@@ -49,7 +49,7 @@ jobs:
              secret_key='minioadmin',
              secure=False
           )
-          minio.make_bucket('fugmann')
+          minio.make_bucket('bucket-${{ matrix.concurrency }}')
           EOF
 
       - name: Use OCaml ${{ matrix.ocaml-version }}
@@ -63,4 +63,4 @@ jobs:
       - run: opam exec -- dune build aws-s3 aws-s3-${{ matrix.concurrency }}
       - run: opam exec -- dune runtest aws-s3 aws-s3-${{ matrix.concurrency }}
 
-      - run: ./integration.sh
+      - run: ./integration.sh -t ${{ matrix.concurrency }} -b bucket-${{ matrix.concurrency }} -m 127.0.0.1:9000
