@@ -3,13 +3,26 @@
 #set -ex
 #set -o pipefail
 
-# Simple tests using the awscli
-
-BUCKET=${BUCKET:-fugmann}
-PREFIX=${PREFIX:-aws-s3-test/}
+BUCKET=aws-s3-bucket
+PREFIX=aws-s3-test
+TYPE=async
 MINIO=127.0.0.1:9000
-
 #REDIRECT_BUCKET=aws-s3-test-eu
+
+while [ -n "$1" ]; do
+    case "$1" in
+        "-b"|"--bucket")   BUCKET=$2; shift;;
+        "-p"|"--prefix")   PREFIX=$2; shift;;
+        "-m"|"--minio")    MINIO=$2; shift;;
+        "-t"|"--type")     TYPE=$2; shift;;
+        "-r"|"--redirect") REDIRECT_BUCKET=$2; shift;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+    esac
+    shift
+done
+
 TEMP=/tmp/test_data.bin
 
 LARGE_FILE=/tmp/rnd_big.bin
@@ -51,7 +64,7 @@ function test_simple () {
 
     OPTIONS="--minio=${MINIO} --https=${HTTPS} --retries=${RETRIES}"
 
-    echo "TEST SIMPLE $(basename $BIN) HTTPS=${HTTPS}"
+    echo "TEST SIMPLE aws-s3-$TYPE ${OPTIONS}"
     test "upload" ${BIN} cp ${OPTIONS} $FILE "s3://${BUCKET}/${PREFIX}test"
     test "head" ${BIN} head ${OPTIONS} "s3://${BUCKET}/${PREFIX}test"
     test "download" ${BIN} cp ${OPTIONS} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
@@ -65,7 +78,7 @@ function test_complete () {
 
     OPTIONS="--minio=${MINIO} --https=${HTTPS} --retries=${RETRIES}"
 
-    echo "TEST $(basename $BIN) https:${HTTPS}"
+    echo "TEST aws-s3-$TYPE ${OPTIONS}"
 
     #test "redirect upload expect" ${BIN} cp -e --retries=${RETRIES} $FILE s3://${REDIRECT_BUCKET}/${PREFIX}test
     #test "redirect head" ${BIN} head --retries=${RETRIES} s3://${REDIRECT_BUCKET}/${PREFIX}test
@@ -109,18 +122,15 @@ function test_complete () {
     test "multi rm" ${BIN} rm ${OPTIONS} ${BUCKET} "${PREFIX}test1" "${PREFIX}test2"
 }
 
-# Test complete functionality for both lwt and async
-for b in async lwt; do
-    BIN=_build/install/default/bin/aws-cli-$b
-    dune build $BIN || exit
+opam exec -- dune build aws-s3-${TYPE}/bin/aws_cli_${TYPE}.exe
+BIN=_build/default/aws-s3-${TYPE}/bin/aws_cli_${TYPE}.exe
 
-    if [ "${MINIO}" -eq "" ]; then
-        test_simple $BIN 0 true
-    fi
-    test_simple $BIN 0 false
+if [ -z "${MINIO}" ]; then
+    test_simple "$BIN" 0 true
+fi
+test_simple "$BIN" 0 false
 
-    if [ "${MINIO}" -eq "" ]; then
-        test_complete $BIN 0 true
-    fi
-    test_complete $BIN 0 false
-done
+if [ -z "${MINIO}" ]; then
+    test_complete "$BIN" 0 true
+fi
+test_complete "$BIN" 0 false
