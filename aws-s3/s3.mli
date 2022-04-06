@@ -68,6 +68,10 @@ module Make(Io : Types.Io) : sig
       status has been received from the server. This incurs a delay
       in transfer, but avoid sending a large body, if the request can be
       know to fail before the body is sent.
+      @param meta_headers Can be used to set User-defined object metadata.
+      arguments are expected to be a list of key-value pairs, the keys will be
+      prefixed with "x-amz-meta-".
+      @see https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html#UserMetadata
   *)
   val put :
     (?content_type:string ->
@@ -75,6 +79,7 @@ module Make(Io : Types.Io) : sig
      ?acl:string ->
      ?cache_control:string ->
      ?expect:bool ->
+     ?meta_headers:(string * string) list ->
      bucket:string ->
      key:string ->
      data:string -> unit -> etag result) command
@@ -143,6 +148,7 @@ module Make(Io : Types.Io) : sig
        ?acl:string ->
        ?cache_control:string ->
        ?expect:bool ->
+       ?meta_headers:(string * string) list ->
        bucket:string ->
        key:string ->
        data:string Io.Pipe.reader ->
