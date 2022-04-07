@@ -234,8 +234,8 @@ module Make(Io : Types.Io) = struct
   type nonrec 'a result = ('a, error) result Deferred.t
   type 'a command = ?credentials:Credentials.t -> ?connect_timeout_ms:int -> ?confirm_requester_pays:bool -> endpoint:Region.endpoint -> 'a
 
-  (* conditionally add a header indicating caller's willingness to pay
-     for AWS data transfer costs. This only applies in for buckets
+  (** Conditionally add a header indicating caller's willingness to
+     pay for AWS data transfer costs. This only applies to buckets
      configured to limit access to paying requesters. *)
   let maybe_add_request_payer confirm_requester_pays headers =
     match confirm_requester_pays with
@@ -292,8 +292,8 @@ module Make(Io : Types.Io) = struct
         |> List.filter ~f:(function (_, Some _) -> true | (_, None) -> false)
         |> List.map ~f:(function (k, Some v) -> (k, v) | (_, None) -> failwith "Impossible")
       ) @ (meta_headers |> List.map ~f:(fun (k, v) -> (Printf.sprintf "x-amz-meta-%s" k, v)))
+      |> maybe_add_request_payer confirm_requester_pays
     in
-    let headers = maybe_add_request_payer confirm_requester_pays headers in
     let sink = Body.null () in
     let cmd () =
       Aws.make_request ~endpoint ?expect ?credentials ?connect_timeout_ms ~headers ~meth:`PUT ~path ~sink ~body ~query:[] ()

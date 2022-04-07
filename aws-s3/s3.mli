@@ -39,9 +39,13 @@ module Make(Io : Types.Io) : sig
 
   type nonrec 'a result = ('a, error) result Deferred.t
 
-  (* If [confirm_requester_pays], caller acknowledges that it will pay
-     AWS data transfer costs, should the target bucket be so
-     configured. *)
+  (** The type of S3 requests. [credentials] refers to AWS
+     credentials, as created by [Credentials.make].
+     [connect_timeout_ms] specifies the request timeout, in
+     milliseconds. If [confirm_requester_pays], caller acknowledges
+     that it will pay AWS data transfer costs, should the target
+     bucket be so configured. [endpoint] encapsulates the AWS
+     endpoint, as created by [Region.endpoint]. *)
   type 'a command = ?credentials:Credentials.t -> ?connect_timeout_ms:int -> ?confirm_requester_pays:bool -> endpoint:Region.endpoint -> 'a
 
   module Ls : sig
