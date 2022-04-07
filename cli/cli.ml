@@ -47,7 +47,9 @@ let parse exec =
   in
 
   let confirm_requester_pays =
-    let doc = "indicate that the client is paying for the request" in
+    let doc = "indicate that the client is willing to pay for the \
+               request, should the target bucket be configured to \
+               impose those costs on the requester." in
     Arg.(value & flag & info ["requester-pays"] ~docv:"REQUESTER-PAYS" ~doc)
   in
 
