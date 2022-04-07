@@ -235,8 +235,10 @@ module Make(Io : Types.Io) = struct
   type 'a command = ?credentials:Credentials.t -> ?connect_timeout_ms:int -> ?confirm_requester_pays:bool -> endpoint:Region.endpoint -> 'a
 
   (* conditionally add a header indicating caller's willingness to pay
-     for AWS data transfer costs *)
-  let add_request_payer headers = function
+     for AWS data transfer costs. This only applies in for buckets
+     configured to limit access to paying requesters. *)
+  let maybe_add_request_payer confirm_requester_pays headers =
+    match confirm_requester_pays with
     | true -> ("x-amz-request-payer", "requester") :: headers
     | false -> headers
 
@@ -291,7 +293,7 @@ module Make(Io : Types.Io) = struct
         |> List.map ~f:(function (k, Some v) -> (k, v) | (_, None) -> failwith "Impossible")
       ) @ (meta_headers |> List.map ~f:(fun (k, v) -> (Printf.sprintf "x-amz-meta-%s" k, v)))
     in
-    let headers = add_request_payer headers confirm_requester_pays in
+    let headers = maybe_add_request_payer confirm_requester_pays headers in
     let sink = Body.null () in
     let cmd () =
       Aws.make_request ~endpoint ?expect ?credentials ?connect_timeout_ms ~headers ~meth:`PUT ~path ~sink ~body ~query:[] ()
@@ -325,7 +327,7 @@ module Make(Io : Types.Io) = struct
           [ "Range", sprintf "bytes=0-%d" last ]
         | None -> []
       in
-      let headers = add_request_payer headers confirm_requester_pays in
+      let headers = maybe_add_request_payer confirm_requester_pays headers in
       let path = sprintf "/%s/%s" bucket key in
       let cmd () =
         Aws.make_request ~endpoint ?credentials ?connect_timeout_ms ~sink:data ~headers ~meth:`GET ~path ~query:[] ()
@@ -352,7 +354,7 @@ module Make(Io : Types.Io) = struct
   let delete ?credentials ?connect_timeout_ms ?(confirm_requester_pays=false) ~endpoint ~bucket ~key () =
     let path = sprintf "/%s/%s" bucket key in
     let sink = Body.null () in
-    let headers = add_request_payer [] confirm_requester_pays in
+    let headers = maybe_add_request_payer confirm_requester_pays [] in
     let cmd () =
       Aws.make_request ?credentials ?connect_timeout_ms ~endpoint ~headers ~meth:`DELETE ~path ~query:[] ~sink ()
     in
@@ -363,7 +365,7 @@ module Make(Io : Types.Io) = struct
   let head ?credentials ?connect_timeout_ms ?(confirm_requester_pays=false) ~endpoint ~bucket ~key () =
     let path = sprintf "/%s/%s" bucket key in
     let sink = Body.null () in
-    let headers = add_request_payer [] confirm_requester_pays in
+    let headers = maybe_add_request_payer confirm_requester_pays [] in
     let cmd () =
       Aws.make_request ?credentials ?connect_timeout_ms ~endpoint ~headers ~meth:`HEAD ~path ~query:[] ~sink ()
     in
@@ -409,7 +411,7 @@ module Make(Io : Types.Io) = struct
         |> fun req -> Ezxmlm.to_string [ req ]
       in
       let headers = [ "Content-MD5", Base64.encode_string (Caml.Digest.string request) ] in
-      let headers = add_request_payer headers confirm_requester_pays in
+      let headers = maybe_add_request_payer confirm_requester_pays headers in
       let body, sink = string_sink () in
       let cmd () =
         Aws.make_request ~endpoint
@@ -434,7 +436,7 @@ module Make(Io : Types.Io) = struct
                   Option.map ~f:(fun start_after -> ("start-after", start_after)) start_after;
                 ] |> filter_map ~f:(fun x -> x)
     in
-    let headers = add_request_payer [] confirm_requester_pays in
+    let headers = maybe_add_request_payer confirm_requester_pays [] in
     let body, sink = string_sink () in
     let cmd () =
       Aws.make_request ?credentials ?connect_timeout_ms ~endpoint ~headers ~meth:`GET ~path:("/" ^ bucket) ~query ~sink ()
@@ -467,7 +469,7 @@ module Make(Io : Types.Io) = struct
         let acl              = Option.map ~f:(fun acl -> ("x-amz-acl", acl)) acl in
         filter_map ~f:(fun x -> x) [ content_type; content_encoding; cache_control; acl ]
       in
-      let headers = add_request_payer headers confirm_requester_pays in
+      let headers = maybe_add_request_payer confirm_requester_pays headers in
       let body, sink = string_sink () in
       let cmd () =
         Aws.make_request ?credentials ?connect_timeout_ms ~endpoint ~headers ~meth:`POST ~path ~query ~sink ()
@@ -494,7 +496,7 @@ module Make(Io : Types.Io) = struct
           "uploadId", t.id ]
       in
       let sink = Body.null () in
-      let headers = add_request_payer [] confirm_requester_pays in
+      let headers = maybe_add_request_payer confirm_requester_pays [] in
       let cmd () =
         Aws.make_request ?expect ?credentials ?connect_timeout_ms ~endpoint ~headers ~meth:`PUT ~path
           ~body:(Body.String data) ~query ~sink ()
@@ -522,7 +524,7 @@ module Make(Io : Types.Io) = struct
         Option.value_map ~default:[] ~f:(fun (first, last) ->
             [ "x-amz-copy-source-range", sprintf "bytes=%d-%d" first last ]) range
       in
-      let headers = add_request_payer headers confirm_requester_pays in
+      let headers = maybe_add_request_payer confirm_requester_pays headers in
       let body, sink = string_sink () in
       let cmd () =
         Aws.make_request ?credentials ?connect_timeout_ms ~endpoint ~headers ~meth:`PUT ~path ~query ~sink ()
@@ -549,7 +551,7 @@ module Make(Io : Types.Io) = struct
         |> (fun node -> Format.asprintf "%a" Ezxmlm.pp [node])
       in
       let body, sink = string_sink () in
-      let headers = add_request_payer [] confirm_requester_pays in
+      let headers = maybe_add_request_payer confirm_requester_pays [] in
       let cmd () =
         Aws.make_request ?credentials ?connect_timeout_ms ~endpoint ~headers ~meth:`POST ~path ~query ~body:(Body.String request) ~sink ()
       in
@@ -569,7 +571,7 @@ module Make(Io : Types.Io) = struct
       let path = sprintf "/%s/%s" t.bucket t.key in
       let query = [ "uploadId", t.id ] in
       let sink = Body.null () in
-      let headers = add_request_payer [] confirm_requester_pays in
+      let headers = maybe_add_request_payer confirm_requester_pays [] in
       let cmd () =
         Aws.make_request ?credentials ~endpoint ?connect_timeout_ms ~headers ~meth:`DELETE ~path ~query ~sink ()
       in
@@ -585,7 +587,7 @@ module Make(Io : Types.Io) = struct
         in
         let body = Body.Chunked { length; chunk_size; pipe=data } in
         let sink = Body.null () in
-        let headers = add_request_payer [] confirm_requester_pays in
+        let headers = maybe_add_request_payer confirm_requester_pays [] in
         let cmd () =
           Aws.make_request ?expect ?credentials ?connect_timeout_ms ~endpoint ~headers ~meth:`PUT ~path
             ~body ~query ~sink ()
