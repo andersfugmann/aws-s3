@@ -8,7 +8,7 @@ type actions =
   | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool; chunk_size: int option}
 
 type options =
-  { profile: string option; minio: string option; https: bool; retries: int; ipv6: bool; expect: bool; requester_pays : bool }
+  { profile: string option; minio: string option; https: bool; retries: int; ipv6: bool; expect: bool; confirm_requester_pays : bool }
 
 let parse exec =
   let profile =
@@ -46,14 +46,14 @@ let parse exec =
     Arg.(value & flag & info ["expect"; "e"] ~docv:"EXPECT" ~doc)
   in
 
-  let requester_pays =
+  let confirm_requester_pays =
     let doc = "indicate that the client is paying for the request" in
     Arg.(value & flag & info ["requester-pays"] ~docv:"REQUESTER-PAYS" ~doc)
   in
 
   let common_opts =
-    let make profile minio https retries ipv6 expect requester_pays = { profile; minio; https; retries; ipv6; expect; requester_pays } in
-    Term.(const make $ profile $ minio $ https $ retries $ ipv6 $ expect $ requester_pays )
+    let make profile minio https retries ipv6 expect confirm_requester_pays = { profile; minio; https; retries; ipv6; expect; confirm_requester_pays } in
+    Term.(const make $ profile $ minio $ https $ retries $ ipv6 $ expect $ confirm_requester_pays )
   in
 
   let bucket n =

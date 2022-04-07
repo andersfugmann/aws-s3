@@ -39,8 +39,8 @@ module Make(Io : Types.Io) : sig
 
   type nonrec 'a result = ('a, error) result Deferred.t
 
-  (* If [requester_pays], caller will pay AWS data transfer costs. *)
-  type 'a command = ?credentials:Credentials.t -> ?connect_timeout_ms:int -> ?requester_pays:bool -> endpoint:Region.endpoint -> 'a
+  (* If [confirm_requester_pays], caller will pay AWS data transfer costs. *)
+  type 'a command = ?credentials:Credentials.t -> ?connect_timeout_ms:int -> ?confirm_requester_pays:bool -> endpoint:Region.endpoint -> 'a
 
   module Ls : sig
     type t = (content list * cont) result

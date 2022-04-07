@@ -112,7 +112,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
       (S3.retry ~endpoint ~retries ~f:(f ~size)) () ::
        upload_parts t endpoint ~retries ~expect ~credentials ~offset:(offset + size) ~total ~part_number:(part_number + 1) ?chunk_size src
 
-  let cp profile endpoint ~retries ~expect ~requester_pays ?(use_multi=false) ?first ?last ?chunk_size src dst =
+  let cp profile endpoint ~retries ~expect ~confirm_requester_pays ?(use_multi=false) ?first ?last ?chunk_size src dst =
     let range = { S3.first; last } in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
@@ -120,13 +120,13 @@ module Make(Io : Aws_s3.Types.Io) = struct
     | S3toLocal (src, dst) ->
       let f ~endpoint () = match chunk_size with
         | None ->
-          S3.get ~endpoint ~credentials ~range ~requester_pays ~bucket:src.bucket ~key:src.key ()
+          S3.get ~endpoint ~credentials ~range ~confirm_requester_pays ~bucket:src.bucket ~key:src.key ()
         | Some _ ->
           let body, data =
             let r, w = Pipe.create () in
             Body.to_string r, w
           in
-          S3.Stream.get ~endpoint ~credentials ~range ~requester_pays ~bucket:src.bucket ~key:src.key ~data () >>=? fun () ->
+          S3.Stream.get ~endpoint ~credentials ~range ~confirm_requester_pays ~bucket:src.bucket ~key:src.key ~data () >>=? fun () ->
           body >>= fun body -> Deferred.return (Ok body)
       in
       S3.retry ~endpoint ~retries ~f () >>=? fun data ->
@@ -142,7 +142,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
         | Some n -> n
       in
       S3.retry ~endpoint ~retries
-        ~f:(fun ~endpoint () -> S3.Multipart_upload.init ~requester_pays ~endpoint ~credentials ~bucket:dst.bucket ~key:dst.key ()) () >>=? fun t ->
+        ~f:(fun ~endpoint () -> S3.Multipart_upload.init ~confirm_requester_pays ~endpoint ~credentials ~bucket:dst.bucket ~key:dst.key ()) () >>=? fun t ->
       let uploads = upload_parts t endpoint ~retries ~expect ?chunk_size ~credentials ~offset ~total:last src in
       List.fold_left ~init:(Deferred.return (Ok ())) ~f:(fun acc x -> acc >>=? fun () -> x) uploads >>=?
       S3.retry ~endpoint ~retries
@@ -175,24 +175,24 @@ module Make(Io : Aws_s3.Types.Io) = struct
         ~f:(fun ~endpoint () -> S3.Multipart_upload.complete ~endpoint ~credentials t ()) >>=? fun _md5 ->
       Deferred.return (Ok ())
 
-  let rm profile endpoint ~requester_pays ~retries bucket paths =
+  let rm profile endpoint ~confirm_requester_pays ~retries bucket paths =
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
     match paths with
     | [ key ] ->
-        S3.retry ~endpoint ~retries ~f:(S3.delete ~connect_timeout_ms:5000 ~credentials ~requester_pays ~bucket ~key) ()
+        S3.retry ~endpoint ~retries ~f:(S3.delete ~connect_timeout_ms:5000 ~credentials ~confirm_requester_pays ~bucket ~key) ()
     | keys ->
       let objects : S3.Delete_multi.objekt list = List.map ~f:(fun key -> { S3.Delete_multi.key; version_id = None }) keys in
       S3.retry ~endpoint ~retries
-        ~f:(S3.delete_multi ~connect_timeout_ms:5000 ~credentials ~requester_pays ~bucket ~objects) () >>=? fun _deleted ->
+        ~f:(S3.delete_multi ~connect_timeout_ms:5000 ~credentials ~confirm_requester_pays ~bucket ~objects) () >>=? fun _deleted ->
       Deferred.return (Ok ())
 
-  let head profile endpoint ~retries ~requester_pays path =
+  let head profile endpoint ~retries ~confirm_requester_pays path =
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
     let { bucket; key } = objekt_of_uri path in
     S3.retry ~endpoint ~retries
-        ~f:(S3.head ~connect_timeout_ms:5000 ~requester_pays ~credentials ~bucket ~key) () >>= function
+        ~f:(S3.head ~connect_timeout_ms:5000 ~confirm_requester_pays ~credentials ~bucket ~key) () >>= function
     | Ok { S3.key; etag; size; meta_headers; _ } ->
       let meta_headers = List.map ~f:(fun (key, value) -> sprintf "%s=%s" key value) (Option.value ~default:[] meta_headers) |> String.concat ~sep:"; " in
       Printf.printf "Key: %s, Size: %d, etag: %s, meta_headers: [%s]\n"
@@ -200,7 +200,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
       Deferred.return (Ok ())
     | Error _ as e -> Deferred.return e
 
-  let ls profile endpoint ~retries ~requester_pays ?ratelimit ?start_after ?max_keys ?prefix bucket =
+  let ls profile endpoint ~retries ~confirm_requester_pays ?ratelimit ?start_after ?max_keys ?prefix bucket =
     let ratelimit_f = match ratelimit with
       | None -> fun () -> Deferred.return (Ok ())
       | Some n -> fun () -> after (1000. /. float n) >>= fun () -> Deferred.return (Ok ())
@@ -224,9 +224,9 @@ module Make(Io : Aws_s3.Types.Io) = struct
     in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
-    S3.retry ~endpoint ~retries ~f:(S3.ls ?connect_timeout_ms:None ~requester_pays ?start_after ?continuation_token:None ~credentials ?max_keys ?prefix ~bucket) () >>=? ls_all ?max_keys
+    S3.retry ~endpoint ~retries ~f:(S3.ls ?connect_timeout_ms:None ~confirm_requester_pays ?start_after ?continuation_token:None ~credentials ?max_keys ?prefix ~bucket) () >>=? ls_all ?max_keys
 
-  let exec ({ Cli.profile; https; minio; retries; ipv6; expect; requester_pays }, cmd) =
+  let exec ({ Cli.profile; https; minio; retries; ipv6; expect; confirm_requester_pays }, cmd) =
     let inet = if ipv6 then `V6 else `V4 in
     let scheme = if https then `Https else `Http in
     (* TODO: Get the region from the CLI *)
@@ -245,13 +245,13 @@ module Make(Io : Aws_s3.Types.Io) = struct
     begin
       match cmd with
       | Cli.Cp { src; dest; first; last; multi; chunk_size } ->
-        cp profile endpoint ~retries ~requester_pays ~expect ~use_multi:multi ?first ?last ?chunk_size src dest
+        cp profile endpoint ~retries ~confirm_requester_pays ~expect ~use_multi:multi ?first ?last ?chunk_size src dest
       | Rm { bucket; paths } ->
-        rm profile endpoint ~retries ~requester_pays bucket paths
+        rm profile endpoint ~retries ~confirm_requester_pays bucket paths
       | Ls { ratelimit; bucket; prefix; start_after; max_keys  } ->
-        ls profile endpoint ~retries ~requester_pays ?ratelimit ?start_after ?prefix ?max_keys bucket
+        ls profile endpoint ~retries ~confirm_requester_pays ?ratelimit ?start_after ?prefix ?max_keys bucket
       | Head { path } ->
-        head profile endpoint ~retries ~requester_pays path
+        head profile endpoint ~retries ~confirm_requester_pays path
     end >>= function
     | Ok _ -> return 0
     | Error e ->
