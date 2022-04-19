@@ -4,11 +4,11 @@
 [ ]: Add support for fetching credentials from environment
 [ ]: Support session tokens
 
-4.7.0: Unreleased
+4.7.0: Released 2022-04-19
 [x]: Add option ` confirm_requester_pays` (thanks @barko)
 [x]: Relax constraint on core (thanks @AndreasDahl)
 
-4.6.0: Released 2022-04.06
+4.6.0: Released 2022-04-06
 [x]: Added Backblaze vendor region (thanks @roddyyaga)
 [x]: Use xmlm instead of xml_light
 [x]: Fix compilation warning on 4.12.0
