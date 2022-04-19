@@ -5,7 +5,6 @@
 
 BUCKET=aws-s3-bucket
 PREFIX=aws-s3-test/
-TYPE=async
 MINIO=127.0.0.1:9000
 #REDIRECT_BUCKET=aws-s3-test-eu
 
@@ -14,7 +13,7 @@ while [ -n "$1" ]; do
         "-b"|"--bucket")   BUCKET=$2; shift;;
         "-p"|"--prefix")   PREFIX=$2; shift;;
         "-m"|"--minio")    MINIO=$2; shift;;
-        "-t"|"--type")     TYPE=$2; shift;;
+        "-t"|"--type")     TYPES="$TYPES $2"; shift;;
         "-r"|"--redirect") REDIRECT_BUCKET=$2; shift;;
         *)
             echo "Unknown option: $1"
@@ -122,15 +121,17 @@ function test_complete () {
     test "multi rm" ${BIN} rm ${OPTIONS} ${BUCKET} "${PREFIX}test1" "${PREFIX}test2"
 }
 
-opam exec -- dune build aws-s3-${TYPE}/bin/aws_cli_${TYPE}.exe
-BIN=_build/default/aws-s3-${TYPE}/bin/aws_cli_${TYPE}.exe
+for TYPE in ${TYPES:-lwt}; do
+    opam exec -- dune build aws-s3-${TYPE}/bin/aws_cli_${TYPE}.exe
+    BIN=_build/default/aws-s3-${TYPE}/bin/aws_cli_${TYPE}.exe
 
-if [ -z "${MINIO}" ]; then
-    test_simple "$BIN" 0 true
-fi
-test_simple "$BIN" 0 false
+    if [ -z "${MINIO}" ]; then
+        test_simple "$BIN" 0 true
+    fi
+    test_simple "$BIN" 0 false
 
-if [ -z "${MINIO}" ]; then
-    test_complete "$BIN" 0 true
-fi
-test_complete "$BIN" 0 false
+    if [ -z "${MINIO}" ]; then
+        test_complete "$BIN" 0 true
+    fi
+    test_complete "$BIN" 0 false
+done

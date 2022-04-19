@@ -43,3 +43,8 @@ gh-pages: doc
 	git -C .gh-pages commit -m "Update documentation"
 	git -C .gh-pages push origin gh-pages -f
 	rm -rf .gh-pages
+
+.PHONY: minio
+minio:
+	mkdir -p /tmp/minio/aws-s3-bucket
+	docker run --rm -it -p 9000:9000 -v /tmp/minio:/minio minio/minio:latest server /minio
