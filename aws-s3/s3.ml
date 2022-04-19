@@ -291,7 +291,8 @@ module Make(Io : Types.Io) = struct
         ]
         |> List.filter ~f:(function (_, Some _) -> true | (_, None) -> false)
         |> List.map ~f:(function (k, Some v) -> (k, v) | (_, None) -> failwith "Impossible")
-      ) @ (meta_headers |> List.map ~f:(fun (k, v) -> (Printf.sprintf "x-amz-meta-%s" k, v)))
+      )
+      |> List.rev_append (meta_headers |> List.map ~f:(fun (k, v) -> (Printf.sprintf "x-amz-meta-%s" k, v)))
       |> maybe_add_request_payer confirm_requester_pays
     in
     let sink = Body.null () in
