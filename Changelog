@@ -2,7 +2,8 @@
 
 [ ]: Support bigstring (zero copy)
 [ ]: Add support for fetching credentials from environment
-[ ]: Support session tokens
+[x]: Add short lived credentials tokens through X-Amz-Security-Token http header (Thanks @ anuragsoni)
+[x]: Update dependencies on yojson (Thanks @Leonidas-from-XIV)
 
 4.7.0: Released 2022-04-19
 [x]: Add option ` confirm_requester_pays` (thanks @barko)
