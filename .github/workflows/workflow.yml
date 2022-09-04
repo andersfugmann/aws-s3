@@ -11,7 +11,7 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-        ocaml-version:
+        ocaml-compiler:
           - 4.14.0
           - 4.08.0
         concurrency:
@@ -52,10 +52,10 @@ jobs:
           minio.make_bucket('bucket-${{ matrix.concurrency }}')
           EOF
 
-      - name: Use OCaml ${{ matrix.ocaml-version }}
+      - name: Use OCaml ${{ matrix.ocaml-compiler }}
         uses: avsm/setup-ocaml@v2
         with:
-          ocaml-version: ${{ matrix.ocaml-version }}
+          ocaml-compiler: ${{ matrix.ocaml-compiler }}
 
       - run: opam pin . --no-action
       - run: opam depext aws-s3 aws-s3-${{ matrix.concurrency }} --yes --with-doc --with-test
