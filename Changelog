@@ -2,6 +2,8 @@
 
 [ ]: Support bigstring (zero copy)
 [ ]: Add support for fetching credentials from environment
+
+4.8.0: Released 2022-09-04
 [x]: Add short lived credentials tokens through X-Amz-Security-Token http header (Thanks @ anuragsoni)
 [x]: Update dependencies on yojson (Thanks @Leonidas-from-XIV)
 
