@@ -199,7 +199,8 @@ module Net = struct
         read ()
     in
     (* We close input and output when input is closed *)
-    Lwt.async (fun () -> Pipe.closed reader >>= fun () -> Lwt_io.close oc);
+    Lwt.async (fun () -> Pipe.closed reader >>= fun () ->
+                Lwt_io.close oc >>= fun () -> Lwt_io.close ic);
     Lwt.async read;
 
     let output, writer = Pipe.create () in
