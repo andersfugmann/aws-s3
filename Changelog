@@ -4,7 +4,8 @@
 [ ]: Add support for fetching credentials from environment
 
 4.8.1: Unreleased
-[x]: Fix bug in leaking filedescriptors (thanks @quernd)
+[x]: Forward compatibility with Lwt release 5.7/6.0
+[x]: Fix bug causing a leak in filedescriptors (thanks @quernd)
 
 4.8.0: Released 2022-09-04
 [x]: Add short lived credentials tokens through X-Amz-Security-Token http header (Thanks @ anuragsoni)

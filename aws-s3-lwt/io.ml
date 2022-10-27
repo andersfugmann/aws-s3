@@ -185,8 +185,9 @@ module Net = struct
     (*  Lwt_io.input_channel *)
     let reader, input = Pipe.create () in
     let buffer_size = Lwt_io.buffer_size ic in
+    let catch_result f = Lwt.catch (fun () -> Lwt_result.ok (f ())) Lwt_result.fail in
     let rec read () =
-      Lwt_result.catch (Lwt_io.read ~count:buffer_size ic) >>= fun data ->
+      catch_result (fun () -> Lwt_io.read ~count:buffer_size ic) >>= fun data ->
       match input.Pipe.closed, data with
       | _, Ok ""
       | _, Error _ ->
