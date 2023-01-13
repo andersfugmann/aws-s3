@@ -92,7 +92,7 @@ module Make(Io : Types.Io) : sig
      ?meta_headers:(string * string) list ->
      bucket:string ->
      key:string ->
-     data:string -> unit -> etag result) command
+     data:string -> unit -> etag option result) command
 
   (** Download [key] from s3 in [bucket]
       If [range] is specified, only a part of the file is retrieved:
@@ -164,7 +164,7 @@ module Make(Io : Types.Io) : sig
        data:string Io.Pipe.reader ->
        chunk_size:int ->
        length:int ->
-       unit -> etag result) command
+       unit -> etag option result) command
 
     (** Streaming version of get.
         The caller must supply a [data] sink to which retrieved data is streamed.
