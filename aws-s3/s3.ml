@@ -505,7 +505,7 @@ module Make(Io : Types.Io) = struct
       do_command ~endpoint cmd >>=? fun headers ->
       let etag =
         Headers.find_opt "etag" headers
-        |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
+        |> (fun etag -> Option.value_exn ~message:"Put reply did not contain an etag header" etag)
         |> fun etag -> unquote etag
       in
       t.parts <- { etag; part_number } :: t.parts;
@@ -597,7 +597,7 @@ module Make(Io : Types.Io) = struct
         do_command ~endpoint cmd >>=? fun headers ->
         let etag =
           Headers.find_opt "etag" headers
-          |> (fun etag -> Option.value_exn ~message:"Put reply did not conatin an etag header" etag)
+          |> (fun etag -> Option.value_exn ~message:"Put reply did not contain an etag header" etag)
           |> fun etag -> String.sub ~pos:1 ~len:(String.length etag - 2) etag
         in
         t.parts <- { etag; part_number } :: t.parts;
