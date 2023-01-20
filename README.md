@@ -21,6 +21,4 @@ The library supports both lwt and async concurrency models.
 
 [Api](https://andersfugmann.github.io/aws-s3/)
 
-This library is originally based on s3_cp example found at
-https://github.com/mirage/ocaml-cohttp/blob/master/examples/async/s3_cp.ml,
-but has diverted (and grown) substantially since.
+This library is originally based on [s3_cp.ml](https://raw.githubusercontent.com/mirage/ocaml-cohttp/5c3d77cde632f366bfdf9521b95648527174a2f3/examples/async/s3_cp.ml) from the mirage project but has diverted (and grown) substantially since.
