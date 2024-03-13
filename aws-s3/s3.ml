@@ -411,7 +411,7 @@ module Make(Io : Types.Io) = struct
         |> Delete_multi.xml_of_request
         |> fun req -> Ezxmlm.to_string [ req ]
       in
-      let headers = [ "Content-MD5", Base64.encode_string (Caml.Digest.string request) ] in
+      let headers = [ "Content-MD5", Base64.encode_string (Stdlib.Digest.string request) ] in
       let headers = maybe_add_request_payer confirm_requester_pays headers in
       let body, sink = string_sink () in
       let cmd () =
@@ -547,7 +547,7 @@ module Make(Io : Types.Io) = struct
       let query = [ "uploadId", t.id ] in
       let request =
         (* TODO: Sort the parts by partNumber *)
-        let parts = Caml.List.sort (fun a b -> compare a.Multipart.part_number b.part_number) t.parts in
+        let parts = Stdlib.List.sort (fun a b -> compare a.Multipart.part_number b.part_number) t.parts in
         Multipart.Complete.(xml_of_request { parts })
         |> (fun node -> Format.asprintf "%a" Ezxmlm.pp [node])
       in

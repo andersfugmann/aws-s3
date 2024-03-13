@@ -211,7 +211,7 @@ module Make(Io : Aws_s3.Types.Io) = struct
       | Some t -> Ptime.to_rfc3339 ~space:false t
     in
     let rec ls_all ?max_keys (result, cont) =
-      List.iter ~f:(fun { S3.last_modified; key; size; etag; _ } -> Caml.Printf.printf "%s\t%d\t%s\t%s\n%!" (string_of_time last_modified) size key etag) result;
+      List.iter ~f:(fun { S3.last_modified; key; size; etag; _ } -> Stdlib.Printf.printf "%s\t%d\t%s\t%s\n%!" (string_of_time last_modified) size key etag) result;
       let max_keys = match max_keys with
         | Some n -> Some (n - List.length result)
         | None -> None
