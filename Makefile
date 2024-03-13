@@ -27,7 +27,7 @@ integration:
 	./integration.sh
 
 release:
-	opam publish
+	dune-release
 
 doc:
 	dune build @doc
