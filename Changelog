@@ -1,110 +1,111 @@
 -*- mode: fundamental -*-
 
-[ ]: Support bigstring (zero copy)
-[ ]: Add support for fetching credentials from environment
+## Future
+- [ ]: Support bigstring (zero copy)
+- [ ]: Add support for fetching credentials from environment
 
-4.8.1: Release 2024-03-13
-[x]: Forward compatibility with Lwt release 5.7/6.0
-[x]: Fix bug causing a leak in filedescriptors (thanks @quernd)
+## 4.8.1: Release 2024-03-13
+- [x]: Forward compatibility with Lwt release 5.7/6.0
+- [x]: Fix bug causing a leak in filedescriptors (thanks @quernd)
 
-4.8.0: Released 2022-09-04
-[x]: Add short lived credentials tokens through X-Amz-Security-Token http header (Thanks @ anuragsoni)
-[x]: Update dependencies on yojson (Thanks @Leonidas-from-XIV)
+## 4.8.0: Released 2022-09-04
+- [x]: Add short lived credentials tokens through X-Amz-Security-Token http header (Thanks @ anuragsoni)
+- [x]: Update dependencies on yojson (Thanks @Leonidas-from-XIV)
 
-4.7.0: Released 2022-04-19
-[x]: Add option ` confirm_requester_pays` (thanks @barko)
-[x]: Relax constraint on core (thanks @AndreasDahl)
+## 4.7.0: Released 2022-04-19
+- [x]: Add option ` confirm_requester_pays` (thanks @barko)
+- [x]: Relax constraint on core (thanks @AndreasDahl)
 
-4.6.0: Released 2022-04-06
-[x]: Added Backblaze vendor region (thanks @roddyyaga)
-[x]: Use xmlm instead of xml_light
-[x]: Fix compilation warning on 4.12.0
-[x]: Update dependencies to latest version of core and cmdliner
-[x]: Add option to add user-supplied headers on object put (thanks @AndreasDahl)
-[x]: Adding support to specify minio address for cli
-[x]: Enable CI tests against minio-server
-[x]: extend head request to return user defined metadata headers
+## 4.6.0: Released 2022-04-06
+- [x]: Added Backblaze vendor region (thanks @roddyyaga)
+- [x]: Use xmlm instead of xml_light
+- [x]: Fix compilation warning on 4.12.0
+- [x]: Update dependencies to latest version of core and cmdliner
+- [x]: Add option to add user-supplied headers on object put (thanks @AndreasDahl)
+- [x]: Adding support to specify minio address for cli
+- [x]: Enable CI tests against minio-server
+- [x]: extend head request to return user defined metadata headers
 
-4.5.1: Released 2020-03-31
-[x]: Allow compilation with core/async 0.13
+## 4.5.1: Released 2020-03-31
+- [x]: Allow compilation with core/async 0.13
 
 4.5.0: Released 2019-12-04
-[x]: Add connection_timeout_ms option to all calls
+- [x]: Add connection_timeout_ms option to all calls
 
-4.4.1: Released 2019-11-12
-[x]: Aws-s3-async: Fix uncaught error if connection timed out.
-[x]: Remove warnings when compiling with 4.08
+## 4.4.1: Released 2019-11-12
+- [x]: Aws-s3-async: Fix uncaught error if connection timed out.
+- [x]: Remove warnings when compiling with 4.08
 
-4.4.0: Released 2019-04-22
-[x]: Update to newest version of ppx_protocol_conv
-[x]: Support for custom hosts in presigned URLs (@hcarty)
+## 4.4.0: Released 2019-04-22
+- [x]: Update to newest version of ppx_protocol_conv
+- [x]: Support for custom hosts in presigned URLs (@hcarty)
 
-4.3.0: Released 2019-03-03
-[x]: Require Base64 >= 3.1 [Adam Ringwood]
-[x]: Add support for generating s3 presigned urls [Adam Ringwood]
+## 4.3.0: Released 2019-03-03
+- [x]: Require Base64 >= 3.1 [Adam Ringwood]
+- [x]: Add support for generating s3 presigned urls [Adam Ringwood]
 
-4.2.0: Released 2018-10-26
-[x]: Update opam files to opam 2.0
-[x]: Depend on digestif 0.7 [hcarty]
-[x]: Add support for 3rd party s3 compatible providers [hcarty]
-[x]: Support ocaml-tls [hcarty]
+## 4.2.0: Released 2018-10-26
+- [x]: Update opam files to opam 2.0
+- [x]: Depend on digestif 0.7 [hcarty]
+- [x]: Add support for 3rd party s3 compatible providers [hcarty]
+- [x]: Support ocaml-tls [hcarty]
 
-4.1.0: Released 2018-08-27
-[x]: Add start_after argument to ls
-[x]: Extend cli to accpet max_keys > 1000 and a start_after option for ls
-[x]: Reduce linked libaries
+## 4.1.0: Released 2018-08-27
+- [x]: Add start_after argument to ls
+- [x]: Extend cli to accpet max_keys > 1000 and a start_after option for ls
+- [x]: Reduce linked libaries
 
-4.0.1: Released 2018-08-20
-[x] Fix harmless bug when scanning for seperators with more than one character.
-[x] Fix bug when parsing multi delete reply in case of error
+## 4.0.1: Released 2018-08-20
+- [x] Fix harmless bug when scanning for seperators with more than one character.
+- [x] Fix bug when parsing multi delete reply in case of error
 
-4.0.0: Released 2018-08-16
-[x] Support HEAD operation on objects.
-[x] Change signature to use string for etag rather than
+## 4.0.0: Released 2018-08-16
+- [x] Support HEAD operation on objects.
+- [x] Change signature to use string for etag rather than
     Caml.Digest.t for clearer documentation
-[x] Support Digest 0.6
-[x] Remove dependency to Core
-[x] Rewrite authentication code
-[x] Switch to use Ptime for time conversion routines
-[x] Support chunked transfer (put)
-[x] Add streaming API
-[x] Remove dependency on Cohttp
-[x] Switch to dune
-[x] Support IPv6
-[x] Add option to use expect-100.
-[x] Add option to limit result of ls
-[x] Extend aws-cli
-[x] Move region related function to own Region module
+- [x] Support Digest 0.6
+- [x] Remove dependency to Core
+- [x] Rewrite authentication code
+- [x] Switch to use Ptime for time conversion routines
+- [x] Support chunked transfer (put)
+- [x] Add streaming API
+- [x] Remove dependency on Cohttp
+- [x] Switch to dune
+- [x] Support IPv6
+- [x] Add option to use expect-100.
+- [x] Add option to limit result of ls
+- [x] Extend aws-cli
+- [x] Move region related function to own Region module
 
-3.0.0: Released 2018-05-16
-[x] Add parameter to specify scheme(http|https)
-[x] Fix IAM handling for lwt version.
-[x] Always use http when accessing s3.
-[x] Support copying s3 -> s3
-[x] Support multipart upload
-[x] Support permanent/temporary redirect error code
-[x] Return an error indicating the redirect to successive calls
-[x] Switch to use Digistif module
-[x] Remove support for gzip
+## 3.0.0: Released 2018-05-16
+- [x] Add parameter to specify scheme(http|https)
+- [x] Fix IAM handling for lwt version.
+- [x] Always use http when accessing s3.
+- [x] Support copying s3 -> s3
+- [x] Support multipart upload
+- [x] Support permanent/temporary redirect error code
+- [x] Return an error indicating the redirect to successive calls
+- [x] Switch to use Digistif module
+- [x] Remove support for gzip
     - Users can set the content encoding to gzip, and use ezgzip instead
-[x] Compatibility with base.v0.11.0
+- [x] Compatibility with base.v0.11.0
 
-2.0.0:
-[x] Calling delete multi with an empty list is now a noop
-[x] Return Md5.t digest type instead of strings
-[x] Fix multi delete
-[x] Support range get
-[x] Compatibility with core >= v0.9.0
-[x] Split into multiple packages (aws-s3-lwt / aws-s3-async / aws-s3)
-[x] Funtorize over the concurrency monad (Async / Lwt)
-[x] Dont compile with -safe-string
-[x] return md5 of uploaded file
+## 2.0.0:
+- [x] Calling delete multi with an empty list is now a noop
+- [x] Return Md5.t digest type instead of strings
+- [x] Fix multi delete
+- [x] Support range get
+- [x] Compatibility with core >= v0.9.0
+- [x] Split into multiple packages (aws-s3-lwt / aws-s3-async / aws-s3)
+- [x] Funtorize over the concurrency monad (Async / Lwt)
+- [x] Dont compile with -safe-string
+- [x] return md5 of uploaded file
 
-1.1.0:
-[x] Switch to use ppx_deriving_protocol, and compile with -safe-string
+## 1.1.0:
+- [x] Switch to use ppx_deriving_protocol, and compile with -safe-string
 
-1.0.0:
-[x] Switch to use jbuilder and require core >= 0.9.
+## 1.0.0:
+- [x] Switch to use jbuilder and require core >= 0.9.
 
-0.9.0:
-[x] initial release
+## 0.9.0:
+- [x] initial release
