@@ -87,7 +87,7 @@ module Net = struct
     in
     let interrupt = match connect_timeout_ms with
       | None -> None
-      | Some ms -> Some (Async.after (Core.Time_float.Span.of_ms (float ms)))
+      | Some ms -> Some (Async.after (Time_float_unix.Span.of_int_ms ms))
     in
     Async.try_with (fun () -> Conduit_async.V3.connect_uri ?interrupt ~options uri) >>=? fun (socket, ic, oc) ->
     let reader = Reader.pipe ic in

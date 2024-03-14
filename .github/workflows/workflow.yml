@@ -13,10 +13,14 @@ jobs:
           - ubuntu-latest
         ocaml-compiler:
           - 5
+          - 4.14.0
           - 4.08.0
         concurrency:
           - async
           - lwt
+        exclude:
+          - compiler: 4.08.0
+          - concurrency: async
 
     runs-on: ${{ matrix.os }}
 
