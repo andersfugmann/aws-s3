@@ -1,9 +1,5 @@
 -*- mode: fundamental -*-
 
-## Future
-- [ ]: Support bigstring (zero copy)
-- [ ]: Add support for fetching credentials from environment
-
 ## 4.8.1: Release 2024-03-13
 - [x]: Forward compatibility with Lwt release 5.7/6.0
 - [x]: Fix bug causing a leak in filedescriptors (thanks @quernd)
