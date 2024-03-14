@@ -19,7 +19,7 @@ jobs:
           - async
           - lwt
         exclude:
-          - compiler: 4.08.0
+          - ocaml-compiler: 4.08.0
           - concurrency: async
 
     runs-on: ${{ matrix.os }}
