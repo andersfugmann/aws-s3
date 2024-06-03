@@ -60,6 +60,8 @@ jobs:
         uses: ocaml/setup-ocaml@v2
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
+          opam-pin: false
+          opam-depext: false
 
       - run: opam pin . --no-action
       - run: opam depext aws-s3 aws-s3-${{ matrix.concurrency }} --yes --with-doc --with-test
