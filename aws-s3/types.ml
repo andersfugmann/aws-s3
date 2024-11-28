@@ -48,7 +48,7 @@ module type Io = sig
     (** Create a writer given a function f that reads off the writer. Once f completes, the writer is closed *)
     val create_writer : f:('a reader -> unit Deferred.t) -> 'a writer
 
-    (** Create a reader/writer pipe. Data written to the reader can be read by the writer.
+    (** Create a reader/writer pipe. Data written to the writer can be read by the reader.
         Closing one end will close both ends. *)
     val create : unit -> 'a reader * 'a writer
 
