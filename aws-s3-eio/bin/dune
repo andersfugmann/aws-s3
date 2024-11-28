@@ -1,0 +1,6 @@
+(executable
+ (name        aws_cli_eio)
+ (public_name aws-cli-eio)
+ (libraries aws_cli aws-s3-eio)
+ (package aws-s3-eio)
+)

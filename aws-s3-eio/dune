@@ -1,0 +1,6 @@
+(library
+ (name aws_s3_eio)
+  (public_name aws-s3-eio)
+  (synopsis  "Eio backed for aws-s3")
+  (libraries aws-s3 eio ipaddr.unix cohttp-eio)
+)
