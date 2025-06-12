@@ -222,8 +222,19 @@ module Make(Io : Types.Io) : sig
         the etag return is _NOT_ the md5 *)
     val complete : (t -> unit -> etag result) command
 
+(** Complete a multipart upload with explicit parameters.
+    This is useful for stateless workflows where upload metadata is stored in a database.
+    The returned string is an opaque identifier used as etag.
+    the etag return is _NOT_ the md5 *)
+    val complete_stateless : (bucket:string -> key:string -> upload_id:string -> parts:(int * string) list -> unit -> etag result) command
+
     (** Abort a multipart upload. This also discards all uploaded parts. *)
     val abort : (t -> unit -> unit result) command
+
+    (** Accessor functions *)
+    val get_upload_id : t -> string
+    val get_bucket : t -> string
+    val get_key : t -> string
 
     (** Streaming functions *)
     module Stream : sig

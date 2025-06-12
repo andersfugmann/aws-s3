@@ -539,17 +539,21 @@ module Make(Io : Types.Io) = struct
         t.parts <- { etag; part_number } :: t.parts;
         Deferred.return (Ok ())
 
-    (** Complete the multipart upload.
-        The returned etag is a opaque identifier (not md5)
+    (** Complete the multipart upload with explicit parameters.
+      This is useful for stateless workflows where upload metadata is stored in a database.
+      The returned etag is a opaque identifier (not md5)
     *)
-    let complete ?credentials ?connect_timeout_ms ?(confirm_requester_pays=false) ~endpoint t () =
-      let path = sprintf "/%s/%s" t.bucket t.key in
-      let query = [ "uploadId", t.id ] in
+    let complete_stateless ?credentials ?connect_timeout_ms ?(confirm_requester_pays = false) ~endpoint ~bucket ~key
+      ~upload_id ~parts () =
+      let path = sprintf "/%s/%s" bucket key in
+      let query = [ "uploadId", upload_id ] in
       let request =
-        (* TODO: Sort the parts by partNumber *)
-        let parts = Stdlib.List.sort (fun a b -> compare a.Multipart.part_number b.part_number) t.parts in
-        Multipart.Complete.(xml_of_request { parts })
-        |> (fun node -> Format.asprintf "%a" Ezxmlm.pp [node])
+        let multipart_parts = List.map parts ~f:(fun (part_number, etag) -> { Multipart.part_number; etag }) in
+        let sorted_parts =
+          Stdlib.List.sort (fun a b -> compare a.Multipart.part_number b.part_number) multipart_parts
+        in
+        Multipart.Complete.(xml_of_request { parts = sorted_parts })
+        |> (fun node -> Format.asprintf "%a" Ezxmlm.pp [ node ])
       in
       let body, sink = string_sink () in
       let headers = maybe_add_request_payer confirm_requester_pays [] in
@@ -560,12 +564,20 @@ module Make(Io : Types.Io) = struct
       body >>= fun body ->
       let xml = xmlm_of_string body in
       match Multipart.Complete.response_of_xmlm_exn xml with
-      | { location=_; etag; bucket; key } when bucket = t.bucket && key = t.key ->
+      | { location = _; etag; bucket = resp_bucket; key = resp_key } when resp_bucket = bucket && resp_key = key ->
         Ok etag |> Deferred.return
       | _ ->
         Error (Unknown ((-1), "Bucket/key does not match"))
         |> Deferred.return
 
+    (** Complete the multipart upload.
+      The returned etag is a opaque identifier (not md5)
+    *)
+    let complete ?credentials ?connect_timeout_ms ?(confirm_requester_pays = false) ~endpoint t () =
+      complete_stateless ?credentials ?connect_timeout_ms ~confirm_requester_pays ~endpoint ~bucket:t.bucket ~key:t.key
+        ~upload_id:t.id
+        ~parts:(List.map t.parts ~f:(fun p -> p.Multipart.part_number, p.etag))
+        ()
 
     (** Abort a multipart upload, deleting all specified parts *)
     let abort ?credentials ?connect_timeout_ms ?(confirm_requester_pays=false) ~endpoint t () =
@@ -578,6 +590,11 @@ module Make(Io : Types.Io) = struct
       in
       do_command ~endpoint cmd >>=? fun _headers ->
       Deferred.return (Ok ())
+
+    (** Accessor functions *)
+    let get_upload_id t = t.id
+    let get_bucket t = t.bucket
+    let get_key t = t.key
 
     module Stream = struct
       let upload_part ?credentials ?connect_timeout_ms ?(confirm_requester_pays=false) ~endpoint t ~part_number ?expect ~data ~length ~chunk_size () =
