@@ -62,10 +62,8 @@ jobs:
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
           opam-pin: false
-          opam-depext: false
 
       - run: opam pin . --no-action
-      - run: opam depext aws-s3 aws-s3-${{ matrix.concurrency }} --yes --with-doc --with-test
       - run: opam install aws-s3 aws-s3-${{ matrix.concurrency }} --deps-only --with-doc --with-test
       - run: opam exec -- dune build aws-s3 aws-s3-${{ matrix.concurrency }}
       - run: opam exec -- dune runtest aws-s3 aws-s3-${{ matrix.concurrency }}
