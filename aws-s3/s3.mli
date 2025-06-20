@@ -196,6 +196,10 @@ module Make(Io : Types.Io) : sig
       ?cache_control:string ->
       bucket:string -> key:string -> unit -> t result) command
 
+    (** Create a multipart upload object from explicit parameters.
+        This is useful for stateless workflows where upload metadata is stored in a database. *)
+    val make : bucket:string -> key:string -> upload_id:string -> parts:(int * string) list -> t
+
     (** Upload a part of the file. All parts except the last part must
        be at least 5Mb big. All parts must have a unique part number.
        The final file will be assembled from all parts ordered by part
@@ -224,6 +228,11 @@ module Make(Io : Types.Io) : sig
 
     (** Abort a multipart upload. This also discards all uploaded parts. *)
     val abort : (t -> unit -> unit result) command
+
+    (** Accessor functions *)
+    val get_upload_id : t -> string
+    val get_bucket : t -> string
+    val get_key : t -> string
 
     (** Streaming functions *)
     module Stream : sig

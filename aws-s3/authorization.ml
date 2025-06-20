@@ -36,7 +36,6 @@ let make_scope ~date ~region ~service =
   sprintf "%s/%s/%s/aws4_request" date region service
 
 let string_to_sign ~date ~time ~verb ~path ~query ~headers ~payload_sha ~scope =
-  let query = List.sort ~cmp:(fun a b -> String.compare (fst a) (fst b)) query in
   assert (Headers.cardinal headers > 0);
   (* Count sizes of headers *)
   let (key_size, value_size) =
@@ -65,6 +64,7 @@ let string_to_sign ~date ~time ~verb ~path ~query ~headers ~payload_sha ~scope =
   let canonical_query =
     query
     |> List.map ~f:(fun (k, v) -> sprintf "%s=%s" (Uri.pct_encode ~component:`Userinfo k) (Uri.pct_encode ~component:`Userinfo v))
+    |> List.sort ~cmp:String.compare
     |> String.concat ~sep:"&"
   in
 
@@ -103,7 +103,7 @@ let make_auth_header ~credentials ~scope ~signed_headers ~signature =
     signed_headers
     signature
 
-let make_presigned_url ?(scheme=`Https) ?host ?port ~credentials ~date ~region ~path ~bucket ~verb ~duration () =
+let make_presigned_url ?(scheme=`Https) ?host ?port ?(query=[]) ~credentials ~date ~region ~path ~bucket ~verb ~duration () =
   let service = "s3" in
   let ((y, m, d), ((h, mi, s), _)) = Ptime.to_date_time date in
   let verb = match verb with
@@ -135,9 +135,12 @@ let make_presigned_url ?(scheme=`Https) ?host ?port ~credentials ~date ~region ~
         ("X-Amz-SignedHeaders", "host");
       ]
     in
-    match credentials.token with
+    let base_with_token = match credentials.token with
       | None -> base
       | Some token -> ("X-Amz-Security-Token", token) :: base
+    in
+    (* Merge custom query parameters with AWS parameters *)
+    query @ base_with_token
   in
   let scope = make_scope ~date ~region ~service in
   let signing_key = make_signing_key ~date ~region ~service ~credentials () in
@@ -274,3 +277,29 @@ let%test "chunk_signature" =
   in
   let expect = "ad80c730a21e5b8d04586a2213dd63b9a0e99e0e2307b0ade35a65485a288648" in
   signature |> to_hex = expect
+
+let%test "presigned_url with query (multipart upload)" =
+  let credentials = Credentials.make
+      ~access_key:"AKIAIOSFODNN7EXAMPLE"
+      ~secret_key:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+      ()
+  in
+  let date = match Ptime.of_date (2013, 5, 24) with Some x -> x | _ -> Ptime.epoch in
+  let region = Region.of_string "us-east-1" in
+  let path = "/test.txt" in
+  let bucket = "examplebucket" in
+  let verb = `Put in
+  let duration = 86400 in
+  let query = [
+    ("partNumber", "1");
+    ("uploadId", "example-upload-id");
+  ] in
+  let actual = make_presigned_url ~query ~credentials ~date ~region ~path ~bucket ~verb ~duration () |> Uri.to_string in
+  (* Verify that the URL contains the custom query parameters *)
+  let contains_substring s sub = 
+    try 
+      let _ = Str.search_forward (Str.regexp_string sub) s 0 in 
+      true 
+    with Not_found -> false 
+  in
+  contains_substring actual "partNumber=1" && contains_substring actual "uploadId=example-upload-id"

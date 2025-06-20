@@ -54,6 +54,7 @@ val make_presigned_url :
   ?scheme:[`Http | `Https] ->
   ?host:string ->
   ?port:int ->
+  ?query:(string * string) list ->
   credentials:Credentials.t ->
   date:Ptime.t ->
   region:Region.t ->
