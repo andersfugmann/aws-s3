@@ -103,7 +103,7 @@ let make_auth_header ~credentials ~scope ~signed_headers ~signature =
     signed_headers
     signature
 
-let make_presigned_url ?(scheme=`Https) ?host ?port ?(custom_query=[]) ~credentials ~date ~region ~path ~bucket ~verb ~duration () =
+let make_presigned_url ?(scheme=`Https) ?host ?port ?(query=[]) ~credentials ~date ~region ~path ~bucket ~verb ~duration () =
   let service = "s3" in
   let ((y, m, d), ((h, mi, s), _)) = Ptime.to_date_time date in
   let verb = match verb with
@@ -140,7 +140,7 @@ let make_presigned_url ?(scheme=`Https) ?host ?port ?(custom_query=[]) ~credenti
       | Some token -> ("X-Amz-Security-Token", token) :: base
     in
     (* Merge custom query parameters with AWS parameters *)
-    custom_query @ base_with_token
+    query @ base_with_token
   in
   let scope = make_scope ~date ~region ~service in
   let signing_key = make_signing_key ~date ~region ~service ~credentials () in
@@ -290,11 +290,11 @@ let%test "presigned_url with custom_query (multipart upload)" =
   let bucket = "examplebucket" in
   let verb = `Put in
   let duration = 86400 in
-  let custom_query = [
+  let query = [
     ("partNumber", "1");
     ("uploadId", "example-upload-id");
   ] in
-  let actual = make_presigned_url ~custom_query ~credentials ~date ~region ~path ~bucket ~verb ~duration () |> Uri.to_string in
+  let actual = make_presigned_url ~query ~credentials ~date ~region ~path ~bucket ~verb ~duration () |> Uri.to_string in
   (* Verify that the URL contains the custom query parameters *)
   let contains_substring s sub = 
     try 
