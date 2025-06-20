@@ -36,7 +36,6 @@ let make_scope ~date ~region ~service =
   sprintf "%s/%s/%s/aws4_request" date region service
 
 let string_to_sign ~date ~time ~verb ~path ~query ~headers ~payload_sha ~scope =
-  let query = List.sort ~cmp:(fun a b -> String.compare (fst a) (fst b)) query in
   assert (Headers.cardinal headers > 0);
   (* Count sizes of headers *)
   let (key_size, value_size) =
@@ -65,6 +64,7 @@ let string_to_sign ~date ~time ~verb ~path ~query ~headers ~payload_sha ~scope =
   let canonical_query =
     query
     |> List.map ~f:(fun (k, v) -> sprintf "%s=%s" (Uri.pct_encode ~component:`Userinfo k) (Uri.pct_encode ~component:`Userinfo v))
+    |> List.sort ~cmp:String.compare
     |> String.concat ~sep:"&"
   in
 
