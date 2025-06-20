@@ -278,7 +278,7 @@ let%test "chunk_signature" =
   let expect = "ad80c730a21e5b8d04586a2213dd63b9a0e99e0e2307b0ade35a65485a288648" in
   signature |> to_hex = expect
 
-let%test "presigned_url with custom_query (multipart upload)" =
+let%test "presigned_url with query (multipart upload)" =
   let credentials = Credentials.make
       ~access_key:"AKIAIOSFODNN7EXAMPLE"
       ~secret_key:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
