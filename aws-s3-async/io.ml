@@ -16,7 +16,6 @@ module Deferred = struct
       | Ok v -> f v
       | Error exn -> Async_kernel.return (Error exn)
   end
-
   let (>>=) = Async_kernel.(>>=)
   let (>>|) = Async_kernel.(>>|)
   let (>>=?) v f =
@@ -33,7 +32,9 @@ end
 module Ivar = struct
   type 'a t = 'a Async.Ivar.t
   let create () = Async.Ivar.create ()
-  let fill t v = Async.Ivar.fill t v
+  let fill t v = match Async.Ivar.is_full t with
+    | false -> Async.Ivar.fill_if_empty t v
+    | true -> failwith "Ivar not empty"
   let wait t = Async.Ivar.read t
 end
 
