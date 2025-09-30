@@ -3,6 +3,8 @@
 ## 4.9.0: Unreleased
 - [x]: Support additional url parameters when creating presigned urls #39 (Thanks @jchavarri)
 - [x]: Support storing and re-construction of multipart upload state to allow persisting intermediate state #39 (Thanks @jchavarri)
+- [x]: Switch to use `inifiles` (#41) (Thanks @EmileTrotignon)
+
 
 ## 4.8.1: Release 2024-03-13
 - [x]: Forward compatibility with Lwt release 5.7/6.0
