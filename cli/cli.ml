@@ -8,7 +8,7 @@ type actions =
   | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool; chunk_size: int option}
 
 type options =
-  { profile: string option; minio: string option; https: bool; retries: int; ipv6: bool; expect: bool; confirm_requester_pays : bool }
+  { profile: string option; region: [ `Minio of string | `Garage of string ] option; https: bool; retries: int; ipv6: bool; expect: bool; confirm_requester_pays : bool }
 
 let parse exec =
   let profile =
@@ -26,9 +26,24 @@ let parse exec =
     Arg.(value & opt bool false & info ["https"] ~docv:"HTTPS" ~doc)
   in
 
-  let minio =
-    let doc = "Connect to minio address <host>[:port]" in
-    Arg.(value & opt (some string) None & info ["minio"] ~docv:"MINIO" ~doc)
+  let region =
+    let minio =
+      let doc = "Connect to minio address <host>[:port]" in
+      Arg.(value & opt (some string) None & info ["minio"] ~docv:"MINIO" ~doc)
+    in
+    let garage =
+      let doc = "Connect to garage address <host>[:port]" in
+      Arg.(value & opt (some string) None & info ["garage"] ~docv:"GARAGE" ~doc)
+    in
+    let open Term.Syntax in
+    let+ minio = minio and+ garage = garage in
+    match minio, garage with
+    | None, None -> None
+    | Some minio, None -> Some (`Minio minio)
+    | None, Some garage -> Some (`Garage garage)
+    | Some _, Some _ ->
+      Printf.eprintf "Options --minio and --garage are mutually exclusive. Exiting...\n%!";
+      exit 254
   in
 
   let ipv6 =
@@ -54,8 +69,8 @@ let parse exec =
   in
 
   let common_opts =
-    let make profile minio https retries ipv6 expect confirm_requester_pays = { profile; minio; https; retries; ipv6; expect; confirm_requester_pays } in
-    Term.(const make $ profile $ minio $ https $ retries $ ipv6 $ expect $ confirm_requester_pays )
+    let make profile region https retries ipv6 expect confirm_requester_pays = { profile; region; https; retries; ipv6; expect; confirm_requester_pays } in
+    Term.(const make $ profile $ region $ https $ retries $ ipv6 $ expect $ confirm_requester_pays )
   in
 
   let bucket n =

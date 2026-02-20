@@ -26,6 +26,8 @@ val vendor : region_name:string -> ?port:int -> host:string -> unit -> t
 
 val minio : ?port:int -> host:string -> unit -> t
 
+val garage : ?port:int -> host:string -> unit -> t
+
 val backblaze : region_name:string -> unit -> t
 
 type endpoint = {
