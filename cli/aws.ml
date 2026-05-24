@@ -95,15 +95,18 @@ module Make(Io : Aws_s3.Types.Io) = struct
     | (false, false) -> failwith "Use cp(1)"
 
   let rec upload_parts t endpoint ~retries ~expect ~credentials ?(offset=0) ~total ?(part_number=1) ?chunk_size src =
+    let ignore_result = Result.map ignore in
     let f ~size ~endpoint ()=
       match chunk_size with
       | None ->
         let data = read_file ~pos:offset ~len:size src in
-        S3.Multipart_upload.upload_part ~endpoint ~expect ~credentials t ~part_number ~data ()
+        S3.Multipart_upload.upload_part ~endpoint ~expect ~credentials t ~part_number ~data () >>|
+        ignore_result
       | Some chunk_size ->
         (* Create a reader for this section *)
         let reader = file_reader ~pos:offset ~len:size src in
-        S3.Multipart_upload.Stream.upload_part ~endpoint ~expect ~credentials t ~part_number ~data:reader ~chunk_size ~length:size ()
+        S3.Multipart_upload.Stream.upload_part ~endpoint ~expect ~credentials t ~part_number ~data:reader ~chunk_size ~length:size () >>|
+        ignore_result
     in
     match (total - offset) with
     | 0 -> []

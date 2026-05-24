@@ -216,7 +216,7 @@ module Make(Io : Types.Io) : sig
        ?expect:bool ->
        data:string ->
        unit ->
-       unit result) command
+       etag result) command
 
     (** Specify a part as a copy of an existing object in S3. *)
     val copy_part :
@@ -255,7 +255,7 @@ module Make(Io : Types.Io) : sig
          length:int ->
          chunk_size:int ->
          unit ->
-         unit result) command
+         etag result) command
     end
   end
 

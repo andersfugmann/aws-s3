@@ -519,7 +519,7 @@ module Make(Io : Types.Io) = struct
         |> fun etag -> unquote etag
       in
       t.parts <- { etag; part_number } :: t.parts;
-      Deferred.return (Ok ())
+      Deferred.return (Ok etag)
 
     (** Specify a part to be a file on s3.
         [range] can be used to only include a part of the s3 file
@@ -616,7 +616,7 @@ module Make(Io : Types.Io) = struct
           |> fun etag -> String.sub ~pos:1 ~len:(String.length etag - 2) etag
         in
         t.parts <- { etag; part_number } :: t.parts;
-        Deferred.return (Ok ())
+        Deferred.return (Ok etag)
     end
 
   end
