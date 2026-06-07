@@ -1,9 +1,9 @@
 name: Main workflow
 
 on:
-  - push
-  - pull_request
-  - workflow_dispatch
+  push:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,17 +15,19 @@ jobs:
         ocaml-compiler:
           - 5
           - 4
-          - 4.08.0
+          - 4.11.0
         concurrency:
           - async
           - lwt
         exclude:
-          - ocaml-compiler: 4.08.0
+          - ocaml-compiler: 4.11.0
             concurrency: async
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     env:
+      # Minio service defaults (not real credentials)
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
 
@@ -48,13 +50,13 @@ jobs:
           pip3 install minio
           python3 - <<'EOF'
           from minio import Minio
-          minio = Minio(
-             'localhost:9000',
-             access_key='minioadmin',
-             secret_key='minioadmin',
-             secure=False
+          client = Minio(
+              'localhost:9000',
+              access_key='minioadmin',
+              secret_key='minioadmin',
+              secure=False
           )
-          minio.make_bucket('bucket-${{ matrix.concurrency }}')
+          client.make_bucket('bucket-${{ matrix.concurrency }}')
           EOF
 
       - name: Use OCaml ${{ matrix.ocaml-compiler }}
