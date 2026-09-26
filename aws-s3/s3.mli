@@ -82,9 +82,14 @@ module Make(Io : Types.Io) : sig
       arguments are expected to be a list of key-value pairs, the keys will be
       prefixed with "x-amz-meta-".
       @see https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html#UserMetadata
+      @param unsigned_payload If true, the request is signed with
+      UNSIGNED-PAYLOAD instead of the sha256 of [data], which saves a full pass
+      over the body but leaves the payload out of the signature, so it should
+      only be used over https.
   *)
   val put :
-    (?content_type:string ->
+    (?unsigned_payload:bool ->
+     ?content_type:string ->
      ?content_encoding:string ->
      ?acl:string ->
      ?cache_control:string ->

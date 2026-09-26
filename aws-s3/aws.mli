@@ -5,6 +5,7 @@ module Make(Io : Types.Io) : sig
     endpoint:Region.endpoint ->
     ?connect_timeout_ms:int ->
     ?expect:bool ->
+    ?unsigned_payload:bool ->
     sink:string Io.Pipe.writer ->
     ?body:Body.Make(Io).t ->
     ?credentials:Credentials.t ->

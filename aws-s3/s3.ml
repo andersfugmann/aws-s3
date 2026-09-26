@@ -281,7 +281,7 @@ module Make(Io : Types.Io) = struct
       Deferred.return (Error (Unknown (code, resp.code)))
 
 
-  let put_common ?credentials ?connect_timeout_ms ?(confirm_requester_pays=false) ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ?(meta_headers=[]) ~bucket ~key ~body () =
+  let put_common ?credentials ?connect_timeout_ms ?(confirm_requester_pays=false) ?unsigned_payload ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ?(meta_headers=[]) ~bucket ~key ~body () =
     let path = sprintf "/%s/%s" bucket key in
     let headers =
       (
@@ -298,7 +298,7 @@ module Make(Io : Types.Io) = struct
     in
     let sink = Body.null () in
     let cmd () =
-      Aws.make_request ~endpoint ?expect ?credentials ?connect_timeout_ms ~headers ~meth:`PUT ~path ~sink ~body ~query:[] ()
+      Aws.make_request ~endpoint ?expect ?credentials ?connect_timeout_ms ?unsigned_payload ~headers ~meth:`PUT ~path ~sink ~body ~query:[] ()
     in
 
     do_command ~endpoint cmd >>=? fun headers ->
@@ -343,9 +343,9 @@ module Make(Io : Types.Io) = struct
   end
   (* End streaming module *)
 
-  let put ?credentials ?connect_timeout_ms ?confirm_requester_pays ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ?meta_headers ~bucket ~key ~data () =
+  let put ?credentials ?connect_timeout_ms ?confirm_requester_pays ~endpoint ?unsigned_payload ?content_type ?content_encoding ?acl ?cache_control ?expect ?meta_headers ~bucket ~key ~data () =
     let body = Body.String data in
-    put_common ?credentials ?connect_timeout_ms ?confirm_requester_pays ?content_type ?content_encoding ?acl ?cache_control ?expect ?meta_headers ~endpoint ~bucket ~key ~body ()
+    put_common ?credentials ?connect_timeout_ms ?confirm_requester_pays ?unsigned_payload ?content_type ?content_encoding ?acl ?cache_control ?expect ?meta_headers ~endpoint ~bucket ~key ~body ()
 
   let get ?credentials ?connect_timeout_ms ?confirm_requester_pays ~endpoint ?range ~bucket ~key () =
     let body, data = string_sink () in
