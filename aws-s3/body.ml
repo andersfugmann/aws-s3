@@ -128,8 +128,14 @@ module Make(Io : Types.Io) = struct
         with _ -> Or_error.fail (Failure "Malformed chunk: Invalid length")
       end >>=? fun chunk_size ->
       match chunk_size with
-      | 0 -> read_until ?start:data ~sep:"\r\n" reader >>=? fun (_, remain) ->
-        Or_error.return remain
+      | 0 ->
+        (* The trailer section, empty or not, runs to the first empty line. *)
+        let rec trailers remain =
+          read_until ?start:remain ~sep:"\r\n" reader >>=? function
+          | ("", remain) -> Or_error.return remain
+          | (_, remain) -> trailers remain
+        in
+        trailers data
       | n ->
         read_chunk data n >>=? fun data ->
         read_string ?start:data ~length:2 reader >>=? function

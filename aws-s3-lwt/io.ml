@@ -199,27 +199,42 @@ module Net = struct
         Pipe.write input data >>= fun () ->
         read ()
     in
-    (* We close input and output when input is closed *)
+    (* We close input and output when input is closed. A TLS shutdown on a
+       peer-closed socket can itself raise, and an exception escaping through
+       Lwt.async here leaves the fd in CLOSE-WAIT for good. *)
+    let close_quietly ch =
+      Lwt.catch (fun () -> Lwt_io.close ch) (fun _ -> Lwt.return ())
+    in
     Lwt.async (fun () -> Pipe.closed reader >>= fun () ->
-                Lwt_io.close oc >>= fun () -> Lwt_io.close ic);
+                close_quietly oc >>= fun () -> close_quietly ic);
     Lwt.async read;
 
     let output, writer = Pipe.create () in
 
+    (* A failed write must fail the whole connection: the read side is closed so
+       that a pending response read errors out instead of waiting forever for a
+       peer that will never answer. *)
     let rec write () =
       match Queue.take output.Pipe.queue with
       | Flush waiter ->
-        Lwt_io.flush oc >>= fun () ->
+        catch_result (fun () -> Lwt_io.flush oc) >>= fun res ->
         Lwt.wakeup_later waiter ();
-        write ()
+        (match res with
+         | Ok () -> write ()
+         | Error _ -> fail_connection ())
       | Data data ->
-        Lwt_io.write oc data >>= fun () ->
-        write ()
+        catch_result (fun () -> Lwt_io.write oc data) >>= (function
+        | Ok () -> write ()
+        | Error _ -> fail_connection ())
       | exception Queue.Empty when output.Pipe.closed ->
         Lwt.return ()
       | exception Queue.Empty ->
         Lwt_condition.wait output.Pipe.cond >>= fun () ->
         write ()
+    and fail_connection () =
+      Pipe.close_reader output;
+      Pipe.close input;
+      Lwt.return ()
     in
     Lwt.async write;
     Deferred.Or_error.return (reader, writer)

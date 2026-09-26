@@ -11,8 +11,8 @@ val make :
   access_key:string -> secret_key:string ->
   ?token:string -> ?expiration:float -> unit -> t
 
-module Make(Io : Types.Io) : sig
-  open Io
+module Make_http : functor(Http : Types.Http) -> sig
+  open Http.Io
 
   module Iam : sig
 
@@ -44,3 +44,5 @@ module Make(Io : Types.Io) : sig
       ?profile:string -> unit -> t Deferred.Or_error.t
   end
 end
+
+module Make : functor(Io : Types.Io) -> module type of Make_http(Http.Make(Io))

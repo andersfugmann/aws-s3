@@ -3,3 +3,5 @@ module Types = Types
 module Credentials = Credentials
 module Region = Region
 module Authorization = Authorization
+module Headers = Headers
+module Http = Http

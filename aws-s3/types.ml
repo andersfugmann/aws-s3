@@ -96,3 +96,28 @@ module type Io = sig
   (**/**)
 
 end
+
+type meth = [ `DELETE | `GET | `HEAD | `POST | `PUT ]
+
+(** Module for abstracting the http client. Connection handling -- pooling in
+    particular -- is the http module's business, so an application can replace
+    {!Http.Make} with a binding to the http library of its choice and pass it
+    to {!S3.Make_http}. *)
+module type Http = sig
+  module Io : Io
+  open Io
+
+  (** Perform one request. [sink] receives the response body and is closed
+      once the result is determined. *)
+  val call:
+    ?expect:bool ->
+    ?connect_timeout_ms:int ->
+    endpoint:Region.endpoint ->
+    path:string ->
+    ?query:(string * string) list ->
+    headers:string Headers.t ->
+    sink:string Pipe.writer ->
+    ?body:string Pipe.reader ->
+    meth ->
+    (int * string * string Headers.t * string) Deferred.Or_error.t
+end

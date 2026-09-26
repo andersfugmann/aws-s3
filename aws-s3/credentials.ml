@@ -22,10 +22,9 @@ type t = {
 let make ~access_key ~secret_key ?token ?expiration () =
   { access_key; secret_key; token; expiration }
 
-module Make(Io : Types.Io) = struct
-  module Http = Http.Make(Io)
-  module Body = Body.Make(Io)
-  open Io
+module Make_http(Http : Types.Http) = struct
+  module Body = Body.Make(Http.Io)
+  open Http.Io
   open Deferred
 
   module Iam = struct
@@ -90,3 +89,5 @@ module Make(Io : Types.Io) = struct
         end
   end
 end
+
+module Make(Io : Types.Io) = Make_http(Http.Make(Io))

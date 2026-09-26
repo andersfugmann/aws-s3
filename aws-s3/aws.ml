@@ -22,10 +22,11 @@ let get_chunked_length ~chunk_size payload_length =
 let%test "get_chunk_length" =
   get_chunked_length ~chunk_size:(64*1024) (65*1024) = 66824
 
-module Make(Io : Types.Io) = struct
-  module Body = Body.Make(Io)
-  module Http = Http.Make(Io)
-  open Io
+let string_of_method = Http.string_of_method
+
+module Make_http(Http : Types.Http) = struct
+  module Body = Body.Make(Http.Io)
+  open Http.Io
   open Deferred
 
   let chunk_writer ~signing_key ~scope ~initial_signature ~date ~time ~chunk_size reader =
@@ -46,12 +47,12 @@ module Make(Io : Types.Io) = struct
       let sha = Digestif.SHA256.get sha in
       let signature = Authorization.chunk_signature ~signing_key ~date ~time ~scope
           ~previous_signature ~sha |> Authorization.to_hex in
-      Io.Pipe.write writer
+      Pipe.write writer
         (Printf.sprintf "%x;chunk-signature=%s\r\n" length signature) >>= fun () ->
       List.fold_left
-        ~init:(Deferred.return ()) ~f:(fun x data -> x >>= fun () -> Io.Pipe.write writer data)
+        ~init:(Deferred.return ()) ~f:(fun x data -> x >>= fun () -> Pipe.write writer data)
         elements >>= fun () ->
-      Io.Pipe.write writer "\r\n" >>= fun () ->
+      Pipe.write writer "\r\n" >>= fun () ->
       flush_done >>= fun () ->
       return signature
     in
@@ -60,7 +61,7 @@ module Make(Io : Types.Io) = struct
         match current with
         | Some v -> return (Some v)
         | None ->
-          Io.Pipe.read reader >>= function
+          Pipe.read reader >>= function
           | None ->
             return None
           | Some v ->
@@ -142,7 +143,7 @@ module Make(Io : Types.Io) = struct
       let auth, body =
         match credentials with
         | Some credentials ->
-          let verb = Http.string_of_method meth in
+          let verb = string_of_method meth in
           let region = Region.to_string endpoint.region in
           let signing_key =
             Authorization.make_signing_key ~date ~region ~service:"s3" ~credentials ()
@@ -188,3 +189,5 @@ module Make(Io : Types.Io) = struct
     Http.call ?connect_timeout_ms ~endpoint ~path ~query ~headers ~expect ~sink ?body meth >>=? fun (code, msg, headers, body) ->
     Deferred.Or_error.return (code, msg, headers, body)
 end
+
+module Make(Io : Types.Io) = Make_http(Http.Make(Io))

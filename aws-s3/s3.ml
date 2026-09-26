@@ -211,10 +211,10 @@ module Protocol(P: sig type 'a result end) = struct
   end
 end
 
-module Make(Io : Types.Io) = struct
-  module Aws = Aws.Make(Io)
-  module Body = Body.Make(Io)
-  open Io
+module Make_http(Http : Types.Http) = struct
+  module Aws = Aws.Make_http(Http)
+  module Body = Body.Make(Http.Io)
+  open Http.Io
   open Deferred
   type error =
     | Redirect of Region.endpoint
@@ -645,6 +645,8 @@ module Make(Io : Types.Io) = struct
     in
     inner ~endpoint ~retry_count:0 ~redirected:false ()
 end
+
+module Make(Io : Types.Io) = Make_http(Http.Make(Io))
 
 let%test _ =
   let module Protocol = Protocol(struct type 'a result = 'a end) in

@@ -1,0 +1,3 @@
+(tests
+ (names custom_http pooling)
+ (libraries aws-s3 aws-s3-lwt lwt.unix))

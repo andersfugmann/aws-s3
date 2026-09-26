@@ -7,15 +7,29 @@
     it is strongly recommended that you use https.
     To use https, make sure to have the relevant opam packages installed:
     [async_ssl] for [async] and [lwt_ssl]/[tls] for [lwt].
-    Please note that connections are not reused due to a limitation on the AWS endpoint.
+    Requests go through an http module, which owns connection handling.
+    {!Make} uses the built-in {!Http.Make}, which keeps HTTP/1.1 connections
+    alive and reuses them across requests to the same (scheme, host, port)
+    endpoint. To cache a different number of connections, or to talk to S3
+    through another http library, build the module yourself and pass it to
+    {!Make_http}:
+
+    {[
+      module S3 =
+        Aws_s3.S3.Make_http(Aws_s3.Http.Make_pooled(Io)(struct
+          let max_idle_per_host = 4
+          let max_idle_total = 8
+          let max_idle_age = 60.
+        end))
+    ]}
 
 
     If no credentials is provided, the requests will not be signed,
     The bucket / objects need to be configured accordingly.
 
 *)
-module Make(Io : Types.Io) : sig
-  open Io
+module Make_http : functor(Http : Types.Http) -> sig
+  open Http.Io
 
   type error =
     | Redirect of Region.endpoint
@@ -161,7 +175,7 @@ module Make(Io : Types.Io) : sig
        ?meta_headers:(string * string) list ->
        bucket:string ->
        key:string ->
-       data:string Io.Pipe.reader ->
+       data:string Http.Io.Pipe.reader ->
        chunk_size:int ->
        length:int ->
        unit -> etag result) command
@@ -181,7 +195,7 @@ module Make(Io : Types.Io) : sig
         For other parameters see {!Aws_s3.S3.Make.get}
     *)
     val get :
-      (?range:range -> bucket:string -> key:string -> data:string Io.Pipe.writer -> unit -> unit result) command
+      (?range:range -> bucket:string -> key:string -> data:string Http.Io.Pipe.writer -> unit -> unit result) command
 
   end
 
@@ -251,7 +265,7 @@ module Make(Io : Types.Io) : sig
         (t ->
          part_number:int ->
          ?expect:bool ->
-         data:string Io.Pipe.reader ->
+         data:string Http.Io.Pipe.reader ->
          length:int ->
          chunk_size:int ->
          unit ->
@@ -265,3 +279,5 @@ module Make(Io : Types.Io) : sig
   val retry : endpoint:Region.endpoint -> retries:int ->
     f:(endpoint:Region.endpoint -> unit -> 'a result) -> unit -> 'a result
 end
+
+module Make : functor(Io : Types.Io) -> module type of Make_http(Http.Make(Io))
