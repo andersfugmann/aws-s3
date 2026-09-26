@@ -8,6 +8,31 @@ let log fmt = match debug with
 
 type meth = [ `DELETE | `GET | `HEAD | `POST | `PUT ]
 
+(* The request target must reach the wire exactly as it was signed, so encode it
+   here rather than routing it through [Uri], which decodes reserved characters
+   ("%2B" back to "+") and breaks the signature. *)
+let request_target ~path ~query =
+  let encoded_query =
+    query
+    |> List.map ~f:(fun (k, v) ->
+           sprintf "%s=%s"
+             (Uri.pct_encode ~component:`Userinfo k)
+             (Uri.pct_encode ~component:`Userinfo v))
+    |> String.concat ~sep:"&"
+  in
+  let path = Util.encode_string path in
+  if encoded_query = "" then path else sprintf "%s?%s" path encoded_query
+
+let%test "request_target keeps '+' percent-encoded" =
+  request_target ~path:"/a+b" ~query:[] = "/a%2Bb"
+
+let%test "request_target path matches the signed encoding" =
+  let path = "/tsync/Audiosocket Info Sheet + Tax Docs.pdf" in
+  request_target ~path ~query:[] = Util.encode_string path
+
+let%test "request_target appends the encoded query" =
+  request_target ~path:"/k" ~query:[("prefix", "a+b")] = "/k?prefix=a%2Bb"
+
 module Make(Io : Types.Io) = struct
   module Body = Body.Make(Io)
   open Io
@@ -49,10 +74,7 @@ module Make(Io : Types.Io) = struct
       | true -> Headers.add ~key:"Expect" ~value:"100-continue" headers
       | false -> headers
     in
-    let path_with_params =
-      let query = List.map ~f:(fun (k, v) -> k, [v]) query in
-      Uri.make ~path ~query () |> Uri.to_string
-    in
+    let path_with_params = request_target ~path ~query in
     let header = sprintf "%s %s HTTP/1.1\r\n" (string_of_method meth) path_with_params in
     Pipe.write writer header >>= fun () ->
     (* Write all headers *)

@@ -46,19 +46,27 @@ let encode_string s =
     | 'A' .. 'Z'
     | '0' .. '9'
     | '_' | '-' | '~' | '.' | '/' -> Buffer.add_char buf c
-    | '%' ->
-      (* Sigh. Annoying we're expecting already escaped strings so ignore the escapes *)
-      begin
-        let is_hex = function
-          | 'a' .. 'f' | 'A' .. 'F' | '0' .. '9' -> true
-          | _ -> false
-        in
-        if (i + 2) < n then
-          if is_hex(String.get s (i+1)) && is_hex(String.get s (i+2)) then
-            Buffer.add_char buf c
-          else
-            Buffer.add_string buf "%25"
-      end
-    | _ -> Buffer.add_string buf (Printf.sprintf "%%%X" (Char.code c))
+    (* Callers build their path as "/bucket/key" from a raw key, so a '%' here
+       belongs to the name rather than to an escape already applied. *)
+    | '%' -> Buffer.add_string buf "%25"
+    | _ -> Buffer.add_string buf (Printf.sprintf "%%%02X" (Char.code c))
   done;
   Buffer.contents buf
+
+let%test "encode_string escapes a literal percent" =
+  encode_string "/b/percent-%2F-key" = "/b/percent-%252F-key"
+
+let%test "encode_string escapes a plus" = encode_string "/b/a+b" = "/b/a%2Bb"
+
+let%test "encode_string keeps a trailing percent" =
+  encode_string "/b/trailing%" = "/b/trailing%25"
+
+let%test "encode_string leaves the unreserved set alone" =
+  encode_string "/b/aZ0_-~./x" = "/b/aZ0_-~./x"
+
+let%test "encode_string pads a low byte" =
+  encode_string "/b/\n" = "/b/%0A"
+
+let%test "encode_string round-trips through a decoder" =
+  let name = "percent-%2F-key" in
+  Uri.pct_decode (encode_string ("/b/" ^ name)) = "/b/" ^ name

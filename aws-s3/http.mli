@@ -1,6 +1,8 @@
 (**/**)
 type meth = [ `DELETE | `GET | `HEAD | `POST | `PUT ]
 
+val request_target : path:string -> query:(string * string) list -> string
+
 module Make : functor(Io: Types.Io) -> sig
   open Io
 
