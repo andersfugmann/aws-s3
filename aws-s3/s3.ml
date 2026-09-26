@@ -79,6 +79,7 @@ module Protocol(P: sig type 'a result end) = struct
     | Onezone_ia         [@key "ONEZONE_IA"]
     | Reduced_redundancy [@key "REDUCED_REDUNDANCY"]
     | Glacier            [@key "GLACIER"]
+    | Glacier_ir         [@key "GLACIER_IR"]
   and content = {
     storage_class: storage_class [@key "StorageClass"];
     size: int [@key "Size"];

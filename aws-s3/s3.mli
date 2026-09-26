@@ -26,7 +26,7 @@ module Make(Io : Types.Io) : sig
     | Not_found
 
   type etag = string
-  type storage_class = Standard | Standard_ia | Onezone_ia | Reduced_redundancy | Glacier
+  type storage_class = Standard | Standard_ia | Onezone_ia | Reduced_redundancy | Glacier | Glacier_ir
   type content = {
     storage_class : storage_class;
     size : int;
