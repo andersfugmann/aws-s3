@@ -78,6 +78,9 @@ let vendor ~region_name ?port ~host () =
 let minio ?port ~host () =
   vendor ~region_name:(to_string Us_east_1) ~host ?port ()
 
+let garage ?port ~host () =
+  vendor ~region_name:"garage" ~host ?port ()
+
 let backblaze ~region_name () =
   vendor ~region_name
     ?port:None

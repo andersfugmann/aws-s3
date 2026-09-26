@@ -229,19 +229,24 @@ module Make(Io : Aws_s3.Types.Io) = struct
     let credentials = ok_exn credentials in
     S3.retry ~endpoint ~retries ~f:(S3.ls ?connect_timeout_ms:None ~confirm_requester_pays ?start_after ?continuation_token:None ~credentials ?max_keys ?prefix ~bucket) () >>=? ls_all ?max_keys
 
-  let exec ({ Cli.profile; https; minio; retries; ipv6; expect; confirm_requester_pays }, cmd) =
+  let exec ({ Cli.profile; https; region; retries; ipv6; expect; confirm_requester_pays }, cmd) =
     let inet = if ipv6 then `V6 else `V4 in
     let scheme = if https then `Https else `Http in
     (* TODO: Get the region from the CLI *)
     let region : Aws_s3.Region.t =
-      match minio with
-      | Some minio ->
-        let host, port = match String.split_on_char ~sep:':' minio with
-          | [host; port] -> host, Some (int_of_string port)
-          | [host] -> host, None
-          | _ -> failwith "Unable to parse minio address"
-        in
+      let host_port s =
+        match String.split_on_char ~sep:':' s with
+        | [host; port] -> host, Some (int_of_string port)
+        | [host] -> host, None
+        | _ -> failwith "Unable to parse region address"
+      in
+      match region with
+      | Some `Minio minio ->
+        let host, port = host_port minio in
         Aws_s3.Region.minio ?port ~host ()
+      | Some `Garage garage ->
+        let host, port = host_port garage in
+        Aws_s3.Region.garage ?port ~host ()
       | None -> Us_east_1
     in
     let endpoint = Aws_s3.Region.endpoint ~inet ~scheme region in
