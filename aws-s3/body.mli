@@ -2,12 +2,18 @@ module Make(Io : Types.Io) : sig
   open Io
   type t =
     | String of string
+    | Bigstring of Bigstringaf.t
     | Empty
     | Chunked of { pipe : string Pipe.reader; length : int; chunk_size : int; }
   (**/**)
   val to_string :
     string Pipe.reader ->
     string Deferred.t
+
+  (** {!to_string} without putting the body on the OCaml heap. *)
+  val to_bigstring :
+    string Pipe.reader ->
+    Bigstringaf.t Deferred.t
 
   val read_string :
     ?start:string ->

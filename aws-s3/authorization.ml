@@ -12,6 +12,9 @@ let log fmt = match debug with
 let hash_sha256 s =
   Digestif.SHA256.digest_string s
 
+let hash_sha256_bigstring s =
+  Digestif.SHA256.digest_bigstring s
+
 let hmac_sha256 ~key v =
   Digestif.SHA256.hmac_string ~key v
 

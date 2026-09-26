@@ -57,9 +57,48 @@ module Make(Io : Aws_s3.Types.Io) = struct
     Io.Deferred.async (Io.Pipe.closed reader >>= fun () -> close_in ic; return ());
     reader
 
+  (* Block at a time through one reusable buffer: a [Bytes] the size of the file
+     would put the whole body on the heap, which is what the bigstring is here
+     to avoid. *)
+  let read_file_bigstring ~pos ~len file =
+    let block = 65536 in
+    let ic = open_in_bin file in
+    seek_in ic pos;
+    let data = Bigstringaf.create len in
+    let buffer = Bytes.create (min block len) in
+    let rec read offset =
+      match len - offset with
+      | 0 -> ()
+      | remain ->
+        let n = min block remain in
+        really_input ic buffer 0 n;
+        Bigstringaf.blit_from_bytes buffer ~src_off:0 data ~dst_off:offset ~len:n;
+        read (offset + n)
+    in
+    read 0;
+    close_in ic;
+    data
+
   let save_file file contents =
     let oc = open_out file in
     output_string oc contents;
+    close_out oc
+
+  let save_file_bigstring file contents =
+    let block = 65536 in
+    let len = Bigstringaf.length contents in
+    let oc = open_out_bin file in
+    let buffer = Bytes.create (min block len) in
+    let rec write offset =
+      match len - offset with
+      | 0 -> ()
+      | remain ->
+        let n = min block remain in
+        Bigstringaf.blit_to_bytes contents ~src_off:offset buffer ~dst_off:0 ~len:n;
+        output oc buffer 0 n;
+        write (offset + n)
+    in
+    write 0;
     close_out oc
 
   type objekt = { bucket: string; key: string }
@@ -115,11 +154,18 @@ module Make(Io : Aws_s3.Types.Io) = struct
       (S3.retry ~endpoint ~retries ~f:(f ~size)) () ::
        upload_parts t endpoint ~retries ~expect ~credentials ~offset:(offset + size) ~total ~part_number:(part_number + 1) ?chunk_size src
 
-  let cp profile endpoint ~retries ~expect ~confirm_requester_pays ?(use_multi=false) ?first ?last ?chunk_size src dst =
+  let cp profile endpoint ~retries ~expect ~confirm_requester_pays ?(use_multi=false) ?(use_bigstring=false) ?first ?last ?chunk_size src dst =
     let range = { S3.first; last } in
     Credentials.Helper.get_credentials ?profile () >>= fun credentials ->
     let credentials = ok_exn credentials in
     match determine_paths src dst with
+    | S3toLocal (src, dst) when use_bigstring && chunk_size = None ->
+      let f ~endpoint () =
+        S3.get_bigstring ~endpoint ~credentials ~range ~confirm_requester_pays ~bucket:src.bucket ~key:src.key ()
+      in
+      S3.retry ~endpoint ~retries ~f () >>=? fun data ->
+      save_file_bigstring dst data;
+      Deferred.return (Ok ())
     | S3toLocal (src, dst) ->
       let f ~endpoint () = match chunk_size with
         | None ->
@@ -157,12 +203,16 @@ module Make(Io : Aws_s3.Types.Io) = struct
         | None -> file_length src - pos
         | Some l -> l - pos
       in
-      let f = match chunk_size with
-        | None ->
+      let f = match chunk_size, use_bigstring with
+        | None, true ->
+          let data = read_file_bigstring ~pos ~len src in
+          fun ~endpoint () -> S3.put_bigstring ~endpoint ~expect ~credentials ~bucket:dst.bucket ~key:dst.key
+              ~data ()
+        | None, false ->
           let data = read_file ~pos ~len src in
           fun ~endpoint () -> S3.put ~endpoint ~expect ~credentials ~bucket:dst.bucket ~key:dst.key
               ~data ()
-        | Some chunk_size ->
+        | Some chunk_size, _ ->
           let reader = file_reader ~pos ~len src in
           fun ~endpoint () -> S3.Stream.put ~endpoint ~expect ~credentials ~bucket:dst.bucket ~key:dst.key
               ~data:reader ~chunk_size ~length:len ()
@@ -247,8 +297,8 @@ module Make(Io : Aws_s3.Types.Io) = struct
     let endpoint = Aws_s3.Region.endpoint ~inet ~scheme region in
     begin
       match cmd with
-      | Cli.Cp { src; dest; first; last; multi; chunk_size } ->
-        cp profile endpoint ~retries ~confirm_requester_pays ~expect ~use_multi:multi ?first ?last ?chunk_size src dest
+      | Cli.Cp { src; dest; first; last; multi; chunk_size; bigstring } ->
+        cp profile endpoint ~retries ~confirm_requester_pays ~expect ~use_multi:multi ~use_bigstring:bigstring ?first ?last ?chunk_size src dest
       | Rm { bucket; paths } ->
         rm profile endpoint ~retries ~confirm_requester_pays bucket paths
       | Ls { ratelimit; bucket; prefix; start_after; max_keys  } ->

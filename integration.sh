@@ -108,6 +108,30 @@ function test_complete () {
     test "download" ${BIN} cp ${OPTIONS} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
     test "data" diff -u $LARGE_FILE ${TEMP}
 
+    # Whole-body transfers carrying the payload off the OCaml heap. The large
+    # file is what matters here: it spans many slices in each direction, where
+    # the small one fits in a single read.
+    test "upload bigstring" ${BIN} cp -B ${OPTIONS} $LARGE_FILE "s3://${BUCKET}/${PREFIX}test"
+    test "download bigstring" ${BIN} cp -B ${OPTIONS} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
+    test "data" diff -u $LARGE_FILE ${TEMP}
+
+    test "upload bigstring expect" ${BIN} cp -B -e ${OPTIONS} $LARGE_FILE "s3://${BUCKET}/${PREFIX}test"
+    test "download bigstring" ${BIN} cp -B ${OPTIONS} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
+    test "data" diff -u $LARGE_FILE ${TEMP}
+
+    # Each spelling against the other's, so a body that is merely
+    # self-consistent does not pass.
+    test "upload bigstring" ${BIN} cp -B ${OPTIONS} $LARGE_FILE "s3://${BUCKET}/${PREFIX}test"
+    test "download" ${BIN} cp ${OPTIONS} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
+    test "data" diff -u $LARGE_FILE ${TEMP}
+
+    test "upload" ${BIN} cp ${OPTIONS} $LARGE_FILE "s3://${BUCKET}/${PREFIX}test"
+    test "download bigstring" ${BIN} cp -B ${OPTIONS} "s3://${BUCKET}/${PREFIX}test" ${TEMP}
+    test "data" diff -u $LARGE_FILE ${TEMP}
+
+    test "partial download bigstring" ${BIN} cp -B ${OPTIONS} "s3://${BUCKET}/${PREFIX}test" --first=$FIRST_PART --last=$LAST_PART ${TEMP}
+    test "partial data" diff -u ${PART} ${TEMP}
+
     test "partial download" ${BIN} cp ${OPTIONS} "s3://${BUCKET}/${PREFIX}test" --first=$FIRST_PART --last=$LAST_PART ${TEMP}
     test "partial data" diff -u ${PART} ${TEMP}
 
@@ -122,7 +146,12 @@ function test_complete () {
 }
 
 for TYPE in ${TYPES:-lwt}; do
-    opam exec -- dune build aws-s3-${TYPE}/bin/aws_cli_${TYPE}.exe
+    # Without this the suite runs against whatever was built last, and a build
+    # that never compiled the change still reports every test green.
+    if ! opam exec -- dune build aws-s3-${TYPE}/bin/aws_cli_${TYPE}.exe; then
+        echo "Failed to build aws-s3-${TYPE}, refusing to test a stale binary"
+        exit 1
+    fi
     BIN=_build/default/aws-s3-${TYPE}/bin/aws_cli_${TYPE}.exe
 
     if [ -z "${MINIO}" ]; then

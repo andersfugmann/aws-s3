@@ -164,5 +164,7 @@ module Make(Io : Types.Io) = struct
     Pipe.close writer;
     Pipe.close_reader reader;
     Pipe.close sink;
+    (* A body the request never got to send still has a producer behind it. *)
+    (match body with Some body -> Pipe.close_reader body | None -> ());
     return result
 end

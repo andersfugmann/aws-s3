@@ -96,6 +96,37 @@ module Make(Io : Types.Io) = struct
     in
     Pipe.create_reader ~f:(transfer initial_signature Digestif.SHA256.empty 0 [] None)
 
+  (* Sized to what the transport allocates per read anyway, so a bigstring body
+     reaches the socket without an object-sized string on the heap. *)
+  let body_slice_size = 65536
+
+  (* One slice ahead of the consumer, as {!chunk_writer} does: a pipe write does
+     not block, so without the flush the whole body would queue up as the
+     strings this exists to avoid. *)
+  let bigstring_reader body =
+    let rec send writer offset =
+      match Bigstringaf.length body - offset with
+      | _ when Pipe.is_closed writer -> return ()
+      | 0 -> return ()
+      | remain ->
+        let flushed = Pipe.flush writer in
+        let len = min body_slice_size remain in
+        Pipe.write writer (Bigstringaf.substring body ~off:offset ~len) >>= fun () ->
+        flushed >>= fun () ->
+        send writer (offset + len)
+    in
+    Pipe.create_reader ~f:(fun writer -> send writer 0)
+
+  let reader_of_body ~chunked = function
+    | Body.String body ->
+      let reader, writer = Pipe.create () in
+      Pipe.write writer body >>= fun () ->
+      Pipe.close writer;
+      return (Some reader)
+    | Body.Bigstring body -> return (Some (bigstring_reader body))
+    | Body.Empty -> return None
+    | Body.Chunked { pipe; chunk_size; _ } -> chunked ~pipe ~chunk_size
+
   let make_request ~(endpoint: Region.endpoint) ?connect_timeout_ms ?(expect=false) ~sink ?(body=Body.Empty) ?(credentials:Credentials.t option) ~headers ~meth ~path ~query () =
     let (date, time)  = Unix.gettimeofday () |> Time.iso8601_of_time in
 
@@ -103,6 +134,7 @@ module Make(Io : Types.Io) = struct
     let content_length =
       match meth, body with
       | (`PUT | `POST), Body.String body -> Some (String.length body |> string_of_int)
+      | (`PUT | `POST), Body.Bigstring body -> Some (Bigstringaf.length body |> string_of_int)
       | (`PUT | `POST), Body.Chunked { length; chunk_size; _ } ->
         Some (get_chunked_length ~chunk_size length |> string_of_int )
       | (`PUT | `POST), Body.Empty -> Some "0"
@@ -111,6 +143,7 @@ module Make(Io : Types.Io) = struct
     let payload_sha = match body with
       | Body.Empty -> empty_sha
       | Body.String body -> Authorization.hash_sha256 body |> Authorization.to_hex
+      | Body.Bigstring body -> Authorization.hash_sha256_bigstring body |> Authorization.to_hex
       | Body.Chunked _ -> "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
     in
     let token = match credentials with
@@ -153,32 +186,16 @@ module Make(Io : Types.Io) = struct
               ~headers ~query:query ~scope ~signing_key ~payload_sha
           in
           let auth = (Authorization.make_auth_header ~credentials ~scope ~signed_headers ~signature) in
-          let body = match body with
-            | Body.String body ->
-              let reader, writer = Pipe.create () in
-              Pipe.write writer body >>= fun () ->
-              Pipe.close writer;
-              return (Some reader)
-            | Body.Empty -> return None
-            | Body.Chunked { pipe; chunk_size; _ } ->
-              let pipe =
+          let body =
+            reader_of_body body ~chunked:(fun ~pipe ~chunk_size ->
                 (* Get errors if the chunk_writer fails *)
-                chunk_writer ~signing_key ~scope
-                  ~initial_signature:signature ~date ~time ~chunk_size pipe
-              in
-              return (Some pipe)
+                return (Some (chunk_writer ~signing_key ~scope
+                                ~initial_signature:signature ~date ~time ~chunk_size pipe)))
           in
           Some auth, body
         | None ->
-          let body = match body with
-            | Body.String body ->
-              let reader, writer = Pipe.create () in
-              Pipe.write writer body >>= fun () ->
-              Pipe.close writer;
-              return (Some reader)
-            | Body.Empty -> return None
-            | Body.Chunked { pipe; _} ->
-              return (Some pipe)
+          let body =
+            reader_of_body body ~chunked:(fun ~pipe ~chunk_size:_ -> return (Some pipe))
           in
           None, body
       in

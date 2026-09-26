@@ -5,7 +5,7 @@ type actions =
   | Ls of { bucket: string; prefix: string option; start_after: string option; ratelimit: int option; max_keys: int option}
   | Head of { path: string; }
   | Rm of { bucket: string; paths : string list }
-  | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool; chunk_size: int option}
+  | Cp of { src: string; dest: string; first: int option; last: int option; multi: bool; chunk_size: int option; bigstring: bool }
 
 type options =
   { profile: string option; minio: string option; https: bool; retries: int; ipv6: bool; expect: bool; confirm_requester_pays : bool }
@@ -69,8 +69,8 @@ let parse exec =
   in
 
   let cp =
-    let make opts first last multi chunk_size src dest =
-      opts, Cp { src; dest; first; last; multi; chunk_size }
+    let make opts first last multi chunk_size bigstring src dest =
+      opts, Cp { src; dest; first; last; multi; chunk_size; bigstring }
     in
     let first =
       let doc = "first byte of the source object to copy. If omitted means from the start." in
@@ -89,9 +89,13 @@ let parse exec =
       let doc = "Use streaming get / put the given chunk_size" in
       Arg.(value & opt (some int) None & info ["chunk-size"; "c"] ~docv:"CHUNK SIZE" ~doc)
     in
+    let bigstring =
+      let doc = "Carry the body off the OCaml heap. Ignored when streaming." in
+      Arg.(value & flag & info ["bigstring"; "B"] ~docv:"BIGSTRING" ~doc)
+    in
     Cmd.v
       Cmd.(info "cp" ~doc:"Copy files to and from S3")
-      Term.(const make $ common_opts $ first $ last $ multi $ chunk_size $ path 0 "SRC" $ path 1 "DEST")
+      Term.(const make $ common_opts $ first $ last $ multi $ chunk_size $ bigstring $ path 0 "SRC" $ path 1 "DEST")
   in
   let rm =
     let objects =

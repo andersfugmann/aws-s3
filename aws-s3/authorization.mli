@@ -1,5 +1,6 @@
 (**/**)
 val hash_sha256 : string -> Digestif.SHA256.t
+val hash_sha256_bigstring : Bigstringaf.t -> Digestif.SHA256.t
 val hmac_sha256 : key:string -> string -> Digestif.SHA256.t
 val to_hex : Digestif.SHA256.t -> string
 

@@ -2,7 +2,7 @@
  (name        aws_s3)
  (public_name aws-s3)
  (synopsis "Amazon S3 access library")
- (libraries ptime inifiles digestif.c
+ (libraries ptime inifiles bigstringaf digestif.c
             base64 uri yojson
             ppx_protocol_conv_json
             ppx_protocol_conv_xmlm str)

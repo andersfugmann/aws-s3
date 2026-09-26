@@ -86,9 +86,20 @@ module Protocol(P: sig type 'a result end) = struct
     last_modified: time [@key "LastModified"];
     key: string [@key "Key"];
     etag: etag [@key "ETag"];
+    response_headers: (string * string) list option; [@default None]
     meta_headers: (string * string) list option; [@default None]
     (** Add expiration date option *)
   } [@@deriving of_protocol ~driver:(module Protocol_conv_xmlm.Xmlm)]
+
+  (* The server picks the case it sends a header name in. *)
+  let find_header ~name content =
+    let name = String.lowercase_ascii name in
+    match content.response_headers with
+    | None -> None
+    | Some headers ->
+      match List.find_opt ~f:(fun (key, _) -> String.lowercase_ascii key = name) headers with
+      | Some (_, value) -> Some value
+      | None -> None
 
   module Ls = struct
 
@@ -228,6 +239,10 @@ module Make(Io : Types.Io) = struct
     let reader, writer = Pipe.create () in
     Body.to_string reader, writer
 
+  let bigstring_sink () =
+    let reader, writer = Pipe.create () in
+    Body.to_bigstring reader, writer
+
   include Protocol(struct type nonrec 'a result = ('a, error) result Deferred.t end)
 
   type range = { first: int option; last: int option }
@@ -347,8 +362,18 @@ module Make(Io : Types.Io) = struct
     let body = Body.String data in
     put_common ?credentials ?connect_timeout_ms ?confirm_requester_pays ?content_type ?content_encoding ?acl ?cache_control ?expect ?meta_headers ~endpoint ~bucket ~key ~body ()
 
+  let put_bigstring ?credentials ?connect_timeout_ms ?confirm_requester_pays ~endpoint ?content_type ?content_encoding ?acl ?cache_control ?expect ?meta_headers ~bucket ~key ~data () =
+    let body = Body.Bigstring data in
+    put_common ?credentials ?connect_timeout_ms ?confirm_requester_pays ?content_type ?content_encoding ?acl ?cache_control ?expect ?meta_headers ~endpoint ~bucket ~key ~body ()
+
   let get ?credentials ?connect_timeout_ms ?confirm_requester_pays ~endpoint ?range ~bucket ~key () =
     let body, data = string_sink () in
+    Stream.get ?credentials ?connect_timeout_ms ?confirm_requester_pays ~endpoint ?range ~bucket ~key ~data () >>=? fun () ->
+    body >>= fun body ->
+    Deferred.return (Ok body)
+
+  let get_bigstring ?credentials ?connect_timeout_ms ?confirm_requester_pays ~endpoint ?range ~bucket ~key () =
+    let body, data = bigstring_sink () in
     Stream.get ?credentials ?connect_timeout_ms ?confirm_requester_pays ~endpoint ?range ~bucket ~key ~data () >>=? fun () ->
     body >>= fun body ->
     Deferred.return (Ok body)
@@ -372,6 +397,7 @@ module Make(Io : Types.Io) = struct
       Aws.make_request ?credentials ?connect_timeout_ms ~endpoint ~headers ~meth:`HEAD ~path ~query:[] ~sink ()
     in
     do_command ~endpoint cmd >>=? fun headers ->
+    let response_headers = Some (Headers.bindings headers) in
     let result =
       let (>>=) a f = match a with
         | Some x -> f x
@@ -389,7 +415,8 @@ module Make(Io : Types.Io) = struct
             storage_class_of_xmlm_exn (make_xmlm_node "p" [] [`Data s])
         )
       in
-      Some { storage_class; size; last_modified; key; etag = unquote etag; meta_headers = Some meta_headers}
+      Some { storage_class; size; last_modified; key; etag = unquote etag;
+             response_headers; meta_headers = Some meta_headers }
     in
     match result with
     | Some r -> Deferred.return (Ok r)
@@ -501,7 +528,7 @@ module Make(Io : Types.Io) = struct
         [part_number] specifies the part numer. Parts will be assembled in order, but
         does not have to be consecutive
     *)
-    let upload_part ?credentials ?connect_timeout_ms ?(confirm_requester_pays=false) ~endpoint t ~part_number ?expect ~data () =
+    let upload_part_common ?credentials ?connect_timeout_ms ?(confirm_requester_pays=false) ~endpoint t ~part_number ?expect ~body () =
       let path = sprintf "/%s/%s" t.bucket t.key in
       let query =
         [ "partNumber", string_of_int part_number;
@@ -511,7 +538,7 @@ module Make(Io : Types.Io) = struct
       let headers = maybe_add_request_payer confirm_requester_pays [] in
       let cmd () =
         Aws.make_request ?expect ?credentials ?connect_timeout_ms ~endpoint ~headers ~meth:`PUT ~path
-          ~body:(Body.String data) ~query ~sink ()
+          ~body ~query ~sink ()
       in
       do_command ~endpoint cmd >>=? fun headers ->
       let etag =
@@ -521,6 +548,12 @@ module Make(Io : Types.Io) = struct
       in
       t.parts <- { etag; part_number } :: t.parts;
       Deferred.return (Ok etag)
+
+    let upload_part ?credentials ?connect_timeout_ms ?confirm_requester_pays ~endpoint t ~part_number ?expect ~data () =
+      upload_part_common ?credentials ?connect_timeout_ms ?confirm_requester_pays ~endpoint t ~part_number ?expect ~body:(Body.String data) ()
+
+    let upload_part_bigstring ?credentials ?connect_timeout_ms ?confirm_requester_pays ~endpoint t ~part_number ?expect ~data () =
+      upload_part_common ?credentials ?connect_timeout_ms ?confirm_requester_pays ~endpoint t ~part_number ?expect ~body:(Body.Bigstring data) ()
 
     (** Specify a part to be a file on s3.
         [range] can be used to only include a part of the s3 file
@@ -693,6 +726,42 @@ let%test "parse Error_response.t" =
   let xml = xmlm_of_string data in
   let error = Protocol.Error_response.of_xmlm_exn xml in
   "PermanentRedirect" = error.Protocol.Error_response.code
+
+let%test "response_headers is None in XML-parsed content" =
+  let module Protocol = Protocol(struct type 'a result = 'a end) in
+  let data = {|
+      <ListBucketResult>
+        <Name>s3_osd</Name>
+        <Prefix></Prefix>
+        <KeyCount>1</KeyCount>
+        <MaxKeys>1000</MaxKeys>
+        <IsTruncated>false</IsTruncated>
+        <Contents>
+          <StorageClass>STANDARD</StorageClass>
+          <Key>test</Key>
+          <LastModified>2018-02-27T13:39:35.000Z</LastModified>
+          <ETag>"7538d2bd85ea5dfb689ed65a0f60a7aa"</ETag>
+          <Size>20</Size>
+        </Contents>
+      </ListBucketResult>
+      |}
+  in
+  let xml = xmlm_of_string data in
+  let result = Protocol.Ls.result_of_xmlm_exn xml in
+  let c = List.hd result.Protocol.Ls.contents in
+  c.Protocol.response_headers = None
+
+let%test "find_header ignores the case the server chose" =
+  let module Protocol = Protocol(struct type 'a result = 'a end) in
+  let content =
+    { Protocol.storage_class = Protocol.Standard; size = 0; last_modified = 0.;
+      key = "test"; etag = "e";
+      response_headers = Some ["Content-Type", "text/plain"];
+      meta_headers = None }
+  in
+  Protocol.find_header ~name:"content-type" content = Some "text/plain"
+  && Protocol.find_header ~name:"content-encoding" content = None
+  && Protocol.find_header ~name:"content-type" { content with Protocol.response_headers = None } = None
 
 let%test "parse Delete_multi.result" =
   let module Protocol = Protocol(struct type 'a result = 'a end) in

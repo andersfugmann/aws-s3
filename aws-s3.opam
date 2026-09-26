@@ -15,6 +15,7 @@ depends: [
   "ocaml" {>= "4.08.0"}
   "dune" {>= "2.0.0"}
   "inifiles"
+  "bigstringaf" {>= "0.5.0"}
   "digestif" {>= "0.7"}
   "ptime"
   "uri"

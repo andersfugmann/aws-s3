@@ -68,7 +68,7 @@ module Pipe = struct
       failwith (__LOC__ ^ ": Closed")
 
   let flush writer =
-    match Queue.length writer.queue = 0 && writer.closed with
+    match writer.closed with
     | true -> Lwt.return ()
     | false ->
     let waiter, wakeup = Lwt.wait () in
@@ -76,13 +76,28 @@ module Pipe = struct
     if Queue.length writer.queue = 1 then Lwt_condition.signal writer.cond ();
     waiter
 
+  (* Only a reader reaching a marker resolves the flush that queued it, so a
+     pipe nobody reads again has to release them itself: a producer bounding
+     itself on flush waits forever otherwise. *)
+  let wake_flushers pipe =
+    let data = Queue.create () in
+    Queue.iter
+      (function
+        | Flush wakeup -> Lwt.wakeup_later wakeup ()
+        | Data _ as elem -> Queue.add elem data)
+      pipe.queue;
+    Queue.clear pipe.queue;
+    Queue.transfer data pipe.queue
+
   let close (writer : 'a writer) =
     writer.closed <- true;
+    wake_flushers writer;
     Lwt_condition.broadcast writer.cond ();
     on_close writer
 
   let close_reader (reader : 'a reader) =
     reader.closed <- true;
+    wake_flushers reader;
     Lwt_condition.broadcast reader.cond ();
     on_close reader
 
