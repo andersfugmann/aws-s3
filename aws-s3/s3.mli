@@ -82,6 +82,12 @@ module Make(Io : Types.Io) : sig
       arguments are expected to be a list of key-value pairs, the keys will be
       prefixed with "x-amz-meta-".
       @see https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html#UserMetadata
+      @param precondition Makes the write conditional, so that s3 answers 412
+      instead of replacing the object when it does not hold. [`If_none_match]
+      writes only if the key is free, which is how several writers can race for
+      one name and have exactly one win; [`If_match etag] writes only if the
+      object still carries that etag.
+      @see https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html
   *)
   val put :
     (?content_type:string ->
@@ -89,6 +95,7 @@ module Make(Io : Types.Io) : sig
      ?acl:string ->
      ?cache_control:string ->
      ?expect:bool ->
+     ?precondition:[ `If_none_match | `If_match of string ] ->
      ?meta_headers:(string * string) list ->
      bucket:string ->
      key:string ->
@@ -158,6 +165,7 @@ module Make(Io : Types.Io) : sig
        ?acl:string ->
        ?cache_control:string ->
        ?expect:bool ->
+       ?precondition:[ `If_none_match | `If_match of string ] ->
        ?meta_headers:(string * string) list ->
        bucket:string ->
        key:string ->
