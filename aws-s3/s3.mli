@@ -33,9 +33,16 @@ module Make(Io : Types.Io) : sig
     last_modified : float; (** Seconds since epoch *)
     key : string;
     etag : etag; (** Etag as a string. this us usually the MD5, unless the object was constructed by multi-upload *)
+    response_headers : (string * string) list option;
+    (** All headers of the response. If None, the information was not
+        retrieved: [ls] parses an xml listing, which carries no per-object
+        headers. *)
     meta_headers: (string * string) list option; (** Meta headers. If None, the information was not retrieved. *)
-
   }
+
+  (** Look up a response header, ignoring the case the server chose for its
+      name. *)
+  val find_header : name:string -> content -> string option
 
   type nonrec 'a result = ('a, error) result Deferred.t
 
